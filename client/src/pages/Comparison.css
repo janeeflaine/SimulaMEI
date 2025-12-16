@@ -1,0 +1,215 @@
+.comparison-page {
+    padding: var(--spacing-12) 0;
+    min-height: calc(100vh - 200px);
+    background: var(--color-bg-secondary);
+}
+
+.comparison-header {
+    text-align: center;
+    margin-bottom: var(--spacing-10);
+}
+
+.comparison-header h1 {
+    font-size: var(--font-size-3xl);
+    margin-bottom: var(--spacing-2);
+}
+
+/* Comparison Grid */
+.comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--spacing-6);
+    margin-bottom: var(--spacing-8);
+}
+
+.comparison-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    border: 2px solid var(--color-border-light);
+    transition: all var(--transition-base);
+}
+
+.comparison-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-xl);
+}
+
+.comparison-card.mei-card {
+    border-color: var(--color-primary);
+}
+
+.comparison-card.me-card {
+    border-color: var(--color-secondary);
+}
+
+.card-header {
+    padding: var(--spacing-6);
+    text-align: center;
+    background: var(--color-bg-secondary);
+}
+
+.mei-card .card-header {
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.me-card .card-header {
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.disclaimer {
+    text-align: center;
+    background: var(--color-bg-tertiary);
+    padding: var(--spacing-4);
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+/* Preview for locked state */
+.comparison-preview {
+    margin-top: var(--spacing-8);
+    text-align: center;
+}
+
+.comparison-preview h3 {
+    margin-bottom: var(--spacing-4);
+    color: var(--color-text-secondary);
+}
+
+.preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-4);
+}
+
+.preview-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: var(--spacing-4);
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border-light);
+}
+
+.preview-icon {
+    font-size: 1.5rem;
+}
+
+.card-badge {
+    display: inline-block;
+    padding: var(--spacing-1) var(--spacing-3);
+    background: var(--color-primary);
+    color: white;
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    margin-bottom: var(--spacing-3);
+}
+
+.card-badge.pro {
+    background: var(--color-secondary);
+}
+
+.card-header h2 {
+    font-size: var(--font-size-2xl);
+    margin-bottom: var(--spacing-1);
+}
+
+.card-header p {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+.card-body {
+    padding: var(--spacing-6);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-3) 0;
+    border-bottom: 1px dashed var(--color-border-light);
+}
+
+.price-row:last-child {
+    border-bottom: none;
+}
+
+.price-row.highlight {
+    background: var(--color-bg-secondary);
+    margin: 0 calc(-1 * var(--spacing-6));
+    padding: var(--spacing-3) var(--spacing-6);
+    margin-top: var(--spacing-3);
+}
+
+.price {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+}
+
+.me-card .price {
+    color: var(--color-secondary);
+}
+
+.features-list {
+    list-style: none;
+    padding: var(--spacing-5);
+}
+
+.feature-item {
+    padding: var(--spacing-2) 0;
+    font-size: var(--font-size-sm);
+}
+
+.feature-item.positive {
+    color: var(--color-success);
+}
+
+.feature-item.negative {
+    color: var(--color-text-muted);
+}
+
+/* Recommendation */
+.recommendation {
+    background: var(--color-surface);
+    padding: var(--spacing-6);
+    border-radius: var(--radius-xl);
+    text-align: center;
+    margin-bottom: var(--spacing-6);
+    border: 2px solid var(--color-border-light);
+}
+
+.recommendation.mei {
+    border-color: var(--color-success);
+    background: rgba(34, 197, 94, 0.05);
+}
+
+.recommendation.me {
+    border-color: var(--color-warning);
+    background: rgba(245, 158, 11, 0.05);
+}
+
+.recommendation h3 {
+    margin-bottom: var(--spacing-2);
+}
+
+.recommendation p {
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+.actions {
+    display: flex;
+    gap: var(--spacing-4);
+    justify-content: center;
+    margin-bottom: var(--spacing-6);
+    flex-wrap: wrap;
+}

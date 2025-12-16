@@ -1,0 +1,146 @@
+.account-page {
+    padding: var(--spacing-8) 0;
+    min-height: calc(100vh - 200px);
+}
+
+.page-title {
+    font-size: var(--font-size-2xl);
+    margin-bottom: var(--spacing-8);
+}
+
+.section {
+    background: var(--color-surface);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-6);
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--color-border-light);
+    margin-bottom: var(--spacing-6);
+}
+
+.section h2 {
+    font-size: var(--font-size-lg);
+    margin-bottom: var(--spacing-4);
+    padding-bottom: var(--spacing-3);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--spacing-4);
+}
+
+/* Current Plan */
+.current-plan-card {
+    background: var(--color-bg-secondary);
+    padding: var(--spacing-5);
+    border-radius: var(--radius-lg);
+}
+
+.plan-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    margin-bottom: var(--spacing-2);
+}
+
+.plan-name {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+}
+
+.plan-description {
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+/* Plans Grid */
+.plans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--spacing-4);
+}
+
+.plan-card {
+    background: var(--color-surface);
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-6);
+    text-align: center;
+    transition: all var(--transition-base);
+}
+
+.plan-card:hover {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-lg);
+}
+
+.plan-card.current {
+    border-color: var(--color-primary);
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.plan-title {
+    font-size: var(--font-size-xl);
+    margin-bottom: var(--spacing-4);
+}
+
+.plan-price {
+    margin-bottom: var(--spacing-4);
+}
+
+.price-value {
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+}
+
+.price-period {
+    color: var(--color-text-muted);
+}
+
+.plan-features {
+    list-style: none;
+    text-align: left;
+    margin-bottom: var(--spacing-4);
+}
+
+.plan-features li {
+    padding: var(--spacing-2) 0;
+    font-size: var(--font-size-sm);
+}
+
+.plan-features li.excluded {
+    color: var(--color-text-muted);
+}
+
+.plan-card .btn {
+    width: 100%;
+}
+
+/* Danger Zone */
+.danger-zone {
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.danger-zone h2 {
+    color: var(--color-danger);
+}
+
+.danger-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-4);
+    flex-wrap: wrap;
+}
+
+.danger-actions h4 {
+    margin-bottom: var(--spacing-1);
+}
+
+.danger-actions p {
+    color: var(--color-text-secondary);
+    margin: 0;
+    font-size: var(--font-size-sm);
+}
