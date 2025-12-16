@@ -48,7 +48,8 @@ console.log('Checking for static files at:', clientBuildPath)
 app.use(express.static(clientBuildPath))
 
 // Catch-all for SPA (must be last route)
-app.get('*', (req, res) => {
+// Express 5 requires Regex or specific syntax for wildcard
+app.get(/.*/, (req, res) => {
     // Avoid serving index.html for API 404s
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ message: 'API Route not found' })
