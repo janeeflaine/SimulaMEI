@@ -36,10 +36,10 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
-// API Root message
-app.get('/', (req, res) => {
-    res.json({ message: '🚀 SimulaMEI API is running!' })
-})
+// API Root message moved or removed to allow frontend serving
+// app.get('/', (req, res) => {
+//     res.json({ message: '🚀 SimulaMEI API is running!' })
+// })
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
