@@ -41,13 +41,20 @@ app.get('/api/health', (req, res) => {
 //     res.json({ message: '🚀 SimulaMEI API is running!' })
 // })
 
-// Serve static files in production
-if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../client/dist')))
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(__dirname, '../client/dist/index.html'))
-    })
-}
+// Serve static files (Production handling)
+const clientBuildPath = path.join(__dirname, '../client/dist')
+console.log('Checking for static files at:', clientBuildPath)
+
+app.use(express.static(clientBuildPath))
+
+// Catch-all for SPA (must be last route)
+app.get('*', (req, res) => {
+    // Avoid serving index.html for API 404s
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ message: 'API Route not found' })
+    }
+    res.sendFile(path.join(clientBuildPath, 'index.html'))
+})
 
 // Error handler
 app.use((err, req, res, next) => {
