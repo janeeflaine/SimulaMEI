@@ -40,6 +40,20 @@ router.post('/categories', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
+router.patch('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
+    const { name, type } = req.body
+    try {
+        const { rows: [updated] } = await db.query(
+            'UPDATE finance_categories SET name = $1, type = $2 WHERE id = $3 AND "userId" = $4 RETURNING *',
+            [name, type, req.params.id, req.user.id]
+        )
+        res.json(updated)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao atualizar categoria' })
+    }
+})
+
 router.delete('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
     try {
         await db.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])

@@ -203,6 +203,53 @@ h3 {
     margin-bottom: 6px;
 }
 
+.form-group label.flex {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.quick-add-btn {
+    background: #f1f5f9;
+    border: none;
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.quick-add-btn:hover {
+    background: var(--color-primary);
+    color: white;
+}
+
+.quick-add-field {
+    display: flex;
+    gap: 4px;
+}
+
+.quick-add-field input {
+    flex: 1;
+}
+
+.quick-add-field button {
+    background: white;
+    border: 1px solid #e2e8f0;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.quick-add-field button:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
 .form-group input,
 .form-group select,
 .form-group textarea {

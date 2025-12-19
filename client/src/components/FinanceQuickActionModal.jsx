@@ -16,6 +16,8 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
     })
     const [categories, setCategories] = useState([])
     const [loading, setLoading] = useState(false)
+    const [isAddingCategory, setIsAddingCategory] = useState(false)
+    const [newCategoryName, setNewCategoryName] = useState('')
 
     useEffect(() => {
         if (step === 3) {
@@ -35,6 +37,42 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
             }
         } catch (err) {
             console.error('Erro ao buscar categorias:', err)
+        }
+    }
+
+    const handleQuickAddCategory = async () => {
+        if (!newCategoryName.trim()) return
+        try {
+            const token = localStorage.getItem('token')
+            // Determine type based on current target/type
+            // RECEITA -> RECEITA
+            // DESPESA + BUSINESS -> DESPESA_MEI
+            // DESPESA + PERSONAL -> DESPESA_PESSOAL
+            const catType = formData.type === 'RECEITA'
+                ? 'RECEITA'
+                : formData.target === 'BUSINESS' ? 'DESPESA_MEI' : 'DESPESA_PESSOAL'
+
+            const res = await fetch('/api/finance/categories', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ name: newCategoryName, type: catType })
+            })
+
+            if (res.ok) {
+                const newCat = await res.json()
+                setCategories([...categories, newCat])
+                setFormData({ ...formData, categoryId: newCat.id })
+                setIsAddingCategory(false)
+                setNewCategoryName('')
+            } else {
+                alert('Erro ao criar categoria')
+            }
+        } catch (err) {
+            console.error(err)
+            alert('Erro de conexão')
         }
     }
 
@@ -156,17 +194,42 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
                             </div>
 
                             <div className="form-group">
-                                <label>Categoria</label>
-                                <select
-                                    required
-                                    value={formData.categoryId}
-                                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                                >
-                                    <option value="">Selecione uma categoria</option>
-                                    {categories.map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
-                                </select>
+                                <label className="flex justify-between">
+                                    Categoria
+                                    {!isAddingCategory && (
+                                        <button
+                                            type="button"
+                                            className="quick-add-btn"
+                                            onClick={() => setIsAddingCategory(true)}
+                                        >
+                                            + Nova
+                                        </button>
+                                    )}
+                                </label>
+                                {isAddingCategory ? (
+                                    <div className="quick-add-field">
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            placeholder="Nome da categoria"
+                                            value={newCategoryName}
+                                            onChange={(e) => setNewCategoryName(e.target.value)}
+                                        />
+                                        <button type="button" onClick={handleQuickAddCategory}>✅</button>
+                                        <button type="button" onClick={() => setIsAddingCategory(false)}>❌</button>
+                                    </div>
+                                ) : (
+                                    <select
+                                        required
+                                        value={formData.categoryId}
+                                        onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                                    >
+                                        <option value="">Selecione uma categoria</option>
+                                        {categories.map(c => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
 
                             <div className="form-group">
