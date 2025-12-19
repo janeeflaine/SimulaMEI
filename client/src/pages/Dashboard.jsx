@@ -282,6 +282,57 @@ export default function Dashboard() {
                     )}
                 </div>
 
+                {/* Financial Summary - Only for Ouro users */}
+                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) && (
+                    <div className="financial-summary-section" style={{ marginBottom: '35px' }}>
+                        <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Resumo Financeiro (Ouro) 💎</h2>
+                        <div className="stats-grid financial">
+                            <div className="stat-card pf-in">
+                                <div className="stat-card-label">Receitas PF</div>
+                                <div className="stat-card-value" style={{ color: '#10b981' }}>
+                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0))}
+                                </div>
+                            </div>
+                            <div className="stat-card pj-in">
+                                <div className="stat-card-label">Receitas PJ</div>
+                                <div className="stat-card-value" style={{ color: '#10b981' }}>
+                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0))}
+                                </div>
+                            </div>
+                            <div className="stat-card pf-out">
+                                <div className="stat-card-label">Despesas PF</div>
+                                <div className="stat-card-value" style={{ color: '#ef4444' }}>
+                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0))}
+                                </div>
+                            </div>
+                            <div className="stat-card pj-out">
+                                <div className="stat-card-label">Despesas PJ</div>
+                                <div className="stat-card-value" style={{ color: '#ef4444' }}>
+                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0))}
+                                </div>
+                            </div>
+                            <div className="stat-card company-profit" style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid #10b981' }}>
+                                <div className="stat-card-label" style={{ fontWeight: 'bold' }}>Lucro da Empresa</div>
+                                <div className="stat-card-value">
+                                    {formatCurrency(
+                                        transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0) -
+                                        transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0)
+                                    )}
+                                </div>
+                            </div>
+                            <div className="stat-card final-balance" style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid #3b82f6' }}>
+                                <div className="stat-card-label" style={{ fontWeight: 'bold' }}>Saldo Final</div>
+                                <div className="stat-card-value">
+                                    {formatCurrency(
+                                        transactions.filter(t => t.type === 'RECEITA').reduce((acc, t) => acc + t.amount, 0) -
+                                        transactions.filter(t => t.type === 'DESPESA').reduce((acc, t) => acc + t.amount, 0)
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Features Section */}
                 <div className="features-section">
                     <h2>Funcionalidades</h2>

@@ -25,6 +25,31 @@
     margin-bottom: var(--spacing-6);
 }
 
+.stats-grid.financial {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.stats-grid.financial .stat-card {
+    padding: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.stats-grid.financial .stat-card-value {
+    font-size: var(--font-size-lg);
+    margin-top: var(--spacing-1);
+}
+
+.stats-grid.financial .stat-card-label {
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
+}
+
 /* Upgrade Banner */
 .upgrade-banner {
     display: flex;
