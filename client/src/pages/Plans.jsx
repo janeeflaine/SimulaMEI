@@ -80,9 +80,9 @@ export default function Plans() {
                 ) : (
                     <div className="plans-grid">
                         {plans.map((plan) => {
-                            const isCurrentPlan = user?.planId === plan.id
-                            const userCurrentPlan = plans.find(p => p.id === user?.planId)
-                            const isDowngrade = userCurrentPlan && plan.price < userCurrentPlan.price
+                            const isCurrentPlan = Number(user?.planId) === Number(plan.id)
+                            const userCurrentPlan = plans.find(p => Number(p.id) === Number(user?.planId))
+                            const isDowngrade = userCurrentPlan && Number(plan.price) < Number(userCurrentPlan.price)
                             const isPopular = plan.name === 'Ouro'
 
                             return (

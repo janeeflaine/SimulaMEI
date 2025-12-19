@@ -15,7 +15,12 @@ const authMiddleware = async (req, res, next) => {
         const decoded = jwt.verify(token, JWT_SECRET)
 
         // Check DB for latest status and expiry (Async)
-        const result = await db.query('SELECT * FROM users WHERE id = $1', [decoded.id])
+        const result = await db.query(`
+            SELECT u.*, p.name as "planName", p.features as "planFeatures"
+            FROM users u
+            LEFT JOIN plans p ON u."planId" = p.id
+            WHERE u.id = $1
+        `, [decoded.id])
         const user = result.rows[0]
 
         if (!user) {
@@ -39,7 +44,16 @@ const authMiddleware = async (req, res, next) => {
             }
         }
 
-        req.user = user
+        req.user = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            plan: user.planName || 'FREE',
+            planId: user.planId ? Number(user.planId) : null,
+            subscriptionStatus: user.subscriptionStatus,
+            planExpiresAt: user.planExpiresAt
+        }
         next()
     } catch (error) {
         console.error('Auth Middleware Error:', error)
