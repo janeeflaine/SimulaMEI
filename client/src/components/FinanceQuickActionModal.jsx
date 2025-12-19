@@ -226,9 +226,15 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
                                         onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
                                     >
                                         <option value="">Selecione uma categoria</option>
-                                        {categories.map(c => (
-                                            <option key={c.id} value={c.id}>{c.name}</option>
-                                        ))}
+                                        {categories
+                                            .filter(c => {
+                                                if (formData.type === 'RECEITA') return c.type === 'RECEITA'
+                                                if (formData.target === 'BUSINESS') return c.type === 'DESPESA_MEI'
+                                                return c.type === 'DESPESA_PESSOAL'
+                                            })
+                                            .map(c => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
                                     </select>
                                 )}
                             </div>
