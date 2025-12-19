@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import './UserLayout.css'
@@ -5,6 +6,14 @@ import './UserLayout.css'
 export default function UserLayout() {
     const { user, logout } = useAuth()
     const location = useLocation()
+    const [isMenuOpen, setIsMenuOpen] = useState(false)
+    const [isFinanceOpen, setIsFinanceOpen] = useState(false)
+
+    // Close menus on route change
+    useEffect(() => {
+        setIsMenuOpen(false)
+        setIsFinanceOpen(false)
+    }, [location])
 
     return (
         <div className="user-layout">
@@ -16,31 +25,50 @@ export default function UserLayout() {
                             <span className="logo-text">SimulaMEI</span>
                         </Link>
 
-                        <div className="nav-links">
-                            <Link to="/simular" className={`nav - link ${location.pathname === '/simular' ? 'active' : ''} `}>
+                        {/* Mobile Menu Toggle */}
+                        <button
+                            className={`mobile-menu-toggle ${isMenuOpen ? 'active' : ''}`}
+                            onClick={() => setIsMenuOpen(!isMenuOpen)}
+                            aria-label="Menu"
+                        >
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </button>
+
+                        <div className={`nav-links ${isMenuOpen ? 'mobile-active' : ''}`}>
+                            <Link to="/simular" className={`nav-link ${location.pathname === '/simular' ? 'active' : ''}`}>
                                 Simular
                             </Link>
-                            <Link to="/planos" className={`nav - link nav - link - plans ${location.pathname === '/planos' ? 'active' : ''} `}>
+                            <Link to="/planos" className={`nav-link nav-link-plans ${location.pathname === '/planos' ? 'active' : ''}`}>
                                 💎 Planos
                             </Link>
 
                             {user ? (
                                 <>
-                                    <Link to="/dashboard" className={`nav - link ${location.pathname === '/dashboard' ? 'active' : ''} `}>
+                                    <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>
                                         Dashboard
                                     </Link>
-                                    <div className="nav-dropdown">
-                                        <span className={`nav - link dropdown - trigger ${location.pathname.startsWith('/financas') ? 'active' : ''} `}>
-                                            💰 Finanças <small>▼</small>
-                                        </span>
+
+                                    <div className={`nav-dropdown ${isFinanceOpen ? 'active' : ''}`}>
+                                        <button
+                                            className={`nav-link dropdown-trigger ${location.pathname.startsWith('/financas') ? 'active' : ''}`}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                setIsFinanceOpen(!isFinanceOpen);
+                                            }}
+                                        >
+                                            💰 Finanças <span className={`arrow ${isFinanceOpen ? 'up' : 'down'}`}>▼</span>
+                                        </button>
                                         <div className="dropdown-content">
                                             <Link to="/financas/contas" className="dropdown-item">Contas a Pagar</Link>
                                             <Link to="/financas/categorias" className="dropdown-item">Categorias</Link>
                                             <Link to="/financas/cartoes" className="dropdown-item">Cartões</Link>
                                         </div>
                                     </div>
+
                                     {(user.plan === 'Ouro' || Number(user.planId) === 3) && (
-                                        <Link to="/alertas" className={`nav - link ${location.pathname === '/alertas' ? 'active' : ''} `}>
+                                        <Link to="/alertas" className={`nav-link ${location.pathname === '/alertas' ? 'active' : ''}`}>
                                             🔔 Alertas
                                         </Link>
                                     )}
