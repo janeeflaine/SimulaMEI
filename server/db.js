@@ -197,9 +197,19 @@ const init = async () => {
         description TEXT,
         "isRecurring" BOOLEAN DEFAULT FALSE,
         "isSubscription" BOOLEAN DEFAULT FALSE,
+        status TEXT DEFAULT 'PAID',
+        "dueDate" TIMESTAMP,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `)
+
+    // Ensure status and dueDate columns exist (migration for existing tables)
+    try {
+      await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'PAID\'')
+      await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "dueDate" TIMESTAMP')
+    } catch (migErr) {
+      console.log('Migration note (finance_transactions):', migErr.message)
+    }
 
     console.log('✅ Database Schema Synced')
 

@@ -176,18 +176,59 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 })
 
 router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
-    const { type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription } = req.body
+    const { type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription, dueDate } = req.body
+
+    // If it's a Boleto, it starts as PENDING unless user specifically somehow says it's already paid
+    // But per user request: "se ouver uma Despesa PJ com um boleto ele será cadastrado com a data de hoje, porem ele não entra na conta hoje apenas quando eu clicar no botão Confirmar"
+    const status = paymentMethod === 'Boleto' ? 'PENDING' : 'PAID'
+
     try {
         const { rows: [newTransaction] } = await db.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "categoryId", "paymentMethod", description, "isRecurring", "isSubscription") 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [req.user.id, type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription]
+            ("userId", type, target, amount, date, "categoryId", "paymentMethod", description, "isRecurring", "isSubscription", status, "dueDate") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+            [req.user.id, type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription, status, dueDate]
         )
         res.json(newTransaction)
     } catch (err) {
         console.error(err)
         res.status(500).json({ message: 'Erro ao criar transação' })
+    }
+})
+
+// Confirm payment of a pending transaction
+router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        // Update status to PAID and date to current timestamp
+        const { rows: [updated] } = await db.query(
+            'UPDATE finance_transactions SET status = \'PAID\', date = CURRENT_TIMESTAMP WHERE id = $1 AND "userId" = $2 RETURNING *',
+            [req.params.id, req.user.id]
+        )
+        if (!updated) return res.status(404).json({ message: 'Transação não encontrada' })
+        res.json(updated)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao confirmar pagamento' })
+    }
+})
+
+// Get bills due today (for alerts)
+router.get('/transactions/due-today', authMiddleware, async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT t.*, c.name as "categoryName" 
+             FROM finance_transactions t 
+             LEFT JOIN finance_categories c ON t."categoryId" = c.id 
+             WHERE t."userId" = $1 
+             AND t.status = 'PENDING' 
+             AND DATE(t."dueDate") = CURRENT_DATE 
+             ORDER BY t."dueDate" ASC`,
+            [req.user.id]
+        )
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao buscar contas do dia' })
     }
 })
 

@@ -23,6 +23,10 @@ export default function Dashboard() {
     const [transPage, setTransPage] = useState(1)
     const rowsPerPage = 12
 
+    // Bills due today
+    const [dueTodayBills, setDueTodayBills] = useState([])
+    const [showDueTodayAlert, setShowDueTodayAlert] = useState(false)
+
     // Fetch stats and plan on component mount
     useEffect(() => {
         const init = async () => {
@@ -37,7 +41,10 @@ export default function Dashboard() {
     useEffect(() => {
         if (userPlan) {
             if (userPlan.features?.historico) fetchSimulations()
-            if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3) fetchTransactions()
+            if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3) {
+                fetchTransactions()
+                fetchDueTodayBills()
+            }
             if (!userPlan.features?.historico) setLoading(false)
         }
     }, [userPlan])
@@ -113,6 +120,52 @@ export default function Dashboard() {
             }
         } catch (error) {
             console.error('Erro ao buscar alertas ativos:', error)
+        }
+    }
+
+    const fetchDueTodayBills = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/transactions/due-today', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                if (data.length > 0) {
+                    const snoozeUntil = localStorage.getItem('dueTodaySnooze')
+                    if (!snoozeUntil || new Date() > new Date(snoozeUntil)) {
+                        setDueTodayBills(data)
+                        setShowDueTodayAlert(true)
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao buscar contas do dia:', error)
+        }
+    }
+
+    const handleSnooze = () => {
+        const snoozeDate = new Date()
+        snoozeDate.setHours(snoozeDate.getHours() + 1)
+        localStorage.setItem('dueTodaySnooze', snoozeDate.toISOString())
+        setShowDueTodayAlert(false)
+    }
+
+    const handleConfirmBill = async (id) => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/finance/transactions/${id}/confirm`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                setDueTodayBills(prev => prev.filter(b => b.id !== id))
+                fetchTransactions()
+                const updated = dueTodayBills.filter(b => b.id !== id)
+                if (updated.length === 0) setShowDueTodayAlert(false)
+            }
+        } catch (err) {
+            console.error(err)
         }
     }
 
@@ -212,6 +265,62 @@ export default function Dashboard() {
     return (
         <div className="dashboard-page">
             <div className="container">
+                {/* Due Today Notifications */}
+                {showDueTodayAlert && dueTodayBills.length > 0 && (
+                    <div className="due-today-banner" style={{
+                        backgroundColor: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '12px',
+                        padding: '20px',
+                        marginBottom: '25px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '15px',
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <span style={{ fontSize: '24px' }}>📅</span>
+                            <div style={{ flex: 1 }}>
+                                <strong style={{ display: 'block', fontSize: '1.1rem', color: '#1e40af' }}>
+                                    Você tem {dueTodayBills.length} boleto{dueTodayBills.length > 1 ? 's' : ''} vencendo hoje!
+                                </strong>
+                                <p style={{ margin: 0, color: '#1e3a8a', opacity: 0.8 }}>
+                                    Confirme o pagamento para atualizar seu saldo financeiro.
+                                </p>
+                            </div>
+                            <button onClick={handleSnooze} className="btn-snooze" style={{
+                                background: 'white', border: '1px solid #bfdbfe', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px'
+                            }}>
+                                Adiar 1h ⏳
+                            </button>
+                        </div>
+                        <div className="banner-bills-list" style={{
+                            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '10px'
+                        }}>
+                            {dueTodayBills.map(bill => (
+                                <div key={bill.id} className="banner-bill-item" style={{
+                                    background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #dbeafe',
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                                }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: '600' }}>{bill.categoryName || 'Boleto'}</span>
+                                        <span style={{ fontSize: '15px', color: '#10b981', fontWeight: 'bold' }}>{formatCurrency(bill.amount)}</span>
+                                    </div>
+                                    <button
+                                        onClick={() => handleConfirmBill(bill.id)}
+                                        className="btn-confirm-mini"
+                                        style={{
+                                            backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
+                                        }}
+                                    >
+                                        PAGO ✅
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div className="dashboard-header">
                     <div>
                         <h1>Olá, {user?.name?.split(' ')[0]} 👋</h1>
@@ -290,33 +399,33 @@ export default function Dashboard() {
                             <div className="stat-card pf-in">
                                 <div className="stat-card-label">Receitas PF</div>
                                 <div className="stat-card-value" style={{ color: '#10b981' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0))}
+                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'PERSONAL' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
                                 </div>
                             </div>
                             <div className="stat-card pj-in">
                                 <div className="stat-card-label">Receitas PJ</div>
                                 <div className="stat-card-value" style={{ color: '#10b981' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0))}
+                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
                                 </div>
                             </div>
                             <div className="stat-card pf-out">
                                 <div className="stat-card-label">Despesas PF</div>
                                 <div className="stat-card-value" style={{ color: '#ef4444' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0))}
+                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'PERSONAL' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
                                 </div>
                             </div>
                             <div className="stat-card pj-out">
                                 <div className="stat-card-label">Despesas PJ</div>
                                 <div className="stat-card-value" style={{ color: '#ef4444' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0))}
+                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
                                 </div>
                             </div>
                             <div className="stat-card company-profit" style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid #10b981' }}>
                                 <div className="stat-card-label" style={{ fontWeight: 'bold' }}>Lucro da Empresa</div>
                                 <div className="stat-card-value">
                                     {formatCurrency(
-                                        transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0) -
-                                        transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0)
+                                        transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0) -
+                                        transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0)
                                     )}
                                 </div>
                             </div>
@@ -324,8 +433,8 @@ export default function Dashboard() {
                                 <div className="stat-card-label" style={{ fontWeight: 'bold' }}>Saldo Final</div>
                                 <div className="stat-card-value">
                                     {formatCurrency(
-                                        transactions.filter(t => t.type === 'RECEITA').reduce((acc, t) => acc + t.amount, 0) -
-                                        transactions.filter(t => t.type === 'DESPESA').reduce((acc, t) => acc + t.amount, 0)
+                                        transactions.filter(t => t.type === 'RECEITA' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0) -
+                                        transactions.filter(t => t.type === 'DESPESA' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0)
                                     )}
                                 </div>
                             </div>
@@ -474,7 +583,7 @@ export default function Dashboard() {
                                     <table className="table">
                                         <thead>
                                             <tr>
-                                                <th>Data</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Destino</th>
+                                                <th>Data</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Destino</th><th>Status</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -493,6 +602,11 @@ export default function Dashboard() {
                                                     <td>
                                                         <span className="badge badge-info" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
                                                             {t.target === 'BUSINESS' ? '🏢 PJ' : '👤 PF'}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span className={`badge badge-${t.status === 'PAID' ? 'success' : 'warning'}`}>
+                                                            {t.status === 'PAID' ? 'Pago' : 'Pendente'}
                                                         </span>
                                                     </td>
                                                 </tr>
@@ -523,8 +637,9 @@ export default function Dashboard() {
                     onClose={() => setIsFinanceModalOpen(false)}
                     onSuccess={() => {
                         setIsFinanceModalOpen(false)
-                        fetchTransactions() // Refresh data
+                        fetchTransactions()
                         fetchStats()
+                        fetchDueTodayBills()
                     }}
                 />
             )}

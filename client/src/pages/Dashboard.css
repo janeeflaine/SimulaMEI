@@ -279,3 +279,92 @@
 .pagination-controls strong {
     color: var(--color-primary);
 }
+
+/* Due Today Banner */
+.due-today-banner {
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 25px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.banner-content {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.banner-icon {
+    font-size: 24px;
+}
+
+.banner-text strong {
+    display: block;
+    font-size: 1.1rem;
+    color: #1e40af;
+}
+
+.banner-text p {
+    margin: 0;
+    color: #1e3a8a;
+    opacity: 0.8;
+}
+
+.banner-bills-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+}
+
+.banner-bill-item {
+    background: white;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #dbeafe;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: transform 0.2s;
+}
+
+.banner-bill-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+}
+
+.btn-confirm-mini {
+    background-color: #10b981;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    transition: filter 0.2s;
+}
+
+.btn-confirm-mini:hover {
+    filter: brightness(1.1);
+}
+
+.btn-snooze {
+    background: white;
+    border: 1px solid #bfdbfe;
+    padding: 8px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #1e40af;
+    transition: all 0.2s;
+}
+
+.btn-snooze:hover {
+    background: #f0f7ff;
+    border-color: #1e40af;
+}

@@ -11,6 +11,7 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
         categoryId: '',
         paymentMethod: 'Dinheiro',
         description: '',
+        dueDate: '',
         isRecurring: false,
         isSubscription: false
     })
@@ -242,14 +243,26 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
                                     <option value="PIX">PIX</option>
                                     <option value="Cartão de Débito">Cartão de Débito</option>
                                     <option value="Cartão de Crédito">Cartão de Crédito</option>
-                                    <option value="Boleto">Boleto</option>
+                                    <option value="Boleto">Boleto (Contas a Pagar)</option>
                                 </select>
                             </div>
+
+                            {formData.paymentMethod === 'Boleto' && (
+                                <div className="form-group">
+                                    <label>Data de Vencimento</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        value={formData.dueDate || ''}
+                                        onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                                    />
+                                </div>
+                            )}
 
                             <div className="form-group full-width">
                                 <label>Descrição</label>
                                 <textarea
-                                    rows="2"
+                                    rows="1"
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                     placeholder="Descrição da transação"
