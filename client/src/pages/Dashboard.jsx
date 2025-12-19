@@ -13,12 +13,14 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true)
     const [stats, setStats] = useState({ totalSimulations: 0, avgRevenue: 0, limitStatus: 'success' })
     const [userPlan, setUserPlan] = useState(null)
+    const [activeAlerts, setActiveAlerts] = useState([])
 
     // Fetch stats and plan on component mount
     useEffect(() => {
         const init = async () => {
             await fetchUserPlan()
             await fetchStats()
+            await fetchActiveAlerts()
         }
         init()
     }, [])
@@ -75,6 +77,21 @@ export default function Dashboard() {
             console.error('Erro ao carregar simulações:', error)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const fetchActiveAlerts = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/alerts/check', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setActiveAlerts(data)
+            }
+        } catch (error) {
+            console.error('Erro ao buscar alertas ativos:', error)
         }
     }
 
@@ -166,6 +183,43 @@ export default function Dashboard() {
                         ➕ Nova Simulação
                     </Link>
                 </div>
+
+                {/* Active Alerts - Only for Ouro users */}
+                {activeAlerts.length > 0 && (
+                    <div className="active-alerts-section" style={{ marginBottom: '25px' }}>
+                        {activeAlerts.map(alert => (
+                            <div key={alert.id} className={`alert-banner alert-${alert.severity || 'warning'}`} style={{
+                                backgroundColor: alert.severity === 'danger' ? '#fff5f5' : '#fffaf0',
+                                border: `1px solid ${alert.severity === 'danger' ? '#feb2b2' : '#fbd38d'}`,
+                                color: alert.severity === 'danger' ? '#c53030' : '#9c4221',
+                                padding: '15px 20px',
+                                borderRadius: '12px',
+                                marginBottom: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '15px',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                            }}>
+                                <span style={{ fontSize: '24px' }}>
+                                    {alert.severity === 'danger' ? '🚨' : '⚠️'}
+                                </span>
+                                <div style={{ flex: 1 }}>
+                                    <strong style={{ display: 'block' }}>{alert.type === 'REVENUE_LIMIT' ? 'Alerta de Faturamento' : 'Lembrete Fiscal'}</strong>
+                                    <span>{alert.message}</span>
+                                </div>
+                                {alert.type === 'REVENUE_LIMIT' && (
+                                    <Link to="/alertas" className="btn btn-sm" style={{
+                                        backgroundColor: 'white',
+                                        border: '1px solid currentColor',
+                                        color: 'inherit'
+                                    }}>
+                                        Configurar
+                                    </Link>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {/* Stats Cards - Always visible */}
                 <div className="stats-grid">

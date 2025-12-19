@@ -13,6 +13,7 @@ const adminRoutes = require('./routes/admin.routes')
 const planRoutes = require('./routes/plan.routes')
 const paymentRoutes = require('./routes/payment.routes')
 const settingsRoutes = require('./routes/settings.routes')
+const alertRoutes = require('./routes/alert.routes')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -29,6 +30,7 @@ app.use('/api/simulations', simulationRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/plans', planRoutes)
 app.use('/api/payments', paymentRoutes)
+app.use('/api/alerts', alertRoutes)
 
 
 // Health check

@@ -29,6 +29,11 @@ export default function UserLayout() {
                                     <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>
                                         Dashboard
                                     </Link>
+                                    {user.planId === 3 && (
+                                        <Link to="/alertas" className={`nav-link ${location.pathname === '/alertas' ? 'active' : ''}`}>
+                                            🔔 Alertas
+                                        </Link>
+                                    )}
                                     <div className="user-menu">
                                         <span className="user-name">{user.name}</span>
                                         <button onClick={logout} className="btn btn-secondary btn-sm">

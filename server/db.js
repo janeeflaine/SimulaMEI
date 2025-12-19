@@ -130,6 +130,19 @@ const init = async () => {
       );
     `)
 
+    // User Alerts Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_alerts (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL,
+        enabled BOOLEAN DEFAULT TRUE,
+        config TEXT DEFAULT '{}',
+        "lastTriggered" TIMESTAMP,
+        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
     console.log('✅ Database Schema Synced')
 
     // Seed Defaults
@@ -181,6 +194,10 @@ const seedDefaults = async () => {
             `, [hashedPassword])
       console.log('✅ Admin user seeded')
     }
+
+    // Default Alerts for Ouro users (optional seeding for existing users if any, 
+    // but better handled on plan upgrade or login)
+    // For now, we'll ensure the table is ready.
 
   } catch (e) {
     console.error('Seeding error:', e)

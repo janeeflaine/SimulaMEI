@@ -3,52 +3,7 @@ const router = express.Router()
 const { db } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { MercadoPagoConfig, Payment } = require('mercadopago')
-const { decrypt } = require('../utils/encryption')
-
-// Helper: Get Access Token from DB or Env
-// Now Async because PG queries are always async
-const getAccessToken = async () => {
-    try {
-        const result = await db.query("SELECT value, \"isEncrypted\" FROM system_settings WHERE key = 'MERCADOPAGO_ACCESS_TOKEN'")
-        const setting = result.rows[0]
-
-        if (setting && setting.value && setting.value !== '********') {
-            return setting.isEncrypted ? decrypt(setting.value) : setting.value
-        }
-    } catch (e) {
-        console.error('Error fetching settings:', e)
-    }
-    return process.env.MERCADOPAGO_ACCESS_TOKEN
-}
-
-// Helper: Upgrade User Plan
-const upgradeUser = async (dbPayment) => {
-    try {
-        const userResult = await db.query('SELECT "planExpiresAt" FROM users WHERE id = $1', [dbPayment.userId])
-        const user = userResult.rows[0]
-
-        let expiresAt = new Date()
-
-        // If plan is already active and future, extend it
-        if (user && user.planExpiresAt && new Date(user.planExpiresAt) > new Date()) {
-            expiresAt = new Date(user.planExpiresAt)
-        }
-
-        expiresAt.setDate(expiresAt.getDate() + 30) // Add 30 days
-
-        await db.query(`
-            UPDATE users 
-            SET "planId" = $1, "subscriptionStatus" = 'active', "planExpiresAt" = $2, "updatedAt" = CURRENT_TIMESTAMP 
-            WHERE id = $3
-        `, [dbPayment.planId, expiresAt.toISOString(), dbPayment.userId])
-
-        console.log(`✅ User ${dbPayment.userId} upgraded to plan ${dbPayment.planId} until ${expiresAt.toISOString()}`)
-        return true
-    } catch (error) {
-        console.error('Error upgrading user:', error)
-        return false
-    }
-}
+const { getAccessToken, upgradeUser, syncPaymentStatus } = require('../utils/payment.utils')
 
 // Create Payment
 router.post('/create', authMiddleware, async (req, res) => {
@@ -92,6 +47,10 @@ router.post('/create', authMiddleware, async (req, res) => {
         const client = new MercadoPagoConfig({ accessToken: accessToken })
         const paymentClient = new Payment(client)
 
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol
+        const host = req.get('host')
+        const baseUrl = process.env.BASE_URL || `${protocol}://${host}`
+
         const payment_data = {
             transaction_amount: plan.price,
             description: `Upgrade para Plano ${plan.name}`,
@@ -101,8 +60,10 @@ router.post('/create', authMiddleware, async (req, res) => {
                 first_name: req.user.name.split(' ')[0],
                 last_name: req.user.name.split(' ').slice(1).join(' ') || 'User'
             },
-            notification_url: `${process.env.BASE_URL || 'https://your-domain.com'}/api/payments/webhook`
+            notification_url: `${baseUrl}/api/payments/webhook`
         }
+
+        console.log(`[Payment] Creating MP payment. Notification URL: ${payment_data.notification_url}`)
 
         const mpPayment = await paymentClient.create({ body: payment_data })
 
@@ -129,15 +90,45 @@ router.post('/create', authMiddleware, async (req, res) => {
     }
 })
 
+// Sync Latest Pending Payment
+router.get('/sync-latest', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id
+
+        // Find latest pending payment
+        const result = await db.query(`
+            SELECT * FROM payments 
+            WHERE "userId" = $1 AND status = 'pending' 
+            ORDER BY "createdAt" DESC LIMIT 1
+        `, [userId])
+
+        const payment = result.rows[0]
+
+        if (!payment) {
+            return res.json({ status: 'no_pending_payments' })
+        }
+
+        const status = await syncPaymentStatus(payment)
+        res.json({ paymentId: payment.id, status })
+    } catch (error) {
+        console.error('[SyncLatest] Error:', error)
+        res.status(500).json({ message: 'Erro ao sincronizar pagamento' })
+    }
+})
+
 // Webhook (Public)
 router.post('/webhook', async (req, res) => {
-    const topic = req.query.topic || req.query.type
-    const id = req.query.id || req.query['data.id']
+    // Mercado Pago can send data in query or body
+    const topic = req.query.topic || req.query.type || (req.body && req.body.type)
+    const id = req.query.id || req.query['data.id'] || (req.body && req.body.data && req.body.data.id)
 
     const accessToken = await getAccessToken()
 
+    console.log(`[Webhook] Received: topic=${topic}, id=${id}`)
+
     // Only process if we have a token (otherwise it's mock or misconfigured)
-    if (accessToken && topic === 'payment' && id) {
+    // Accept 'payment' or 'payment.updated' / 'payment.created'
+    if (accessToken && (topic === 'payment' || (topic && topic.startsWith('payment'))) && id) {
         try {
             const client = new MercadoPagoConfig({ accessToken: accessToken })
             const paymentClient = new Payment(client)
@@ -147,20 +138,27 @@ router.post('/webhook', async (req, res) => {
             const status = mpPayment.status
             const externalId = mpPayment.id.toString()
 
+            console.log(`[Webhook] MP Payment ${externalId} status: ${status}`)
+
             // Update DB
             const dbPaymentResult = await db.query('SELECT * FROM payments WHERE "externalId" = $1', [externalId])
             const dbPayment = dbPaymentResult.rows[0]
 
-            if (dbPayment && dbPayment.status !== 'approved') {
-                await db.query('UPDATE payments SET status = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2', [status, dbPayment.id])
+            if (dbPayment) {
+                if (dbPayment.status !== status) {
+                    await db.query('UPDATE payments SET status = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2', [status, dbPayment.id])
+                    console.log(`[Webhook] DB Updated: Payment ${dbPayment.id} -> ${status}`)
+                }
 
-                // If approved, upgrade user plan
+                // If approved, upgrade user plan (if not already done)
                 if (status === 'approved') {
                     await upgradeUser(dbPayment)
                 }
+            } else {
+                console.warn(`[Webhook] Payment with externalId ${externalId} not found in database.`)
             }
         } catch (error) {
-            console.error('Webhook error:', error)
+            console.error('[Webhook] Error processing notification:', error.message)
         }
     }
 
@@ -195,42 +193,19 @@ router.get('/:id/status', authMiddleware, async (req, res) => {
         const userId = req.user.id
 
         const paymentResult = await db.query('SELECT * FROM payments WHERE id = $1 AND "userId" = $2', [paymentId, userId])
-        const payment = paymentResult.rows[0] // Use let if modifying? No, payment is const.
+        const payment = paymentResult.rows[0]
 
-        if (!payment) return res.status(404).json({ message: 'Pagamento não encontrado' })
+        if (!payment) {
+            return res.status(404).json({ message: 'Pagamento não encontrado' })
+        }
 
-        // If pending, check with MP (Sync)
         if (payment.status === 'pending') {
-            const accessToken = await getAccessToken()
-
-            if (accessToken && payment.externalId && !payment.externalId.startsWith('mock_')) {
-                try {
-                    const client = new MercadoPagoConfig({ accessToken: accessToken })
-                    const paymentClient = new Payment(client)
-
-                    const mpPayment = await paymentClient.get({ id: payment.externalId })
-                    const status = mpPayment.status
-
-                    if (status !== payment.status) {
-                        // Update DB
-                        await db.query('UPDATE payments SET status = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2', [status, paymentId])
-
-                        payment.status = status // Update local object for response
-
-                        // Upgrade if approved
-                        if (status === 'approved') {
-                            await upgradeUser(payment)
-                        }
-                    }
-                } catch (mpError) {
-                    console.error('MP Sync Error:', mpError)
-                }
-            }
+            payment.status = await syncPaymentStatus(payment)
         }
 
         res.json(payment)
     } catch (error) {
-        console.error('Status check error:', error)
+        console.error('[Status] Error checking status:', error)
         res.status(500).json({ message: 'Erro ao verificar status' })
     }
 })

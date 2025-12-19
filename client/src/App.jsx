@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard'
 import Comparison from './pages/Comparison'
 import Account from './pages/Account'
 import Plans from './pages/Plans'
+import Alerts from './pages/Alerts'
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin'
@@ -50,6 +51,7 @@ function App() {
                             <Route path="/dashboard" element={<Dashboard />} />
                             <Route path="/comparativo" element={<Comparison />} />
                             <Route path="/conta" element={<Account />} />
+                            <Route path="/alertas" element={<Alerts />} />
                         </Route>
                     </Route>
 

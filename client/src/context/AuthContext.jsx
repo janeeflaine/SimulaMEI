@@ -65,6 +65,12 @@ export function AuthProvider({ children }) {
         if (!token) return
 
         try {
+            // First, try to sync any pending payments in background
+            await fetch('/api/payments/sync-latest', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }).catch(err => console.error('Sync latest error:', err))
+
+            // Then refresh user data
             const res = await fetch('/api/auth/me', {
                 headers: { 'Authorization': `Bearer ${token}` }
             })

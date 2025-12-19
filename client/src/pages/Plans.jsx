@@ -36,6 +36,7 @@ export default function Plans() {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (res.ok) {
+                await refreshUser()
                 alert('Plano cancelado com sucesso.')
                 window.location.href = '/dashboard'
             } else {
