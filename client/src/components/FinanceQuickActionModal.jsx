@@ -10,19 +10,24 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
         date: new Date().toISOString().split('T')[0],
         categoryId: '',
         paymentMethod: 'Dinheiro',
+        cardId: '',
         description: '',
         dueDate: '',
         isRecurring: false,
         isSubscription: false
     })
     const [categories, setCategories] = useState([])
+    const [cards, setCards] = useState([])
     const [loading, setLoading] = useState(false)
     const [isAddingCategory, setIsAddingCategory] = useState(false)
+    const [isAddingCard, setIsAddingCard] = useState(false)
     const [newCategoryName, setNewCategoryName] = useState('')
+    const [newCardName, setNewCardName] = useState('')
 
     useEffect(() => {
         if (step === 3) {
             fetchCategories()
+            fetchCards()
         }
     }, [step])
 
@@ -38,6 +43,49 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
             }
         } catch (err) {
             console.error('Erro ao buscar categorias:', err)
+        }
+    }
+
+    const fetchCards = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/cards', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setCards(data)
+            }
+        } catch (err) {
+            console.error('Erro ao buscar cartões:', err)
+        }
+    }
+
+    const handleQuickAddCard = async () => {
+        if (!newCardName.trim()) return
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/cards', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ name: newCardName })
+            })
+
+            if (res.ok) {
+                const newCard = await res.json()
+                setCards([...cards, newCard])
+                setFormData({ ...formData, cardId: newCard.id })
+                setIsAddingCard(false)
+                setNewCardName('')
+            } else {
+                alert('Erro ao criar cartão')
+            }
+        } catch (err) {
+            console.error(err)
+            alert('Erro de conexão')
         }
     }
 
@@ -252,6 +300,47 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
                                     <option value="Boleto">Boleto (Contas a Pagar)</option>
                                 </select>
                             </div>
+
+                            {formData.paymentMethod === 'Cartão de Crédito' && (
+                                <div className="form-group">
+                                    <label className="flex justify-between">
+                                        Qual Cartão?
+                                        {!isAddingCard && (
+                                            <button
+                                                type="button"
+                                                className="quick-add-btn"
+                                                onClick={() => setIsAddingCard(true)}
+                                            >
+                                                + Novo
+                                            </button>
+                                        )}
+                                    </label>
+                                    {isAddingCard ? (
+                                        <div className="quick-add-field">
+                                            <input
+                                                autoFocus
+                                                type="text"
+                                                placeholder="Nome do cartão"
+                                                value={newCardName}
+                                                onChange={(e) => setNewCardName(e.target.value)}
+                                            />
+                                            <button type="button" onClick={handleQuickAddCard}>✅</button>
+                                            <button type="button" onClick={() => setIsAddingCard(false)}>❌</button>
+                                        </div>
+                                    ) : (
+                                        <select
+                                            required
+                                            value={formData.cardId || ''}
+                                            onChange={(e) => setFormData({ ...formData, cardId: e.target.value })}
+                                        >
+                                            <option value="">Selecione o cartão</option>
+                                            {cards.map(c => (
+                                                <option key={c.id} value={c.id}>{c.name} {c.lastFour ? `(**** ${c.lastFour})` : ''}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+                            )}
 
                             {formData.paymentMethod === 'Boleto' && (
                                 <div className="form-group">

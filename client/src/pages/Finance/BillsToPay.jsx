@@ -98,6 +98,7 @@ export default function BillsToPay() {
                                     <tr>
                                         <th>Vencimento</th>
                                         <th>Descrição</th>
+                                        <th>Método</th>
                                         <th>Categoria</th>
                                         <th>Destino</th>
                                         <th>Valor</th>
@@ -112,6 +113,10 @@ export default function BillsToPay() {
                                                 {new Date(bill.dueDate) < new Date() && <span style={{ fontSize: '10px', display: 'block', color: '#ef4444' }}>VENCIDO</span>}
                                             </td>
                                             <td>{bill.description || 'S/ Descrição'}</td>
+                                            <td>
+                                                {bill.paymentMethod}
+                                                {bill.cardName && <small style={{ display: 'block', color: '#64748b' }}>{bill.cardName}</small>}
+                                            </td>
                                             <td>{bill.categoryName || 'S/ Categoria'}</td>
                                             <td>
                                                 <span className="badge badge-info" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>

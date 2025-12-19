@@ -80,11 +80,11 @@ router.get('/cards', authMiddleware, async (req, res) => {
 })
 
 router.post('/cards', authMiddleware, ouroOnly, async (req, res) => {
-    const { name, lastFour, brand, closingDay, dueDate } = req.body
+    const { name, lastFour, brand, closingDay, dueDate, imageUrl } = req.body
     try {
         const { rows: [newCard] } = await db.query(
-            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate") VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [req.user.id, name, lastFour, brand, closingDay, dueDate]
+            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate", "imageUrl") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+            [req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl]
         )
         res.json(newCard)
     } catch (err) {
@@ -165,7 +165,12 @@ router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
 router.get('/transactions', authMiddleware, async (req, res) => {
     try {
         const { rows } = await db.query(
-            'SELECT t.*, c.name as "categoryName" FROM finance_transactions t LEFT JOIN finance_categories c ON t."categoryId" = c.id WHERE t."userId" = $1 ORDER BY t.date DESC',
+            `SELECT t.*, c.name as "categoryName", cr.name as "cardName" 
+             FROM finance_transactions t 
+             LEFT JOIN finance_categories c ON t."categoryId" = c.id 
+             LEFT JOIN credit_cards cr ON t."cardId" = cr.id
+             WHERE t."userId" = $1 
+             ORDER BY t.date DESC`,
             [req.user.id]
         )
         res.json(rows)
@@ -176,7 +181,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 })
 
 router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
-    const { type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription, dueDate } = req.body
+    const { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
 
     // If it's a Boleto, it starts as PENDING unless user specifically somehow says it's already paid
     // But per user request: "se ouver uma Despesa PJ com um boleto ele será cadastrado com a data de hoje, porem ele não entra na conta hoje apenas quando eu clicar no botão Confirmar"
@@ -185,9 +190,9 @@ router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
     try {
         const { rows: [newTransaction] } = await db.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "categoryId", "paymentMethod", description, "isRecurring", "isSubscription", status, "dueDate") 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-            [req.user.id, type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription, status, dueDate]
+            ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+            [req.user.id, type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, status, dueDate]
         )
         res.json(newTransaction)
     } catch (err) {

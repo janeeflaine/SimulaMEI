@@ -164,6 +164,7 @@ const init = async () => {
         brand TEXT,
         "closingDay" INTEGER,
         "dueDate" INTEGER,
+        "imageUrl" TEXT,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `)
@@ -194,6 +195,7 @@ const init = async () => {
         date TIMESTAMP NOT NULL,
         "categoryId" INTEGER REFERENCES finance_categories(id),
         "paymentMethod" TEXT,
+        "cardId" INTEGER REFERENCES credit_cards(id),
         description TEXT,
         "isRecurring" BOOLEAN DEFAULT FALSE,
         "isSubscription" BOOLEAN DEFAULT FALSE,
@@ -207,8 +209,10 @@ const init = async () => {
     try {
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'PAID\'')
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "dueDate" TIMESTAMP')
+      await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "cardId" INTEGER REFERENCES credit_cards(id)')
+      await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS "imageUrl" TEXT')
     } catch (migErr) {
-      console.log('Migration note (finance_transactions):', migErr.message)
+      console.log('Migration note (finance):', migErr.message)
     }
 
     console.log('✅ Database Schema Synced')
