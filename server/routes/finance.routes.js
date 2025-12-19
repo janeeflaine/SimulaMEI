@@ -146,4 +146,35 @@ router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
+// --- TRANSACTIONS ---
+
+router.get('/transactions', authMiddleware, async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'SELECT t.*, c.name as "categoryName" FROM finance_transactions t LEFT JOIN finance_categories c ON t."categoryId" = c.id WHERE t."userId" = $1 ORDER BY t.date DESC',
+            [req.user.id]
+        )
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao buscar transações' })
+    }
+})
+
+router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
+    const { type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription } = req.body
+    try {
+        const { rows: [newTransaction] } = await db.query(
+            `INSERT INTO finance_transactions 
+            ("userId", type, target, amount, date, "categoryId", "paymentMethod", description, "isRecurring", "isSubscription") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+            [req.user.id, type, target, amount, date, categoryId, paymentMethod, description, isRecurring, isSubscription]
+        )
+        res.json(newTransaction)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao criar transação' })
+    }
+})
+
 module.exports = router

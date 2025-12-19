@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import FeatureLock from '../components/FeatureLock'
+import FinanceQuickActionModal from '../components/FinanceQuickActionModal'
 import './Dashboard.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -14,6 +15,7 @@ export default function Dashboard() {
     const [stats, setStats] = useState({ totalSimulations: 0, avgRevenue: 0, limitStatus: 'success' })
     const [userPlan, setUserPlan] = useState(null)
     const [activeAlerts, setActiveAlerts] = useState([])
+    const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false)
 
     // Fetch stats and plan on component mount
     useEffect(() => {
@@ -357,6 +359,29 @@ export default function Dashboard() {
                                 <Link to="/planos" className="btn btn-secondary btn-sm">Ver Planos</Link>
                             </div>
                         )}
+
+                        {/* Finanças - Quick Action (Ouro) */}
+                        {hasFeature('alertas') ? (
+                            <div className="feature-card available" style={{ border: '1px solid #10b981', background: 'rgba(16, 185, 129, 0.02)' }}>
+                                <div className="feature-card-icon">💰</div>
+                                <h3>Gestão Financeira</h3>
+                                <p>Lançamento rápido de PF/PJ</p>
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => setIsFinanceModalOpen(true)}
+                                >
+                                    Abrir Finanças
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="feature-card locked">
+                                <div className="feature-card-icon">💰</div>
+                                <h3>Gestão Financeira</h3>
+                                <p>Controle completo de caixa</p>
+                                <div className="feature-plan-badge">💎 Plano Ouro</div>
+                                <Link to="/planos" className="btn btn-secondary btn-sm">Ver Planos</Link>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -431,6 +456,16 @@ export default function Dashboard() {
                     </div>
                 )}
             </div>
+
+            {isFinanceModalOpen && (
+                <FinanceQuickActionModal
+                    onClose={() => setIsFinanceModalOpen(false)}
+                    onSuccess={() => {
+                        setIsFinanceModalOpen(false)
+                        fetchStats() // Refresh revenue stats if needed
+                    }}
+                />
+            )}
         </div>
     )
 }

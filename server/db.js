@@ -183,6 +183,24 @@ const init = async () => {
       );
     `)
 
+    // Finance Transactions
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS finance_transactions (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL CHECK (type IN ('RECEITA', 'DESPESA')),
+        target TEXT NOT NULL CHECK (target IN ('PERSONAL', 'BUSINESS')),
+        amount REAL NOT NULL,
+        date TIMESTAMP NOT NULL,
+        "categoryId" INTEGER REFERENCES finance_categories(id),
+        "paymentMethod" TEXT,
+        description TEXT,
+        "isRecurring" BOOLEAN DEFAULT FALSE,
+        "isSubscription" BOOLEAN DEFAULT FALSE,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
     console.log('✅ Database Schema Synced')
 
     // Seed Defaults
