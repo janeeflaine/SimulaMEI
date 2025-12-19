@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { db } = require('../db')
-const authMiddleware = require('../middleware/auth')
+const { authMiddleware } = require('../middleware/auth')
 const { checkUserAlerts } = require('../logic/alert-checker')
 
 // Ensure only Ouro plan users can access alerts
