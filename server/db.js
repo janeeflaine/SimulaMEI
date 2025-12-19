@@ -213,7 +213,7 @@ const init = async () => {
 
     console.log('✅ Database Schema Synced')
 
-    // Seed Defaults
+    // Seed Defaults - Ensure plans and basic rules exist
     await seedDefaults()
 
   } catch (err) {
