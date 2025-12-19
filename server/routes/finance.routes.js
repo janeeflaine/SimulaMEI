@@ -1,0 +1,149 @@
+const express = require('express')
+const router = express.Router()
+const { db } = require('../db')
+const { authMiddleware } = require('../middleware/auth')
+
+// Utility to ensure only Ouro plan users can change data
+const ouroOnly = (req, res, next) => {
+    if (req.user.plan !== 'Ouro' && Number(req.user.planId) !== 3) {
+        return res.status(403).json({ message: 'Acesso exclusivo para assinantes do plano Ouro' })
+    }
+    next()
+}
+
+// --- CATEGORIES ---
+
+router.get('/categories', authMiddleware, async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'SELECT * FROM finance_categories WHERE "userId" = $1 ORDER BY name ASC',
+            [req.user.id]
+        )
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao buscar categorias' })
+    }
+})
+
+router.post('/categories', authMiddleware, ouroOnly, async (req, res) => {
+    const { name, type } = req.body
+    try {
+        const { rows: [newCat] } = await db.query(
+            'INSERT INTO finance_categories ("userId", name, type) VALUES ($1, $2, $3) RETURNING *',
+            [req.user.id, name, type]
+        )
+        res.json(newCat)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao criar categoria' })
+    }
+})
+
+router.delete('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        await db.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
+        res.json({ message: 'Categoria excluída' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao excluir categoria' })
+    }
+})
+
+// --- CREDIT CARDS ---
+
+router.get('/cards', authMiddleware, async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'SELECT * FROM credit_cards WHERE "userId" = $1 ORDER BY name ASC',
+            [req.user.id]
+        )
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao buscar cartões' })
+    }
+})
+
+router.post('/cards', authMiddleware, ouroOnly, async (req, res) => {
+    const { name, lastFour, brand, closingDay, dueDate } = req.body
+    try {
+        const { rows: [newCard] } = await db.query(
+            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate") VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [req.user.id, name, lastFour, brand, closingDay, dueDate]
+        )
+        res.json(newCard)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao criar cartão' })
+    }
+})
+
+router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        await db.query('DELETE FROM credit_cards WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
+        res.json({ message: 'Cartão excluído' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao excluir cartão' })
+    }
+})
+
+// --- BILLS (CONTAS A PAGAR) ---
+
+router.get('/bills', authMiddleware, async (req, res) => {
+    try {
+        const { rows } = await db.query(`
+            SELECT b.*, c.name as "categoryName", cr.name as "cardName"
+            FROM bills_to_pay b
+            LEFT JOIN finance_categories c ON b."categoryId" = c.id
+            LEFT JOIN credit_cards cr ON b."cardId" = cr.id
+            WHERE b."userId" = $1
+            ORDER BY b."dueDate" ASC
+        `, [req.user.id])
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao buscar contas' })
+    }
+})
+
+router.post('/bills', authMiddleware, ouroOnly, async (req, res) => {
+    const { description, amount, dueDate, categoryId, cardId } = req.body
+    try {
+        const { rows: [newBill] } = await db.query(
+            'INSERT INTO bills_to_pay ("userId", description, amount, "dueDate", "categoryId", "cardId") VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [req.user.id, description, amount, dueDate, categoryId, cardId]
+        )
+        res.json(newBill)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao criar conta' })
+    }
+})
+
+router.patch('/bills/:id/status', authMiddleware, ouroOnly, async (req, res) => {
+    const { status } = req.body
+    try {
+        const { rows: [updated] } = await db.query(
+            'UPDATE bills_to_pay SET status = $1 WHERE id = $2 AND "userId" = $3 RETURNING *',
+            [status, req.params.id, req.user.id]
+        )
+        res.json(updated)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao atualizar status' })
+    }
+})
+
+router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        await db.query('DELETE FROM bills_to_pay WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
+        res.json({ message: 'Conta excluída' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao excluir conta' })
+    }
+})
+
+module.exports = router

@@ -143,6 +143,46 @@ const init = async () => {
       );
     `)
 
+    // Finance Categories
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS finance_categories (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('RECEITA', 'DESPESA_MEI', 'DESPESA_PESSOAL')),
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    // Credit Cards
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS credit_cards (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        "lastFour" TEXT,
+        brand TEXT,
+        "closingDay" INTEGER,
+        "dueDate" INTEGER,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    // Bills to Pay (Contas a Pagar)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bills_to_pay (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        "dueDate" TIMESTAMP NOT NULL,
+        "categoryId" INTEGER REFERENCES finance_categories(id),
+        "cardId" INTEGER REFERENCES credit_cards(id),
+        status TEXT DEFAULT 'PENDENTE' CHECK (status IN ('PENDENTE', 'PAGO')),
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
     console.log('✅ Database Schema Synced')
 
     // Seed Defaults
@@ -159,11 +199,11 @@ const seedDefaults = async () => {
     const plansCount = await pool.query('SELECT COUNT(*) FROM plans')
     if (parseInt(plansCount.rows[0].count) === 0) {
       await pool.query(`
-                INSERT INTO plans (name, price, features, "isActive") VALUES
-                ('Gratuito', 0, $1, 1),
-                ('Prata', 19.90, $2, 1),
-                ('Ouro', 39.90, $3, 1)
-            `, [
+                INSERT INTO plans(name, price, features, "isActive") VALUES
+  ('Gratuito', 0, $1, 1),
+  ('Prata', 19.90, $2, 1),
+  ('Ouro', 39.90, $3, 1)
+    `, [
         JSON.stringify({ historico: false, pdf: false, comparativo: false, alertas: false }),
         JSON.stringify({ historico: true, pdf: true, comparativo: false, alertas: false }),
         JSON.stringify({ historico: true, pdf: true, comparativo: true, alertas: true })
@@ -174,13 +214,13 @@ const seedDefaults = async () => {
     // Rules
     const rulesCount = await pool.query('SELECT COUNT(*) FROM calculation_rules')
     if (parseInt(rulesCount.rows[0].count) === 0) {
-      await pool.query(`INSERT INTO calculation_rules ("inssPercentage", "icmsValue", "issValue", "employeeCost") VALUES (5, 1, 5, 1412)`)
+      await pool.query(`INSERT INTO calculation_rules("inssPercentage", "icmsValue", "issValue", "employeeCost") VALUES(5, 1, 5, 1412)`)
     }
 
     // Limits
     const limitsCount = await pool.query('SELECT COUNT(*) FROM mei_limits')
     if (parseInt(limitsCount.rows[0].count) === 0) {
-      await pool.query(`INSERT INTO mei_limits ("annualLimit", "warningPercentage", "dangerPercentage") VALUES (81000, 70, 90)`)
+      await pool.query(`INSERT INTO mei_limits("annualLimit", "warningPercentage", "dangerPercentage") VALUES(81000, 70, 90)`)
     }
 
     // Admin
@@ -189,9 +229,9 @@ const seedDefaults = async () => {
       const bcrypt = require('bcryptjs')
       const hashedPassword = await bcrypt.hash('admin123', 10)
       await pool.query(`
-                INSERT INTO users (name, email, password, role)
-                VALUES ('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
-            `, [hashedPassword])
+                INSERT INTO users(name, email, password, role)
+VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
+  `, [hashedPassword])
       console.log('✅ Admin user seeded')
     }
 

@@ -12,6 +12,9 @@ import Comparison from './pages/Comparison'
 import Account from './pages/Account'
 import Plans from './pages/Plans'
 import Alerts from './pages/Alerts'
+import BillsToPay from './pages/Finance/BillsToPay'
+import CreditCards from './pages/Finance/CreditCards'
+import FinanceCategories from './pages/Finance/FinanceCategories'
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin'
@@ -52,6 +55,9 @@ function App() {
                             <Route path="/comparativo" element={<Comparison />} />
                             <Route path="/conta" element={<Account />} />
                             <Route path="/alertas" element={<Alerts />} />
+                            <Route path="/financas/contas" element={<BillsToPay />} />
+                            <Route path="/financas/cartoes" element={<CreditCards />} />
+                            <Route path="/financas/categorias" element={<FinanceCategories />} />
                         </Route>
                     </Route>
 

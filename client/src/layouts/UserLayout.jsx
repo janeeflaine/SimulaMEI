@@ -17,20 +17,30 @@ export default function UserLayout() {
                         </Link>
 
                         <div className="nav-links">
-                            <Link to="/simular" className={`nav-link ${location.pathname === '/simular' ? 'active' : ''}`}>
+                            <Link to="/simular" className={`nav - link ${location.pathname === '/simular' ? 'active' : ''} `}>
                                 Simular
                             </Link>
-                            <Link to="/planos" className={`nav-link nav-link-plans ${location.pathname === '/planos' ? 'active' : ''}`}>
+                            <Link to="/planos" className={`nav - link nav - link - plans ${location.pathname === '/planos' ? 'active' : ''} `}>
                                 💎 Planos
                             </Link>
 
                             {user ? (
                                 <>
-                                    <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>
+                                    <Link to="/dashboard" className={`nav - link ${location.pathname === '/dashboard' ? 'active' : ''} `}>
                                         Dashboard
                                     </Link>
+                                    <div className="nav-dropdown">
+                                        <span className={`nav - link dropdown - trigger ${location.pathname.startsWith('/financas') ? 'active' : ''} `}>
+                                            💰 Finanças <small>▼</small>
+                                        </span>
+                                        <div className="dropdown-content">
+                                            <Link to="/financas/contas" className="dropdown-item">Contas a Pagar</Link>
+                                            <Link to="/financas/categorias" className="dropdown-item">Categorias</Link>
+                                            <Link to="/financas/cartoes" className="dropdown-item">Cartões</Link>
+                                        </div>
+                                    </div>
                                     {(user.plan === 'Ouro' || Number(user.planId) === 3) && (
-                                        <Link to="/alertas" className={`nav-link ${location.pathname === '/alertas' ? 'active' : ''}`}>
+                                        <Link to="/alertas" className={`nav - link ${location.pathname === '/alertas' ? 'active' : ''} `}>
                                             🔔 Alertas
                                         </Link>
                                     )}
