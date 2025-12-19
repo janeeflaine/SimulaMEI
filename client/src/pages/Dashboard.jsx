@@ -328,9 +328,16 @@ export default function Dashboard() {
                             Plano atual: <span className="plan-badge">{userPlan?.name || 'Gratuito'}</span>
                         </p>
                     </div>
-                    <Link to="/simular" className="btn btn-primary">
-                        ➕ Nova Simulação
-                    </Link>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        {hasFeature('alertas') && (
+                            <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
+                                💰 Novo Lançamento
+                            </button>
+                        )}
+                        <Link to="/simular" className="btn btn-primary">
+                            ➕ Nova Simulação
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Active Alerts */}
