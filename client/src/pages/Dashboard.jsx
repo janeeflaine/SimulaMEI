@@ -38,7 +38,9 @@ export default function Dashboard() {
         try {
             const res = await fetch('/api/plans')
             const plans = await res.json()
-            const currentPlan = plans.find(p => p.id === user?.planId) || plans.find(p => p.price === 0)
+            const currentPlan = plans.find(p => Number(p.id) === Number(user?.planId))
+                || plans.find(p => p.name === user?.plan)
+                || plans.find(p => Number(p.price) === 0)
             setUserPlan(currentPlan)
         } catch (error) {
             console.error('Erro ao carregar plano:', error)
@@ -344,7 +346,7 @@ export default function Dashboard() {
                                 <div className="feature-card-icon">🔔</div>
                                 <h3>Alertas Personalizados</h3>
                                 <p>Notificações de limite</p>
-                                <span className="feature-available">✅ Disponível</span>
+                                <Link to="/alertas" className="btn btn-primary btn-sm">Abrir Alertas</Link>
                             </div>
                         ) : (
                             <div className="feature-card locked">

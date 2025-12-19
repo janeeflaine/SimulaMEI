@@ -29,7 +29,7 @@ export default function UserLayout() {
                                     <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>
                                         Dashboard
                                     </Link>
-                                    {Number(user.planId) === 3 && (
+                                    {(user.plan === 'Ouro' || Number(user.planId) === 3) && (
                                         <Link to="/alertas" className={`nav-link ${location.pathname === '/alertas' ? 'active' : ''}`}>
                                             🔔 Alertas
                                         </Link>
