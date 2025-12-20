@@ -181,10 +181,14 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 })
 
 router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
-    const { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
+    let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
 
-    // If it's a Boleto, it starts as PENDING unless user specifically somehow says it's already paid
-    // But per user request: "se ouver uma Despesa PJ com um boleto ele será cadastrado com a data de hoje, porem ele não entra na conta hoje apenas quando eu clicar no botão Confirmar"
+    // Normalize empty strings to null for ID and date columns
+    const finalCategoryId = categoryId === '' || categoryId === null ? null : categoryId
+    const finalCardId = (paymentMethod === 'Cartão de Crédito' && cardId !== '' && cardId !== null) ? cardId : null
+    const finalDueDate = dueDate === '' || dueDate === null ? null : dueDate
+
+    // If it's a Boleto, it starts as PENDING
     const status = paymentMethod === 'Boleto' ? 'PENDING' : 'PAID'
 
     try {
@@ -192,11 +196,11 @@ router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
             `INSERT INTO finance_transactions 
             ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate") 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-            [req.user.id, type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, status, dueDate]
+            [req.user.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate]
         )
         res.json(newTransaction)
     } catch (err) {
-        console.error(err)
+        console.error('Erro ao criar transação:', err)
         res.status(500).json({ message: 'Erro ao criar transação' })
     }
 })

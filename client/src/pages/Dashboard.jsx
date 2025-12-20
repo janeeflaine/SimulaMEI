@@ -602,7 +602,10 @@ export default function Dashboard() {
                                                             {t.type === 'RECEITA' ? '⬇️ Receita' : '⬆️ Despesa'}
                                                         </span>
                                                     </td>
-                                                    <td>{t.categoryName || 'Sem categoria'}</td>
+                                                    <td>
+                                                        {t.categoryName || 'Sem categoria'}
+                                                        {t.cardName && <small style={{ display: 'block', color: '#64748b', fontSize: '10px' }}>💳 {t.cardName}</small>}
+                                                    </td>
                                                     <td style={{ fontWeight: 'bold', color: t.type === 'RECEITA' ? '#10b981' : '#ef4444' }}>
                                                         {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
                                                     </td>
