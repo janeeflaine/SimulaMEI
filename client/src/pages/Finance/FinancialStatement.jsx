@@ -106,7 +106,7 @@ export default function FinancialStatement() {
         return new Date(dateString).toLocaleDateString('pt-BR')
     }
 
-    if (user?.plan !== 'Ouro' && Number(user?.planId) !== 3) {
+    if (user?.plan !== 'Ouro' && Number(user?.planId) !== 3 && !user?.isInTrial) {
         return <FeatureLock feature="Extrato Financeiro" />
     }
 

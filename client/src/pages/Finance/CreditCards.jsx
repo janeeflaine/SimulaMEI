@@ -17,7 +17,7 @@ export default function CreditCards() {
         imageUrl: ''
     })
 
-    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3
+    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
 
     useEffect(() => {
         if (isOuro) {

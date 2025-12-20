@@ -11,7 +11,7 @@ export default function FinanceCategories() {
     const [editingCategory, setEditingCategory] = useState(null)
     const [newCategory, setNewCategory] = useState({ name: '', type: 'RECEITA' })
 
-    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3
+    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
 
     useEffect(() => {
         if (isOuro) {
@@ -78,6 +78,8 @@ export default function FinanceCategories() {
                 // If 403, we might need to refresh background state
                 if (res.status === 403) {
                     console.log('Permission denied. Debug info:', errorData.debug)
+                    const { refreshUser } = useAuth()
+                    if (refreshUser) refreshUser()
                 }
             }
         } catch (err) {

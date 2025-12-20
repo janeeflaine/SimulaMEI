@@ -75,7 +75,7 @@ export default function Dashboard() {
     useEffect(() => {
         if (userPlan) {
             if (userPlan.features?.historico) fetchSimulations()
-            if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3) {
+            if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
                 fetchTransactions()
                 fetchDueTodayBills()
             }
@@ -347,7 +347,7 @@ export default function Dashboard() {
                         <p>Bem-vindo à sua central de inteligência financeira.</p>
                     </div>
                     <div className="header-actions">
-                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) && (
+                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
                             <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
                                 <PlusCircle size={18} /> Novo Lançamento
                             </button>
@@ -396,7 +396,7 @@ export default function Dashboard() {
                 )}
 
                 {/* Master Financial Summary */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) ? (
+                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) ? (
                     <div className="financial-summary-section">
                         <div className="summary-grid">
                             <div className="summary-card revenue">
@@ -459,7 +459,7 @@ export default function Dashboard() {
                 )}
 
                 {/* Visual Analysis (Ouro) */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) && (
+                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
                     <div className="charts-grid">
                         <div className="chart-container">
                             <div className="chart-header">
@@ -527,7 +527,7 @@ export default function Dashboard() {
                 <div className="bottom-grid">
                     <div className="main-content-area">
                         {/* Transaction History */}
-                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) ? (
+                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) ? (
                             <div className="dashboard-section">
                                 <div className="section-header">
                                     <h2>Últimos Lançamentos</h2>

@@ -7,7 +7,7 @@ export default function BillsToPay() {
     const { user } = useAuth()
     const [bills, setBills] = useState([])
     const [loading, setLoading] = useState(true)
-    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3
+    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
 
     useEffect(() => {
         if (isOuro) {
