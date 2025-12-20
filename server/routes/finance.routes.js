@@ -5,8 +5,18 @@ const { authMiddleware } = require('../middleware/auth')
 
 // Utility to ensure only Ouro plan users can change data
 const ouroOnly = (req, res, next) => {
-    if (req.user.plan !== 'Ouro' && Number(req.user.planId) !== 3) {
-        return res.status(403).json({ message: 'Acesso exclusivo para assinantes do plano Ouro' })
+    const isOuro = req.user.plan === 'Ouro' || Number(req.user.planId) === 3 || req.user.isInTrial === true
+
+    if (!isOuro) {
+        console.log(`[ouroOnly] Access Denied for user ${req.user.id}. Plan: ${req.user.plan}, PlanId: ${req.user.planId}, Trial: ${req.user.isInTrial}`)
+        return res.status(403).json({
+            message: 'Acesso exclusivo para assinantes do plano Ouro',
+            debug: {
+                plan: req.user.plan,
+                planId: req.user.planId,
+                isInTrial: req.user.isInTrial
+            }
+        })
     }
     next()
 }

@@ -72,11 +72,17 @@ export default function FinanceCategories() {
                 fetchCategories()
                 setIsModalOpen(false)
             } else {
-                alert('Erro ao salvar categoria')
+                const errorData = await res.json().catch(() => ({}))
+                alert(errorData.message || 'Erro ao salvar categoria')
+
+                // If 403, we might need to refresh background state
+                if (res.status === 403) {
+                    console.log('Permission denied. Debug info:', errorData.debug)
+                }
             }
         } catch (err) {
             console.error(err)
-            alert('Erro ao salvar categoria')
+            alert('Erro na conexão com o servidor')
         }
     }
 
