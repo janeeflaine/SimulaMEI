@@ -15,6 +15,7 @@ import Alerts from './pages/Alerts'
 import BillsToPay from './pages/Finance/BillsToPay'
 import CreditCards from './pages/Finance/CreditCards'
 import FinanceCategories from './pages/Finance/FinanceCategories'
+import FinancialStatement from './pages/Finance/FinancialStatement'
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin'
@@ -58,6 +59,7 @@ function App() {
                             <Route path="/financas/contas" element={<BillsToPay />} />
                             <Route path="/financas/cartoes" element={<CreditCards />} />
                             <Route path="/financas/categorias" element={<FinanceCategories />} />
+                            <Route path="/financas/extrato" element={<FinancialStatement />} />
                         </Route>
                     </Route>
 

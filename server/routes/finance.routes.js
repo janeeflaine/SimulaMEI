@@ -241,4 +241,19 @@ router.get('/transactions/due-today', authMiddleware, async (req, res) => {
     }
 })
 
+// Delete a transaction
+router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        const { rowCount } = await db.query(
+            'DELETE FROM finance_transactions WHERE id = $1 AND "userId" = $2',
+            [req.params.id, req.user.id]
+        )
+        if (rowCount === 0) return res.status(404).json({ message: 'Transação não encontrada' })
+        res.json({ message: 'Transação excluída com sucesso' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao excluir transação' })
+    }
+})
+
 module.exports = router

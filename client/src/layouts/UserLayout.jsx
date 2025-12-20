@@ -61,6 +61,7 @@ export default function UserLayout() {
                                             💰 Finanças <span className={`arrow ${isFinanceOpen ? 'up' : 'down'}`}>▼</span>
                                         </button>
                                         <div className="dropdown-content">
+                                            <Link to="/financas/extrato" className="dropdown-item">Extrato Financeiro</Link>
                                             <Link to="/financas/contas" className="dropdown-item">Contas a Pagar</Link>
                                             <Link to="/financas/categorias" className="dropdown-item">Categorias</Link>
                                             <Link to="/financas/cartoes" className="dropdown-item">Cartões</Link>
