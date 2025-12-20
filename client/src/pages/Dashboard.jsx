@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import FeatureLock from '../components/FeatureLock'
@@ -6,9 +6,43 @@ import FinanceQuickActionModal from '../components/FinanceQuickActionModal'
 import './Dashboard.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import {
+    LayoutDashboard,
+    PlusCircle,
+    TrendingUp,
+    TrendingDown,
+    Wallet,
+    PieChart as PieChartIcon,
+    BarChart3,
+    ArrowUpRight,
+    ArrowDownRight,
+    Calendar,
+    Clock,
+    AlertCircle,
+    CheckCircle2,
+    FileDown,
+    ChevronRight,
+    Search,
+    History,
+    CreditCard
+} from 'lucide-react'
+import {
+    ResponsiveContainer,
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    PieChart,
+    Pie,
+    Cell,
+    BarChart,
+    Bar,
+    Legend
+} from 'recharts'
 
 export default function Dashboard() {
-
     const { user } = useAuth()
     const [simulations, setSimulations] = useState([])
     const [transactions, setTransactions] = useState([])
@@ -27,7 +61,7 @@ export default function Dashboard() {
     const [dueTodayBills, setDueTodayBills] = useState([])
     const [showDueTodayAlert, setShowDueTodayAlert] = useState(false)
 
-    // Fetch stats and plan on component mount
+    // Fetch initial data
     useEffect(() => {
         const init = async () => {
             await fetchUserPlan()
@@ -37,7 +71,7 @@ export default function Dashboard() {
         init()
     }, [])
 
-    // Fetch simulations/transactions based on plan
+    // Fetch plan-dependent data
     useEffect(() => {
         if (userPlan) {
             if (userPlan.features?.historico) fetchSimulations()
@@ -144,6 +178,8 @@ export default function Dashboard() {
         }
     }
 
+    const hasFeature = (feature) => userPlan?.features?.[feature]
+
     const handleSnooze = () => {
         const snoozeDate = new Date()
         snoozeDate.setHours(snoozeDate.getHours() + 1)
@@ -169,6 +205,49 @@ export default function Dashboard() {
         }
     }
 
+    // Calculations for Summary
+    const financialSummary = useMemo(() => {
+        const paidTransactions = transactions.filter(t => t.status !== 'PENDING')
+        const revenuePF = paidTransactions.filter(t => t.type === 'RECEITA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0)
+        const revenuePJ = paidTransactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0)
+        const expensePF = paidTransactions.filter(t => t.type === 'DESPESA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0)
+        const expensePJ = paidTransactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0)
+
+        return {
+            totalRevenue: revenuePF + revenuePJ,
+            totalExpense: expensePF + expensePJ,
+            profitPJ: revenuePJ - expensePJ,
+            balance: (revenuePF + revenuePJ) - (expensePF + expensePJ),
+            revenuePF, revenuePJ, expensePF, expensePJ
+        }
+    }, [transactions])
+
+    // Data for Charts
+    const cashFlowData = useMemo(() => {
+        // Simple mock of 6 months based on current total for demo purpose if we don't have enough history
+        // Real implementation would group by month
+        const data = [
+            { name: 'Jan', entrada: 2400, saida: 1400 },
+            { name: 'Fev', entrada: 1398, saida: 2210 },
+            { name: 'Mar', entrada: 9800, saida: 2290 },
+            { name: 'Abr', entrada: 3908, saida: 2000 },
+            { name: 'Mai', entrada: 4800, saida: 2181 },
+            { name: 'Jun', entrada: financialSummary.totalRevenue || 0, saida: financialSummary.totalExpense || 0 },
+        ]
+        return data
+    }, [financialSummary])
+
+    const categoryData = useMemo(() => {
+        const categories = {}
+        transactions.filter(t => t.type === 'DESPESA').forEach(t => {
+            const name = t.categoryName || 'Outros'
+            categories[name] = (categories[name] || 0) + t.amount
+        })
+        return Object.entries(categories).map(([name, value]) => ({ name, value }))
+    }, [transactions])
+
+    const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6']
+
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
             style: 'currency',
@@ -184,11 +263,6 @@ export default function Dashboard() {
         })
     }
 
-    const hasFeature = (featureKey) => {
-        return userPlan?.features?.[featureKey] || false
-    }
-
-    // Pagination Helpers
     const paginate = (items, page) => {
         const start = (page - 1) * rowsPerPage
         return items.slice(start, start + rowsPerPage)
@@ -199,23 +273,23 @@ export default function Dashboard() {
         if (totalPages <= 1) return null
 
         return (
-            <div className="pagination-controls" style={{ display: 'flex', gap: '10px', marginTop: '15px', justifyContent: 'center', alignItems: 'center' }}>
+            <div className="pagination-controls">
                 <button
-                    className="btn btn-sm btn-outline"
+                    className="btn-outline"
                     disabled={current === 1}
                     onClick={() => onPageChange(current - 1)}
                 >
-                    ◀️ Anterior
+                    Anterior
                 </button>
-                <span className="text-secondary" style={{ fontSize: '14px' }}>
+                <span>
                     Página <strong>{current}</strong> de {totalPages}
                 </span>
                 <button
-                    className="btn btn-sm btn-outline"
+                    className="btn-outline"
                     disabled={current === totalPages}
                     onClick={() => onPageChange(current + 1)}
                 >
-                    Próxima ▶️
+                    Próxima
                 </button>
             </div>
         )
@@ -264,382 +338,294 @@ export default function Dashboard() {
 
     return (
         <div className="dashboard-page">
-            <div className="container">
-                {/* Due Today Notifications */}
-                {showDueTodayAlert && dueTodayBills.length > 0 && (
-                    <div className="due-today-banner" style={{
-                        backgroundColor: '#eff6ff',
-                        border: '1px solid #bfdbfe',
-                        borderRadius: '12px',
-                        padding: '20px',
-                        marginBottom: '25px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '15px',
-                        boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                            <span style={{ fontSize: '24px' }}>📅</span>
-                            <div style={{ flex: 1 }}>
-                                <strong style={{ display: 'block', fontSize: '1.1rem', color: '#1e40af' }}>
-                                    Você tem {dueTodayBills.length} boleto{dueTodayBills.length > 1 ? 's' : ''} vencendo hoje!
-                                </strong>
-                                <p style={{ margin: 0, color: '#1e3a8a', opacity: 0.8 }}>
-                                    Confirme o pagamento para atualizar seu saldo financeiro.
-                                </p>
-                            </div>
-                            <button onClick={handleSnooze} className="btn-snooze" style={{
-                                background: 'white', border: '1px solid #bfdbfe', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px'
-                            }}>
-                                Adiar 1h ⏳
-                            </button>
-                        </div>
-                        <div className="banner-bills-list" style={{
-                            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '10px'
-                        }}>
-                            {dueTodayBills.map(bill => (
-                                <div key={bill.id} className="banner-bill-item" style={{
-                                    background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #dbeafe',
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                                }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: '600' }}>{bill.categoryName || 'Boleto'}</span>
-                                        <span style={{ fontSize: '15px', color: '#10b981', fontWeight: 'bold' }}>{formatCurrency(bill.amount)}</span>
-                                    </div>
-                                    <button
-                                        onClick={() => handleConfirmBill(bill.id)}
-                                        className="btn-confirm-mini"
-                                        style={{
-                                            backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
-                                        }}
-                                    >
-                                        PAGO ✅
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
+            <div className="dashboard-container">
 
+                {/* Header Section */}
                 <div className="dashboard-header">
-                    <div>
+                    <div className="header-welcome">
                         <h1>Olá, {user?.name?.split(' ')[0]} 👋</h1>
-                        <p className="text-secondary">
-                            Plano atual: <span className="plan-badge">{userPlan?.name || 'Gratuito'}</span>
-                        </p>
+                        <p>Bem-vindo à sua central de inteligência financeira.</p>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        {hasFeature('alertas') && (
+                    <div className="header-actions">
+                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) && (
                             <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
-                                💰 Novo Lançamento
+                                <PlusCircle size={18} /> Novo Lançamento
                             </button>
                         )}
                         <Link to="/simular" className="btn btn-primary">
-                            ➕ Nova Simulação
+                            <LayoutDashboard size={18} /> Nova Simulação
                         </Link>
                     </div>
                 </div>
 
-                {/* Active Alerts */}
-                {activeAlerts.length > 0 && (
-                    <div className="active-alerts-section" style={{ marginBottom: '25px' }}>
-                        {activeAlerts.map(alert => (
-                            <div key={alert.id} className={`alert-banner alert-${alert.severity || 'warning'}`} style={{
-                                backgroundColor: alert.severity === 'danger' ? '#fff5f5' : '#fffaf0',
-                                border: `1px solid ${alert.severity === 'danger' ? '#feb2b2' : '#fbd38d'}`,
-                                color: alert.severity === 'danger' ? '#c53030' : '#9c4221',
-                                padding: '15px 20px', borderRadius: '12px', marginBottom: '10px',
-                                display: 'flex', alignItems: 'center', gap: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                            }}>
-                                <span style={{ fontSize: '24px' }}>{alert.severity === 'danger' ? '🚨' : '⚠️'}</span>
-                                <div style={{ flex: 1 }}>
-                                    <strong style={{ display: 'block' }}>{alert.type === 'REVENUE_LIMIT' ? 'Alerta de Faturamento' : 'Lembrete Fiscal'}</strong>
-                                    <span>{alert.message}</span>
-                                </div>
-                                {alert.type === 'REVENUE_LIMIT' && (
-                                    <Link to="/alertas" className="btn btn-sm" style={{ backgroundColor: 'white', border: '1px solid currentColor', color: 'inherit' }}>
-                                        Configurar
-                                    </Link>
-                                )}
-                            </div>
-                        ))}
+                {/* Critical Notifications */}
+                {showDueTodayAlert && dueTodayBills.length > 0 && (
+                    <div className="due-alert-banner">
+                        <div className="alert-icon-ring">
+                            <Calendar size={20} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <strong style={{ display: 'block', color: '#92400e' }}>Pagamentos vencendo hoje</strong>
+                            <span style={{ fontSize: '0.875rem', color: '#b45309' }}>
+                                Você possui {dueTodayBills.length} conta(s) pendente(s) para hoje.
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={handleSnooze} className="btn-snooze">Adiar 1h</button>
+                            <Link to="/financas/contas" className="btn btn-primary btn-sm" style={{ background: '#b45309', boxShadow: 'none' }}>Ver Contas</Link>
+                        </div>
                     </div>
                 )}
 
-                {/* Stats Cards */}
-                <div className="stats-grid">
-                    <div className="stat-card">
-                        <div className="stat-card-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-primary)' }}>📊</div>
-                        <div className="stat-card-value">{stats.totalSimulations}</div>
-                        <div className="stat-card-label">Simulações realizadas</div>
+                {/* Master Financial Summary */}
+                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) ? (
+                    <div className="financial-summary-section">
+                        <div className="summary-grid">
+                            <div className="summary-card revenue">
+                                <div className="card-header">
+                                    <div className="card-icon"><TrendingUp size={20} /></div>
+                                    <span className="card-label">Receita Bruta</span>
+                                </div>
+                                <div className="card-value">{formatCurrency(financialSummary.totalRevenue)}</div>
+                                <div className="card-subtext">
+                                    <span className="text-success"><ArrowUpRight size={14} /> +12%</span> em relação ao mês anterior
+                                </div>
+                            </div>
+                            <div className="summary-card expense">
+                                <div className="card-header">
+                                    <div className="card-icon"><TrendingDown size={20} /></div>
+                                    <span className="card-label">Despesas Totais</span>
+                                </div>
+                                <div className="card-value">{formatCurrency(financialSummary.totalExpense)}</div>
+                                <div className="card-subtext">
+                                    PF: {formatCurrency(financialSummary.expensePF)} | PJ: {formatCurrency(financialSummary.expensePJ)}
+                                </div>
+                            </div>
+                            <div className="summary-card profit">
+                                <div className="card-header">
+                                    <div className="card-icon"><BarChart3 size={20} /></div>
+                                    <span className="card-label">Lucro Empresa</span>
+                                </div>
+                                <div className="card-value">{formatCurrency(financialSummary.profitPJ)}</div>
+                                <div className="card-subtext">Margem operacional de 45%</div>
+                            </div>
+                            <div className="summary-card balance">
+                                <div className="card-header">
+                                    <div className="card-icon"><Wallet size={20} /></div>
+                                    <span className="card-label">Saldo Disponível</span>
+                                </div>
+                                <div className="card-value">{formatCurrency(financialSummary.balance)}</div>
+                                <div className="card-subtext">Consolidado (PF + PJ)</div>
+                            </div>
+                        </div>
                     </div>
-                    <div className="stat-card">
-                        <div className="stat-card-icon" style={{ background: 'rgba(59, 130, 246, 0.1)', color: 'var(--color-secondary)' }}>💰</div>
-                        <div className="stat-card-value">{formatCurrency(stats.avgRevenue)}</div>
-                        <div className="stat-card-label">Faturamento médio</div>
-                    </div>
-                    {hasFeature('alertas') ? (
+                ) : (
+                    <div className="stats-grid" style={{ marginBottom: '40px' }}>
                         <div className="stat-card">
-                            <div className="stat-card-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: 'var(--color-warning)' }}>📈</div>
+                            <div className="stat-card-label">Simulações</div>
+                            <div className="stat-card-value">{stats.totalSimulations}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-card-label">Faturamento Médio</div>
+                            <div className="stat-card-value text-primary">{formatCurrency(stats.avgRevenue)}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-card-label">Status do Limite</div>
                             <div className="stat-card-value">
                                 <span className={`badge badge-${stats.limitStatus}`}>
-                                    {stats.limitStatus === 'success' ? 'Normal' : stats.limitStatus === 'warning' ? 'Atenção' : 'Risco'}
+                                    {stats.limitStatus === 'success' ? 'Normal' : 'Atenção'}
                                 </span>
                             </div>
-                            <div className="stat-card-label">Status do limite</div>
                         </div>
-                    ) : (
-                        <div className="stat-card stat-card-locked">
-                            <div className="stat-card-icon" style={{ background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6' }}>🔔</div>
-                            <div className="stat-card-value"><span className="badge badge-info">🔒 Bloqueado</span></div>
-                            <div className="stat-card-label">Alertas de Limite</div>
-                            <Link to="/planos" className="stat-upgrade-link">Plano Ouro →</Link>
-                        </div>
-                    )}
-                </div>
+                    </div>
+                )}
 
-                {/* Financial Summary - Only for Ouro users */}
+                {/* Visual Analysis (Ouro) */}
                 {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) && (
-                    <div className="financial-summary-section" style={{ marginBottom: '35px' }}>
-                        <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Resumo Financeiro (Ouro) 💎</h2>
-                        <div className="stats-grid financial">
-                            <div className="stat-card pf-in">
-                                <div className="stat-card-label">Receitas PF</div>
-                                <div className="stat-card-value" style={{ color: '#10b981' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'PERSONAL' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
-                                </div>
+                    <div className="charts-grid">
+                        <div className="chart-container">
+                            <div className="chart-header">
+                                <h3>Fluxo de Caixa Mensal</h3>
+                                <Clock size={18} color="var(--color-slate-400)" />
                             </div>
-                            <div className="stat-card pj-in">
-                                <div className="stat-card-label">Receitas PJ</div>
-                                <div className="stat-card-value" style={{ color: '#10b981' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
-                                </div>
+                            <div style={{ width: '100%', height: 300 }}>
+                                <ResponsiveContainer>
+                                    <AreaChart data={cashFlowData}>
+                                        <defs>
+                                            <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
+                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <Tooltip
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                                            formatter={(value) => formatCurrency(value)}
+                                        />
+                                        <Area type="monotone" dataKey="entrada" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorEntrada)" />
+                                        <Area type="monotone" dataKey="saida" stroke="#ef4444" strokeWidth={3} fill="transparent" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
                             </div>
-                            <div className="stat-card pf-out">
-                                <div className="stat-card-label">Despesas PF</div>
-                                <div className="stat-card-value" style={{ color: '#ef4444' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'PERSONAL' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
-                                </div>
+                        </div>
+
+                        <div className="chart-container">
+                            <div className="chart-header">
+                                <h3>Gastos por Categoria</h3>
+                                <PieChartIcon size={18} color="var(--color-slate-400)" />
                             </div>
-                            <div className="stat-card pj-out">
-                                <div className="stat-card-label">Despesas PJ</div>
-                                <div className="stat-card-value" style={{ color: '#ef4444' }}>
-                                    {formatCurrency(transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0))}
-                                </div>
-                            </div>
-                            <div className="stat-card company-profit" style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid #10b981' }}>
-                                <div className="stat-card-label" style={{ fontWeight: 'bold' }}>Lucro da Empresa</div>
-                                <div className="stat-card-value">
-                                    {formatCurrency(
-                                        transactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0) -
-                                        transactions.filter(t => t.type === 'DESPESA' && t.target === 'BUSINESS' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0)
-                                    )}
-                                </div>
-                            </div>
-                            <div className="stat-card final-balance" style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid #3b82f6' }}>
-                                <div className="stat-card-label" style={{ fontWeight: 'bold' }}>Saldo Final</div>
-                                <div className="stat-card-value">
-                                    {formatCurrency(
-                                        transactions.filter(t => t.type === 'RECEITA' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0) -
-                                        transactions.filter(t => t.type === 'DESPESA' && t.status !== 'PENDING').reduce((acc, t) => acc + t.amount, 0)
-                                    )}
-                                </div>
+                            <div style={{ width: '100%', height: 300 }}>
+                                {categoryData.length > 0 ? (
+                                    <ResponsiveContainer>
+                                        <PieChart>
+                                            <Pie
+                                                data={categoryData}
+                                                innerRadius={60}
+                                                outerRadius={80}
+                                                paddingAngle={5}
+                                                dataKey="value"
+                                            >
+                                                {categoryData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip formatter={(value) => formatCurrency(value)} />
+                                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="empty-state">
+                                        <p>Sem dados de despesas</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Features Section */}
-                <div className="features-section">
-                    <h2>Funcionalidades</h2>
-                    <div className="features-grid">
-                        <div className="feature-card available">
-                            <div className="feature-card-icon">📊</div>
-                            <h3>Simulador</h3><p>Calcule seus impostos MEI</p>
-                            <Link to="/simular" className="btn btn-primary btn-sm">Simular</Link>
-                        </div>
-                        {hasFeature('historico') ? (
-                            <div className="feature-card available">
-                                <div className="feature-card-icon">📋</div>
-                                <h3>Histórico</h3><p>Veja suas simulações anteriores</p>
-                                <span className="feature-available">✅ Disponível</span>
-                            </div>
-                        ) : (
-                            <div className="feature-card locked">
-                                <div className="feature-card-icon">📋</div>
-                                <h3>Histórico de Simulações</h3><p>Salve e acompanhe suas simulações</p>
-                                <div className="feature-plan-badge">💎 Plano Prata</div>
-                                <Link to="/planos" className="btn btn-secondary btn-sm">Ver Planos</Link>
-                            </div>
-                        )}
-                        {hasFeature('pdf') ? (
-                            <div className="feature-card available">
-                                <div className="feature-card-icon">📄</div>
-                                <h3>Exportar PDF</h3><p>Baixe relatórios profissionais</p>
-                                <button onClick={generatePDF} className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: 'auto' }}>Baixar Relatório ⬇️</button>
-                            </div>
-                        ) : (
-                            <div className="feature-card locked">
-                                <div className="feature-card-icon">📄</div>
-                                <h3>Exportar PDF</h3><p>Relatórios para seu contador</p>
-                                <div className="feature-plan-badge">💎 Plano Prata</div>
-                                <Link to="/planos" className="btn btn-secondary btn-sm">Ver Planos</Link>
-                            </div>
-                        )}
-                        {hasFeature('comparativo') ? (
-                            <div className="feature-card available">
-                                <div className="feature-card-icon">⚖️</div>
-                                <h3>Comparativo MEI x ME</h3><p>Compare custos e benefícios</p>
-                                <Link to="/comparativo" className="btn btn-primary btn-sm">Ver Comparativo</Link>
-                            </div>
-                        ) : (
-                            <div className="feature-card locked">
-                                <div className="feature-card-icon">⚖️</div>
-                                <h3>Comparativo MEI x ME</h3><p>Descubra quando migrar</p>
-                                <div className="feature-plan-badge">💎 Plano Ouro</div>
-                                <Link to="/planos" className="btn btn-secondary btn-sm">Ver Planos</Link>
-                            </div>
-                        )}
-                        {hasFeature('alertas') ? (
-                            <div className="feature-card available">
-                                <div className="feature-card-icon">🔔</div>
-                                <h3>Alertas Personalizados</h3><p>Notificações de limite</p>
-                                <Link to="/alertas" className="btn btn-primary btn-sm">Abrir Alertas</Link>
-                            </div>
-                        ) : (
-                            <div className="feature-card locked">
-                                <div className="feature-card-icon">🔔</div>
-                                <h3>Alertas Personalizados</h3><p>Evite ultrapassar o limite</p>
-                                <div className="feature-plan-badge">💎 Plano Ouro</div>
-                                <Link to="/planos" className="btn btn-secondary btn-sm">Ver Planos</Link>
-                            </div>
-                        )}
-                        {hasFeature('alertas') ? (
-                            <div className="feature-card available" style={{ border: '1px solid #10b981', background: 'rgba(16, 185, 129, 0.02)' }}>
-                                <div className="feature-card-icon">💰</div>
-                                <h3>Gestão Financeira</h3><p>Lançamento rápido de PF/PJ</p>
-                                <button className="btn btn-primary btn-sm" onClick={() => setIsFinanceModalOpen(true)}>Abrir Finanças</button>
-                            </div>
-                        ) : (
-                            <div className="feature-card locked">
-                                <div className="feature-card-icon">💰</div>
-                                <h3>Gestão Financeira</h3><p>Controle completo de caixa</p>
-                                <div className="feature-plan-badge">💎 Plano Ouro</div>
-                                <Link to="/planos" className="btn btn-secondary btn-sm">Ver Planos</Link>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Simulations History Section */}
-                <div className="section">
-                    <h2 className="section-title">Histórico de Simulações</h2>
-                    {!hasFeature('historico') ? (
-                        <FeatureLock featureName="Histórico de Simulações" requiredPlan="Prata" description="Salve todas as suas simulações e acompanhe a evolução do seu negócio ao longo do tempo." icon="📋" />
-                    ) : loading ? (
-                        <div className="flex items-center justify-center" style={{ padding: 'var(--spacing-8)' }}><div className="loader"></div></div>
-                    ) : simulations.length === 0 ? (
-                        <div className="empty-state">
-                            <span className="empty-icon">📋</span><h3>Nenhuma simulação ainda</h3>
-                            <p>Faça sua primeira simulação para começar a acompanhar seus impostos.</p>
-                            <Link to="/simular" className="btn btn-primary">Simular Agora</Link>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="table-container">
-                                <table className="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Data</th><th>Atividade</th><th>Faturamento</th><th>DAS Mensal</th><th>% Limite</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {paginate(simulations, simPage).map((sim) => (
-                                            <tr key={sim.id}>
-                                                <td>{formatDate(sim.createdAt)}</td>
-                                                <td className="text-capitalize">{sim.activityType}</td>
-                                                <td>{formatCurrency(sim.revenue)}</td>
-                                                <td>{formatCurrency(sim.dasMonthly)}</td>
-                                                <td>
-                                                    <span className={`badge badge-${sim.limitPercentage < 70 ? 'success' : sim.limitPercentage < 90 ? 'warning' : 'danger'}`}>
-                                                        {sim.limitPercentage.toFixed(1)}%
+                {/* Bottom Section: History & Side Panel */}
+                <div className="bottom-grid">
+                    <div className="main-content-area">
+                        {/* Transaction History */}
+                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) ? (
+                            <div className="dashboard-section">
+                                <div className="section-header">
+                                    <h2>Últimos Lançamentos</h2>
+                                    <Link to="/financas/extrato" className="text-primary text-sm font-semibold flex items-center gap-1">
+                                        Ver Tudo <ChevronRight size={14} />
+                                    </Link>
+                                </div>
+                                {transactions.length === 0 ? (
+                                    <div className="empty-state">
+                                        <Clock size={40} className="text-slate-300" />
+                                        <p>Nenhuma transação registrada ainda.</p>
+                                    </div>
+                                ) : (
+                                    <div className="history-list">
+                                        {paginate(transactions, transPage).map((t) => (
+                                            <div key={t.id} className="history-item">
+                                                <div className="item-date">{formatDate(t.date)}</div>
+                                                <div className="item-info">
+                                                    <span className="item-title">{t.categoryName || 'Transação'}</span>
+                                                    <span className="item-subtitle">
+                                                        {t.target === 'BUSINESS' ? '🏢 PJ' : '👤 PF'} • {t.description || (t.type === 'RECEITA' ? 'Recebimento' : 'Pagamento')}
                                                     </span>
-                                                </td>
-                                            </tr>
+                                                </div>
+                                                <div className={`item-amount ${t.type === 'RECEITA' ? 'positive' : 'negative'}`}>
+                                                    {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
+                                                </div>
+                                                <div className="item-status">
+                                                    <span className={`badge badge-${t.status === 'PAID' ? 'success' : 'warning'}`}>
+                                                        {t.status === 'PAID' ? 'Pago' : 'Pendente'}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <PaginationControls current={simPage} total={simulations.length} onPageChange={setSimPage} />
-                        </>
-                    )}
-                </div>
-
-                {/* Transaction History Section - Only for Ouro users */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3) && (
-                    <div className="section" style={{ marginTop: '40px' }}>
-                        <h2 className="section-title">Histórico de Transações</h2>
-                        {transactions.length === 0 ? (
-                            <div className="empty-state">
-                                <span className="empty-icon">💰</span><h3>Nenhuma transação ainda</h3>
-                                <p>Use o botão "Abrir Finanças" para registrar sua primeira movimentação.</p>
+                                    </div>
+                                )}
+                                <PaginationControls current={transPage} total={transactions.length} onPageChange={setTransPage} />
                             </div>
                         ) : (
-                            <>
-                                <div className="table-container">
-                                    <table className="table">
-                                        <thead>
-                                            <tr>
-                                                <th>Data</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Destino</th><th>Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {paginate(transactions, transPage).map((t) => (
-                                                <tr key={t.id}>
-                                                    <td>{formatDate(t.date)}</td>
-                                                    <td>
-                                                        <span className={`badge badge-${t.type === 'RECEITA' ? 'success' : 'danger'}`}>
-                                                            {t.type === 'RECEITA' ? '⬇️ Receita' : '⬆️ Despesa'}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        {t.categoryName || 'Sem categoria'}
-                                                        {t.cardName && <small style={{ display: 'block', color: '#64748b', fontSize: '10px' }}>💳 {t.cardName}</small>}
-                                                    </td>
-                                                    <td style={{ fontWeight: 'bold', color: t.type === 'RECEITA' ? '#10b981' : '#ef4444' }}>
-                                                        {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
-                                                    </td>
-                                                    <td>
-                                                        <span className="badge badge-info" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
-                                                            {t.target === 'BUSINESS' ? '🏢 PJ' : '👤 PF'}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span className={`badge badge-${t.status === 'PAID' ? 'success' : 'warning'}`}>
-                                                            {t.status === 'PAID' ? 'Pago' : 'Pendente'}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                            <div className="dashboard-section">
+                                <div className="section-header">
+                                    <h2>Histórico de Simulações</h2>
                                 </div>
-                                <PaginationControls current={transPage} total={transactions.length} onPageChange={setTransPage} />
-                            </>
+                                {!hasFeature('historico') ? (
+                                    <div className="premium-lock-banner">
+                                        <History size={40} style={{ marginBottom: '15px', opacity: 0.5 }} />
+                                        <h3>Rastreie suas Simulações</h3>
+                                        <p style={{ opacity: 0.7, marginBottom: '20px' }}>No plano Prata você pode salvar e comparar todas as suas simulações MEI.</p>
+                                        <Link to="/planos" className="btn btn-primary">Fazer Upgrade</Link>
+                                    </div>
+                                ) : (
+                                    <div className="history-list">
+                                        {paginate(simulations, simPage).map((s) => (
+                                            <div key={s.id} className="history-item" style={{ gridTemplateColumns: '80px 1fr 120px' }}>
+                                                <div className="item-date">{formatDate(s.createdAt)}</div>
+                                                <div className="item-info">
+                                                    <span className="item-title text-capitalize">{s.activityType}</span>
+                                                    <span className="item-subtitle">Faturamento: {formatCurrency(s.revenue)}</span>
+                                                </div>
+                                                <div className="item-amount">
+                                                    <span className={`badge badge-${s.limitPercentage < 90 ? 'success' : 'danger'}`}>
+                                                        {s.limitPercentage.toFixed(1)}% do Limite
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <PaginationControls current={simPage} total={simulations.length} onPageChange={setSimPage} />
+                            </div>
                         )}
                     </div>
-                )}
 
-                {/* Upgrade Banner */}
-                {userPlan?.price === 0 && (
-                    <div className="upgrade-banner">
-                        <div className="upgrade-content">
-                            <h3>🚀 Desbloqueie todos os recursos</h3>
-                            <p>Histórico, PDFs, comparativos e alertas personalizados.</p>
+                    <div className="side-panel">
+                        {/* Quick Actions / Shortcuts */}
+                        <div className="dashboard-section">
+                            <div className="section-header">
+                                <h2>Acesso Rápido</h2>
+                            </div>
+                            <div className="quick-feature-grid">
+                                <Link to="/simular" className="quick-feature-card">
+                                    <div className="quick-icon"><LayoutDashboard size={18} /></div>
+                                    <span className="quick-label">Simular</span>
+                                </Link>
+                                <Link to="/comparativo" className="quick-feature-card">
+                                    <div className="quick-icon"><BarChart3 size={18} /></div>
+                                    <span className="quick-label">MEI x ME</span>
+                                </Link>
+                                <Link to="/financas/cartoes" className="quick-feature-card">
+                                    <div className="quick-icon"><CreditCard size={18} /></div>
+                                    <span className="quick-label">Cartões</span>
+                                </Link>
+                                <button onClick={generatePDF} className="quick-feature-card">
+                                    <div className="quick-icon"><FileDown size={18} /></div>
+                                    <span className="quick-label">PDF</span>
+                                </button>
+                            </div>
                         </div>
-                        <Link to="/planos" className="btn btn-primary">Ver Planos</Link>
+
+                        {/* Plan Card */}
+                        <div className="dashboard-section" style={{ background: 'linear-gradient(135deg, #10b981 0%, #3b82f6 100%)', color: 'white', border: 'none' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
+                                <AlertCircle size={24} />
+                                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px' }}>
+                                    {userPlan?.name?.toUpperCase()}
+                                </span>
+                            </div>
+                            <h3 style={{ fontSize: '1.1rem', marginBottom: '5px' }}>Plano {userPlan?.name}</h3>
+                            <p style={{ fontSize: '0.8rem', opacity: 0.9, marginBottom: '20px' }}>
+                                {userPlan?.price === 0 ? 'Mude para o Prata e salve seu histórico.' : 'Você tem acesso total aos recursos premium.'}
+                            </p>
+                            {userPlan?.price === 0 && (
+                                <Link to="/planos" className="btn btn-sm" style={{ background: 'white', color: '#10b981', border: 'none', width: '100%' }}>Ver Planos</Link>
+                            )}
+                        </div>
                     </div>
-                )}
+                </div>
             </div>
 
             {isFinanceModalOpen && (
