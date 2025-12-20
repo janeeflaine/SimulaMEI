@@ -37,17 +37,14 @@ export default function UserLayout() {
                         </button>
 
                         <div className={`nav-links ${isMenuOpen ? 'mobile-active' : ''}`}>
-                            <Link to="/simular" className={`nav-link ${location.pathname === '/simular' ? 'active' : ''}`}>
-                                Simular
-                            </Link>
-                            <Link to="/planos" className={`nav-link nav-link-plans ${location.pathname === '/planos' ? 'active' : ''}`}>
-                                💎 Planos
+                            <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
+                                🏠 Home
                             </Link>
 
                             {user ? (
                                 <>
                                     <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>
-                                        Dashboard
+                                        📊 Dashboard
                                     </Link>
 
                                     <div className={`nav-dropdown ${isFinanceOpen ? 'active' : ''}`}>
@@ -73,6 +70,11 @@ export default function UserLayout() {
                                             🔔 Alertas
                                         </Link>
                                     )}
+
+                                    <Link to="/planos" className={`nav-link nav-link-plans ${location.pathname === '/planos' ? 'active' : ''}`}>
+                                        💎 Planos
+                                    </Link>
+
                                     <div className="user-menu">
                                         <span className="user-name">{user.name}</span>
                                         <button onClick={logout} className="btn btn-secondary btn-sm">
@@ -82,6 +84,12 @@ export default function UserLayout() {
                                 </>
                             ) : (
                                 <>
+                                    <Link to="/simular" className={`nav-link ${location.pathname === '/simular' ? 'active' : ''}`}>
+                                        🚀 Simular
+                                    </Link>
+                                    <Link to="/planos" className={`nav-link nav-link-plans ${location.pathname === '/planos' ? 'active' : ''}`}>
+                                        💎 Planos
+                                    </Link>
                                     <Link to="/login" className="nav-link">Entrar</Link>
                                     <Link to="/cadastro" className="btn btn-primary btn-sm">
                                         Criar Conta

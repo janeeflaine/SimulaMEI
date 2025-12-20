@@ -5,6 +5,7 @@ import {
     FileText,
     Search,
     Trash2,
+    Edit2,
     Filter,
     ChevronLeft,
     ChevronRight,
@@ -15,12 +16,15 @@ import {
     User,
     CreditCard
 } from 'lucide-react'
+import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import './FinancialStatement.css'
 
 export default function FinancialStatement() {
     const { user } = useAuth()
     const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+    const [editingTransaction, setEditingTransaction] = useState(null)
     const [filters, setFilters] = useState({
         search: '',
         type: 'ALL', // ALL, RECEITA, DESPESA
@@ -221,9 +225,22 @@ export default function FinancialStatement() {
                                                 {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
                                             </td>
                                             <td className="td-actions">
-                                                <button className="btn-delete" title="Excluir" onClick={() => handleDelete(t.id)}>
-                                                    <Trash2 size={18} />
-                                                </button>
+                                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                        className="btn-delete"
+                                                        style={{ color: 'var(--color-primary)' }}
+                                                        title="Editar"
+                                                        onClick={() => {
+                                                            setEditingTransaction(t)
+                                                            setIsEditModalOpen(true)
+                                                        }}
+                                                    >
+                                                        <Edit2 size={18} />
+                                                    </button>
+                                                    <button className="btn-delete" title="Excluir" onClick={() => handleDelete(t.id)}>
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
@@ -260,6 +277,21 @@ export default function FinancialStatement() {
                     )}
                 </div>
             </div>
+
+            {isEditModalOpen && (
+                <FinanceQuickActionModal
+                    initialData={editingTransaction}
+                    onClose={() => {
+                        setIsEditModalOpen(false)
+                        setEditingTransaction(null)
+                    }}
+                    onSuccess={() => {
+                        setIsEditModalOpen(false)
+                        setEditingTransaction(null)
+                        fetchTransactions()
+                    }}
+                />
+            )}
         </div>
     )
 }

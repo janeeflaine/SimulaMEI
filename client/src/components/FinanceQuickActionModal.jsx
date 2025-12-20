@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react'
 import './FinanceQuickActionModal.css'
 
-export default function FinanceQuickActionModal({ onClose, onSuccess }) {
-    const [step, setStep] = useState(1) // 1: Target (PF/PJ), 2: Type (Receita/Despesa), 3: Form
+export default function FinanceQuickActionModal({ onClose, onSuccess, initialData }) {
+    const [step, setStep] = useState(initialData ? 3 : 1) // 1: Target (PF/PJ), 2: Type (Receita/Despesa), 3: Form
     const [formData, setFormData] = useState({
-        target: '', // PERSONAL, BUSINESS
-        type: '', // RECEITA, DESPESA
-        amount: '',
-        date: new Date().toISOString().split('T')[0],
-        categoryId: '',
-        paymentMethod: 'Dinheiro',
-        cardId: '',
-        description: '',
-        dueDate: '',
-        isRecurring: false,
-        isSubscription: false
+        target: initialData?.target || '', // PERSONAL, BUSINESS
+        type: initialData?.type || '', // RECEITA, DESPESA
+        amount: initialData?.amount || '',
+        date: initialData?.date ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        categoryId: initialData?.categoryId || '',
+        paymentMethod: initialData?.paymentMethod || 'Dinheiro',
+        cardId: initialData?.cardId || '',
+        description: initialData?.description || '',
+        dueDate: initialData?.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : '',
+        isRecurring: initialData?.isRecurring || false,
+        isSubscription: initialData?.isSubscription || false
     })
     const [categories, setCategories] = useState([])
     const [cards, setCards] = useState([])
@@ -135,8 +135,13 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
         setLoading(true)
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch('/api/finance/transactions', {
-                method: 'POST',
+            const url = initialData?.id
+                ? `/api/finance/transactions/${initialData.id}`
+                : '/api/finance/transactions'
+            const method = initialData?.id ? 'PATCH' : 'POST'
+
+            const res = await fetch(url, {
+                method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
@@ -145,15 +150,15 @@ export default function FinanceQuickActionModal({ onClose, onSuccess }) {
             })
 
             if (res.ok) {
-                alert('Lançamento salvo com sucesso!')
+                alert(initialData?.id ? 'Lançamento atualizado!' : 'Lançamento salvo!')
                 onSuccess()
             } else {
                 const data = await res.json()
-                alert(`Erro: ${data.message || 'Falha ao salvar'}`)
+                alert(`Erro: ${data.message || 'Falha ao processar'}`)
             }
         } catch (err) {
             console.error(err)
-            alert('Erro de conexão ao salvar transação.')
+            alert('Erro de conexão ao processar transação.')
         } finally {
             setLoading(false)
         }

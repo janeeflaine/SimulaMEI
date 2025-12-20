@@ -241,6 +241,32 @@ router.get('/transactions/due-today', authMiddleware, async (req, res) => {
     }
 })
 
+// Update a transaction
+router.patch('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
+    let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
+
+    // Normalize empty strings to null
+    const finalCategoryId = categoryId === '' || categoryId === null ? null : categoryId
+    const finalCardId = (paymentMethod === 'Cartão de Crédito' && cardId !== '' && cardId !== null) ? cardId : null
+    const finalDueDate = dueDate === '' || dueDate === null ? null : dueDate
+
+    try {
+        const { rows: [updated] } = await db.query(
+            `UPDATE finance_transactions 
+            SET type = $1, target = $2, amount = $3, date = $4, "categoryId" = $5, 
+                "paymentMethod" = $6, "cardId" = $7, description = $8, 
+                "isRecurring" = $9, "isSubscription" = $10, "dueDate" = $11
+            WHERE id = $12 AND "userId" = $13 RETURNING *`,
+            [type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, finalDueDate, req.params.id, req.user.id]
+        )
+        if (!updated) return res.status(404).json({ message: 'Transação não encontrada' })
+        res.json(updated)
+    } catch (err) {
+        console.error('Erro ao atualizar transação:', err)
+        res.status(500).json({ message: 'Erro ao atualizar transação' })
+    }
+})
+
 // Delete a transaction
 router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
     try {
