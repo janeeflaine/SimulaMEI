@@ -358,6 +358,24 @@ export default function Dashboard() {
                     </div>
                 </div>
 
+                {/* Trial Expiration Alert */}
+                {user?.trialExpired && user?.plan === 'Gratuito' && (
+                    <div className="due-alert-banner trial-expired">
+                        <div className="alert-icon-ring" style={{ background: '#fee2e2' }}>
+                            <AlertCircle size={20} color="#ef4444" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <strong style={{ display: 'block', color: '#991b1b' }}>Seu período de avaliação terminou</strong>
+                            <span style={{ fontSize: '0.875rem', color: '#b91c1c' }}>
+                                Para continuar usando os recursos premium (Finanças, Alertas e Gráficos), faça o upgrade para o plano Ouro.
+                            </span>
+                        </div>
+                        <Link to="/planos" className="btn btn-primary btn-sm" style={{ background: '#ef4444', border: 'none' }}>
+                            Fazer Upgrade
+                        </Link>
+                    </div>
+                )}
+
                 {/* Critical Notifications */}
                 {showDueTodayAlert && dueTodayBills.length > 0 && (
                     <div className="due-alert-banner">

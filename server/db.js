@@ -255,6 +255,16 @@ const seedDefaults = async () => {
       await pool.query(`INSERT INTO mei_limits("annualLimit", "warningPercentage", "dangerPercentage") VALUES(81000, 70, 90)`)
     }
 
+    // Default System Settings for Trial
+    const trialEnabled = await pool.query("SELECT * FROM system_settings WHERE key = 'trial_enabled'")
+    if (trialEnabled.rows.length === 0) {
+      await pool.query("INSERT INTO system_settings (key, value) VALUES ('trial_enabled', 'false')")
+    }
+    const trialDays = await pool.query("SELECT * FROM system_settings WHERE key = 'trial_days'")
+    if (trialDays.rows.length === 0) {
+      await pool.query("INSERT INTO system_settings (key, value) VALUES ('trial_days', '7')")
+    }
+
     // Admin
     const adminCount = await pool.query("SELECT COUNT(*) FROM users WHERE role = 'ADMIN'")
     if (parseInt(adminCount.rows[0].count) === 0) {

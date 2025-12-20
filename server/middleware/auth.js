@@ -44,15 +44,47 @@ const authMiddleware = async (req, res, next) => {
             }
         }
 
+        // Fetch trial settings
+        const settingsResult = await db.query("SELECT key, value FROM system_settings WHERE key IN ('trial_enabled', 'trial_days')")
+        const settings = {}
+        settingsResult.rows.forEach(s => settings[s.key] = s.value)
+
+        // Trial Logic
+        let finalPlan = user.planName || 'Gratuito'
+        let finalPlanId = user.planId ? Number(user.planId) : null
+        let isInTrial = false
+        let trialExpired = false
+
+        if (finalPlan === 'Gratuito' && settings['trial_enabled'] === 'true') {
+            const trialDays = parseInt(settings['trial_days'] || '0')
+            if (trialDays > 0) {
+                const createdAt = new Date(user.createdAt)
+                const now = new Date()
+                const diffTime = Math.abs(now - createdAt)
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+                if (diffDays <= trialDays) {
+                    finalPlan = 'Ouro'
+                    finalPlanId = 3 // Ouro ID
+                    isInTrial = true
+                } else if (diffDays > trialDays && diffDays <= trialDays + 2) {
+                    // Just expired (within last 48h)
+                    trialExpired = true
+                }
+            }
+        }
+
         req.user = {
             id: user.id,
             name: user.name,
             email: user.email,
             role: user.role,
-            plan: user.planName || 'FREE',
-            planId: user.planId ? Number(user.planId) : null,
+            plan: finalPlan,
+            planId: finalPlanId,
             subscriptionStatus: user.subscriptionStatus,
-            planExpiresAt: user.planExpiresAt
+            planExpiresAt: user.planExpiresAt,
+            isInTrial,
+            trialExpired
         }
         next()
     } catch (error) {

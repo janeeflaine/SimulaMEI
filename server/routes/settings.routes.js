@@ -19,7 +19,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
         })
 
         // Ensure defaults if not present (Virtual rows for UI)
-        const expectedKeys = ['MERCADOPAGO_ACCESS_TOKEN']
+        const expectedKeys = ['MERCADOPAGO_ACCESS_TOKEN', 'trial_enabled', 'trial_days']
         const keysPresent = maskedSettings.map(s => s.key)
 
         expectedKeys.forEach(key => {

@@ -41,6 +41,12 @@ router.post('/register', async (req, res) => {
 
         const token = generateToken(user)
 
+        // Trial Logic for New Registration
+        const trialEnabledRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_enabled'")
+        const trialEnabled = trialEnabledRes.rows[0]?.value === 'true'
+        const finalPlan = trialEnabled ? 'Ouro' : 'Gratuito'
+        const finalPlanId = trialEnabled ? 3 : freePlanId
+
         res.status(201).json({
             token,
             user: {
@@ -48,7 +54,9 @@ router.post('/register', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                plan: 'FREE'
+                plan: finalPlan,
+                planId: finalPlanId,
+                isInTrial: trialEnabled
             }
         })
     } catch (error) {
@@ -92,6 +100,34 @@ router.post('/login', async (req, res) => {
 
         const token = generateToken(user)
 
+        // Trial Logic
+        let finalPlan = user.planName || 'Gratuito'
+        let isInTrial = false
+        let trialExpired = false
+
+        if (finalPlan === 'Gratuito') {
+            const trialEnabledRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_enabled'")
+            const trialDaysRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_days'")
+
+            const trialEnabled = trialEnabledRes.rows[0]?.value === 'true'
+            const trialDays = parseInt(trialDaysRes.rows[0]?.value || '0')
+
+            if (trialEnabled && trialDays > 0) {
+                const createdAt = new Date(user.createdAt)
+                const now = new Date()
+                const diffTime = Math.abs(now - createdAt)
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+                if (diffDays <= trialDays) {
+                    finalPlan = 'Ouro'
+                    isInTrial = true
+                } else if (diffDays > trialDays && diffDays <= trialDays + 1) {
+                    // Just expired, can be used for a one-time notification
+                    trialExpired = true
+                }
+            }
+        }
+
         res.json({
             token,
             user: {
@@ -99,8 +135,10 @@ router.post('/login', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                plan: user.planName || 'FREE',
-                planId: user.planId
+                plan: finalPlan,
+                planId: isInTrial ? 3 : user.planId, // 3 is Ouro
+                isInTrial,
+                trialExpired
             }
         })
     } catch (error) {
