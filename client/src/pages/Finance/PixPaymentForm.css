@@ -1,0 +1,240 @@
+.pix-container {
+    max-width: 900px;
+    margin: 2rem auto;
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 2rem;
+    padding: 0 1rem;
+    animation: fadeIn 0.5s ease;
+}
+
+.pix-card {
+    background: var(--slate-800);
+    border: 1px solid var(--slate-700);
+    border-radius: 16px;
+    padding: 2.5rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.pix-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.pix-icon {
+    color: var(--emerald-500);
+    margin-bottom: 1rem;
+}
+
+.pix-title {
+    font-size: 1.75rem;
+    color: #fff;
+    margin-bottom: 0.5rem;
+}
+
+.pix-subtitle {
+    color: var(--slate-400);
+    font-size: 0.95rem;
+}
+
+.pix-error-banner {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+.pix-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.input-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--slate-300);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.input-group input {
+    background: var(--slate-900);
+    border: 1px solid var(--slate-700);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    color: #fff;
+    font-size: 1rem;
+    transition: all 0.2s;
+}
+
+.input-group input:focus {
+    border-color: var(--emerald-500);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+}
+
+.pix-btn-primary {
+    background: var(--emerald-600);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 1rem;
+}
+
+.pix-btn-primary:hover:not(:disabled) {
+    background: var(--emerald-500);
+    transform: translateY(-2px);
+}
+
+.pix-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.pix-qr-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    animation: slideUp 0.4s ease;
+}
+
+.qr-container {
+    background: #fff;
+    padding: 1rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.qr-image {
+    width: 240px;
+    height: 240px;
+    display: block;
+}
+
+.qr-placeholder {
+    width: 240px;
+    height: 240px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #000;
+    font-weight: bold;
+}
+
+.qr-instruction {
+    text-align: center;
+    color: var(--slate-400);
+    font-size: 0.9rem;
+    max-width: 300px;
+    line-height: 1.5;
+}
+
+.pix-summary {
+    width: 100%;
+    background: var(--slate-900);
+    border-radius: 12px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.summary-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.95rem;
+}
+
+.summary-item span {
+    color: var(--slate-400);
+}
+
+.summary-item strong {
+    color: #fff;
+}
+
+.pix-btn-outline {
+    background: transparent;
+    border: 1px solid var(--slate-600);
+    color: var(--slate-300);
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.pix-btn-outline:hover {
+    background: var(--slate-700);
+    color: #fff;
+}
+
+.pix-info-card {
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.1);
+    border-radius: 16px;
+    padding: 2rem;
+    align-self: start;
+}
+
+.pix-info-card h3 {
+    color: var(--emerald-400);
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+}
+
+.pix-info-card p {
+    color: var(--slate-400);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 768px) {
+    .pix-container {
+        grid-template-columns: 1fr;
+    }
+
+    .pix-card {
+        padding: 1.5rem;
+    }
+}

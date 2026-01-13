@@ -16,6 +16,7 @@ import BillsToPay from './pages/Finance/BillsToPay'
 import CreditCards from './pages/Finance/CreditCards'
 import FinanceCategories from './pages/Finance/FinanceCategories'
 import FinancialStatement from './pages/Finance/FinancialStatement'
+import PixPaymentForm from './pages/Finance/PixPaymentForm'
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin'
@@ -60,6 +61,7 @@ function App() {
                             <Route path="/financas/cartoes" element={<CreditCards />} />
                             <Route path="/financas/categorias" element={<FinanceCategories />} />
                             <Route path="/financas/extrato" element={<FinancialStatement />} />
+                            <Route path="/financas/pix" element={<PixPaymentForm />} />
                         </Route>
                     </Route>
 

@@ -115,6 +115,8 @@ const init = async () => {
         "planId" INTEGER NOT NULL REFERENCES plans(id),
         "qrCode" TEXT,
         "qrCodeBase64" TEXT,
+        payer_name TEXT NOT NULL,
+        payer_cpf TEXT NOT NULL,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -211,6 +213,8 @@ const init = async () => {
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "dueDate" TIMESTAMP')
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "cardId" INTEGER REFERENCES credit_cards(id)')
       await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS "imageUrl" TEXT')
+      await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_name TEXT')
+      await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_cpf TEXT')
     } catch (migErr) {
       console.log('Migration note (finance):', migErr.message)
     }
