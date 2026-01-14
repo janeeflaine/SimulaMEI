@@ -292,4 +292,35 @@ router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) =>
     }
 })
 
+// Get monthly cash flow stats for charts (last 6 months)
+router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
+    try {
+        const query = `
+            WITH RECURSIVE last_months AS (
+                SELECT date_trunc('month', CURRENT_DATE) - INTERVAL '5 months' as month_date
+                UNION ALL
+                SELECT month_date + INTERVAL '1 month'
+                FROM last_months
+                WHERE month_date < date_trunc('month', CURRENT_DATE)
+            )
+            SELECT 
+                TO_CHAR(m.month_date, 'Mon') as name,
+                COALESCE(SUM(CASE WHEN t.type = 'RECEITA' THEN t.amount ELSE 0 END), 0) as entrada,
+                COALESCE(SUM(CASE WHEN t.type = 'DESPESA' THEN t.amount ELSE 0 END), 0) as saida
+            FROM last_months m
+            LEFT JOIN finance_transactions t ON 
+                date_trunc('month', t.date) = m.month_date AND 
+                t."userId" = $1 AND 
+                t.status = 'PAID'
+            GROUP BY m.month_date
+            ORDER BY m.month_date ASC
+        `;
+        const { rows } = await db.query(query, [req.user.id]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao buscar estatísticas de fluxo de caixa:', err);
+        res.status(500).json({ message: 'Erro ao buscar dados do gráfico' });
+    }
+});
+
 module.exports = router

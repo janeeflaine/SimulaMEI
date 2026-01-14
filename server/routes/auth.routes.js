@@ -61,7 +61,7 @@ router.post('/register', async (req, res) => {
         })
     } catch (error) {
         console.error('Register error:', error)
-        res.status(500).json({ message: 'Erro ao criar conta' })
+        res.status(500).json({ message: 'Erro ao criar conta', error: error.message })
     }
 })
 
@@ -143,7 +143,7 @@ router.post('/login', async (req, res) => {
         })
     } catch (error) {
         console.error('Login error:', error)
-        res.status(500).json({ message: 'Erro ao fazer login' })
+        res.status(500).json({ message: 'Erro ao fazer login', error: error.message })
     }
 })
 

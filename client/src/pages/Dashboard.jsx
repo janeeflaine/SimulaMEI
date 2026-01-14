@@ -51,6 +51,7 @@ export default function Dashboard() {
     const [userPlan, setUserPlan] = useState(null)
     const [activeAlerts, setActiveAlerts] = useState([])
     const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false)
+    const [cashFlowData, setCashFlowData] = useState([])
 
     // Pagination
     const [simPage, setSimPage] = useState(1)
@@ -78,6 +79,7 @@ export default function Dashboard() {
             if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
                 fetchTransactions()
                 fetchDueTodayBills()
+                fetchCashFlowData()
             }
             if (!userPlan.features?.historico) setLoading(false)
         }
@@ -139,6 +141,21 @@ export default function Dashboard() {
             }
         } catch (error) {
             console.error('Erro ao buscar transações:', error)
+        }
+    }
+
+    const fetchCashFlowData = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/stats/cash-flow', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setCashFlowData(data)
+            }
+        } catch (error) {
+            console.error('Erro ao buscar fluxo de caixa:', error)
         }
     }
 
@@ -223,19 +240,19 @@ export default function Dashboard() {
     }, [transactions])
 
     // Data for Charts
-    const cashFlowData = useMemo(() => {
-        // Simple mock of 6 months based on current total for demo purpose if we don't have enough history
-        // Real implementation would group by month
-        const data = [
-            { name: 'Jan', entrada: 2400, saida: 1400 },
-            { name: 'Fev', entrada: 1398, saida: 2210 },
-            { name: 'Mar', entrada: 9800, saida: 2290 },
-            { name: 'Abr', entrada: 3908, saida: 2000 },
-            { name: 'Mai', entrada: 4800, saida: 2181 },
-            { name: 'Jun', entrada: financialSummary.totalRevenue || 0, saida: financialSummary.totalExpense || 0 },
+    const memoizedCashFlowData = useMemo(() => {
+        if (cashFlowData && cashFlowData.length > 0) return cashFlowData
+
+        // Fallback placeholder while loading or if no data exists
+        return [
+            { name: 'Jan', entrada: 0, saida: 0 },
+            { name: 'Fev', entrada: 0, saida: 0 },
+            { name: 'Mar', entrada: 0, saida: 0 },
+            { name: 'Abr', entrada: 0, saida: 0 },
+            { name: 'Mai', entrada: 0, saida: 0 },
+            { name: 'Jun', entrada: 0, saida: 0 },
         ]
-        return data
-    }, [financialSummary])
+    }, [cashFlowData])
 
     const categoryData = useMemo(() => {
         const categories = {}
@@ -468,7 +485,7 @@ export default function Dashboard() {
                             </div>
                             <div style={{ width: '100%', height: 300 }}>
                                 <ResponsiveContainer>
-                                    <AreaChart data={cashFlowData}>
+                                    <AreaChart data={memoizedCashFlowData}>
                                         <defs>
                                             <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
                                                 <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
@@ -654,6 +671,7 @@ export default function Dashboard() {
                         fetchTransactions()
                         fetchStats()
                         fetchDueTodayBills()
+                        fetchCashFlowData()
                     }}
                 />
             )}
