@@ -56,8 +56,15 @@ export default function BillsToPay() {
     }
 
     const formatDate = (dateString) => {
+        if (!dateString) return '-'
+        if (typeof dateString === 'string' && dateString.length === 10) {
+            const [year, month, day] = dateString.split('-')
+            return `${day}/${month}/${year}`
+        }
         return new Date(dateString).toLocaleDateString('pt-BR')
     }
+
+    const todayString = new Date().toLocaleDateString('sv-SE')
 
     if (!isOuro) {
         return (
@@ -108,9 +115,9 @@ export default function BillsToPay() {
                                 <tbody>
                                     {bills.map((bill) => (
                                         <tr key={bill.id}>
-                                            <td style={{ fontWeight: 'bold', color: new Date(bill.dueDate) < new Date() ? '#ef4444' : 'inherit' }}>
+                                            <td style={{ fontWeight: 'bold', color: bill.dueDate < todayString ? '#ef4444' : 'inherit' }}>
                                                 {formatDate(bill.dueDate)}
-                                                {new Date(bill.dueDate) < new Date() && <span style={{ fontSize: '10px', display: 'block', color: '#ef4444' }}>VENCIDO</span>}
+                                                {bill.dueDate < todayString && <span style={{ fontSize: '10px', display: 'block', color: '#ef4444' }}>VENCIDO</span>}
                                             </td>
                                             <td>{bill.description || 'S/ Descrição'}</td>
                                             <td>

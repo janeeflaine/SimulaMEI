@@ -7,12 +7,12 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
         target: initialData?.target || '', // PERSONAL, BUSINESS
         type: initialData?.type || '', // RECEITA, DESPESA
         amount: initialData?.amount || '',
-        date: initialData?.date ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        date: initialData?.date ? initialData.date.substring(0, 10) : new Date().toLocaleDateString('sv-SE'),
         categoryId: initialData?.categoryId || '',
         paymentMethod: initialData?.paymentMethod || 'Dinheiro',
         cardId: initialData?.cardId || '',
         description: initialData?.description || '',
-        dueDate: initialData?.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : '',
+        dueDate: initialData?.dueDate ? initialData.dueDate.substring(0, 10) : '',
         isRecurring: initialData?.isRecurring || false,
         isSubscription: initialData?.isSubscription || false
     })

@@ -85,8 +85,9 @@ export default function FinancialStatement() {
             const matchTarget = filters.target === 'ALL' || t.target === filters.target
 
             let matchDate = true
-            if (filters.dateStart) matchDate = matchDate && new Date(t.date) >= new Date(filters.dateStart)
-            if (filters.dateEnd) matchDate = matchDate && new Date(t.date) <= new Date(filters.dateEnd + 'T23:59:59')
+            // Date is now YYYY-MM-DD string, so we can compare strings directly
+            if (filters.dateStart) matchDate = matchDate && t.date >= filters.dateStart
+            if (filters.dateEnd) matchDate = matchDate && t.date <= filters.dateEnd
 
             return matchSearch && matchType && matchTarget && matchDate
         })
@@ -103,6 +104,11 @@ export default function FinancialStatement() {
     }
 
     const formatDate = (dateString) => {
+        if (!dateString) return '-'
+        if (typeof dateString === 'string' && dateString.length === 10) {
+            const [year, month, day] = dateString.split('-')
+            return `${day}/${month}/${year}`
+        }
         return new Date(dateString).toLocaleDateString('pt-BR')
     }
 

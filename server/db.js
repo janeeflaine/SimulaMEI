@@ -1,4 +1,6 @@
-const { Pool } = require('pg')
+const { Pool, types } = require('pg')
+// Force pg to return DATE columns as strings (YYYY-MM-DD) instead of JS Date objects
+types.setTypeParser(1082, (stringValue) => stringValue)
 require('dotenv').config()
 
 const isProduction = process.env.NODE_ENV === 'production'
@@ -217,6 +219,17 @@ const init = async () => {
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_cpf TEXT')
     } catch (migErr) {
       console.log('Migration note (finance):', migErr.message)
+    }
+
+    // Fix Date Offset Bug (Phase 23) - Migrate TIMESTAMP to DATE
+    try {
+      console.log('🔄 Migrating TIMESTAMP columns to DATE...')
+      await pool.query('ALTER TABLE finance_transactions ALTER COLUMN date TYPE DATE')
+      await pool.query('ALTER TABLE finance_transactions ALTER COLUMN "dueDate" TYPE DATE')
+      await pool.query('ALTER TABLE bills_to_pay ALTER COLUMN "dueDate" TYPE DATE')
+      console.log('✅ Date columns migrated successfully')
+    } catch (dateMigErr) {
+      console.log('Date migration note:', dateMigErr.message)
     }
 
     console.log('✅ Database Schema Synced')

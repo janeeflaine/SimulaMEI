@@ -13,6 +13,8 @@
         "dev": "concurrently \"cd server && npm run dev\" \"cd client && npm run dev\""
     },
     "dependencies": {
-        "concurrently": "^8.0.0"
+        "concurrently": "^8.0.0",
+        "dotenv": "^17.2.3",
+        "pg": "^8.17.1"
     }
 }

@@ -273,6 +273,13 @@ export default function Dashboard() {
     }
 
     const formatDate = (dateString) => {
+        if (!dateString) return '-'
+        // Handle YYYY-MM-DD key specifically to avoid timezone shifts
+        if (typeof dateString === 'string' && dateString.length === 10 && dateString.includes('-')) {
+            const [year, month, day] = dateString.split('-')
+            return `${day}/${month}/${year}`
+        }
+        // Fallback for timestamps (simulations)
         return new Date(dateString).toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: '2-digit',
