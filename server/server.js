@@ -1,79 +1,97 @@
-const express = require('express')
-const cors = require('cors')
-const path = require('path')
-require('dotenv').config()
+const router = require('express').Router()
+const { pool } = require('../db')
+const authMiddleware = require('../middleware/auth')
 
-const { init } = require('./db')
+// Aplicar autenticação em todas as rotas de família
+router.use(authMiddleware)
 
-// Inicialização Assíncrona do Banco de Dados
-const startServer = async () => {
+// LISTAR UNIDADES (MEIs) DA FAMÍLIA
+router.get('/units', async (req, res) => {
     try {
-        console.log('⏳ Inicializando banco de dados...')
-        await init()
-        console.log('✅ Banco de dados conectado.')
+        const userId = req.user.id
+        const result = await pool.query(`
+            SELECT b.*, p.role 
+            FROM "business_units" b
+            JOIN "user_permissions" p ON b."id" = p."businessUnitId"
+            WHERE p."userId" = $1
+            ORDER BY b."id" ASC
+        `, [userId])
 
-        const app = express()
-        const PORT = process.env.PORT || 3001
-
-        // Middlewares
-        app.use(cors())
-        app.use(express.json({ limit: '10mb' }))
-        app.use(express.urlencoded({ limit: '10mb', extended: true }))
-
-        // Importação de Rotas (Sem duplicatas)
-        const authRoutes = require('./routes/auth.routes')
-        const simulationRoutes = require('./routes/simulation.routes')
-        const adminRoutes = require('./routes/admin.routes')
-        const planRoutes = require('./routes/plan.routes')
-        const paymentRoutes = require('./routes/payments.routes')
-        const settingsRoutes = require('./routes/settings.routes')
-        const alertRoutes = require('./routes/alert.routes')
-        const financeRoutes = require('./routes/finance.routes')
-        const familyRoutes = require('./routes/family.routes')
-
-        // Registro de APIs
-        app.use('/api/auth', authRoutes)
-        app.use('/api/simulate', simulationRoutes)
-        app.use('/api/simulations', simulationRoutes)
-        app.use('/api/admin', adminRoutes)
-        app.use('/api/plans', planRoutes)
-        app.use('/api/payments', paymentRoutes)
-        app.use('/api/settings', settingsRoutes)
-        app.use('/api/alerts', alertRoutes)
-        app.use('/api/finance', financeRoutes)
-        app.use('/api/family', familyRoutes)
-
-        // Health check
-        app.get('/api/health', (req, res) => {
-            res.json({ status: 'ok', timestamp: new Date().toISOString() })
-        })
-
-        // Servir arquivos estáticos do Frontend
-        const clientBuildPath = path.join(__dirname, '../client/dist')
-        app.use(express.static(clientBuildPath))
-
-        // Catch-all para SPA (React/Vite)
-        app.get(/.*/, (req, res) => {
-            if (req.path.startsWith('/api')) {
-                return res.status(404).json({ message: 'API Route not found' })
-            }
-            res.sendFile(path.join(clientBuildPath, 'index.html'))
-        })
-
-        // Tratamento de Erros
-        app.use((err, req, res, next) => {
-            console.error(err.stack)
-            res.status(500).json({ message: 'Erro interno do servidor' })
-        })
-
-        app.listen(PORT, () => {
-            console.log(`🚀 Servidor rodando com sucesso na porta ${PORT}`)
-        })
-
-    } catch (err) {
-        console.error('❌ Falha crítica na inicialização:', err)
-        process.exit(1)
+        res.json(result.rows)
+    } catch (error) {
+        console.error('Erro ao buscar unidades:', error)
+        res.status(500).json({ message: 'Erro ao buscar unidades de negócio' })
     }
-}
+})
 
-startServer()
+// CADASTRAR NOVA MEI FAMILIAR
+router.post('/units', async (req, res) => {
+    const client = await pool.connect()
+    try {
+        const { name, cnpj } = req.body
+        const userId = req.user.id
+
+        await client.query('BEGIN')
+
+        const unitRes = await client.query(`
+            INSERT INTO "business_units" ("ownerId", "name", "cnpj", "isPrimary")
+            VALUES ($1, $2, $3, false)
+            RETURNING id, name
+        `, [userId, name, cnpj])
+
+        const newUnitId = unitRes.rows[0].id
+
+        await client.query(`
+            INSERT INTO "user_permissions" ("userId", "businessUnitId", "role")
+            VALUES ($1, $2, 'OWNER')
+        `, [userId, newUnitId])
+
+        await client.query('COMMIT')
+
+        res.status(201).json({
+            message: 'Unidade de Negócio familiar criada com sucesso',
+            unit: unitRes.rows[0]
+        })
+    } catch (error) {
+        await client.query('ROLLBACK')
+        console.error('Erro ao criar unidade:', error)
+        res.status(500).json({ message: 'Erro ao criar unidade de negócio' })
+    } finally {
+        client.release()
+    }
+})
+
+// CONSULTA DE FATURAMENTO CONSOLIDADO
+router.get('/consolidated', async (req, res) => {
+    try {
+        const userId = req.user.id
+
+        const result = await pool.query(`
+            SELECT 
+                b."id", 
+                b."name", 
+                COALESCE(SUM(CASE WHEN t."type" = 'RECEITA' THEN t."amount" ELSE 0 END), 0) as "currentRevenue"
+            FROM "business_units" b
+            JOIN "user_permissions" p ON b."id" = p."businessUnitId"
+            LEFT JOIN "finance_transactions" t ON b."id" = t."businessUnitId"
+            WHERE p."userId" = $1
+            GROUP BY b."id"
+        `, [userId])
+
+        const units = result.rows
+        const totalFamilyRevenue = units.reduce((acc, u) => acc + parseFloat(u.currentRevenue), 0)
+
+        res.json({
+            units,
+            totalFamilyRevenue,
+            clusterCount: units.length,
+            combinedLimit: units.length * 81000
+        })
+
+    } catch (error) {
+        console.error('Erro na consolidação:', error)
+        res.status(500).json({ message: 'Erro ao calcular faturamento consolidado' })
+    }
+})
+
+module.exports = router
