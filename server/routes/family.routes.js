@@ -1,11 +1,6 @@
 const router = require('express').Router()
-<<<<<<< HEAD
 const { pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
-=======
-const { pool } = require('../db') // Garanta que seu db.js exporta o 'pool'
-const authMiddleware = require('../middleware/auth.middleware')
->>>>>>> 49062d847291f70b25cb657c045a6bdd1e557a8c
 
 // Aplicar autenticação em todas as rotas de família
 router.use(authMiddleware)
