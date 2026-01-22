@@ -40,6 +40,32 @@ const init = async () => {
       );
     `)
 
+    // Business Units (MEIs) - New Multi-Tenant Root
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS business_units (
+        id SERIAL PRIMARY KEY,
+        "ownerId" INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL, -- Razão Social or "Personal"
+        document TEXT, -- CNPJ or CPF
+        "openedAt" DATE,
+        "taxLimit" REAL DEFAULT 81000,
+        "accumulatedRevenue" REAL DEFAULT 0,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    // User Permissions (Collaboration)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_permissions (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        "businessUnitId" INTEGER NOT NULL REFERENCES business_units(id),
+        role TEXT DEFAULT 'VIEWER' CHECK(role IN ('OWNER', 'ADMIN', 'VIEWER')),
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
     // Plans Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS plans (
@@ -230,6 +256,51 @@ const init = async () => {
       console.log('✅ Date columns migrated successfully')
     } catch (dateMigErr) {
       console.log('Date migration note:', dateMigErr.message)
+    }
+
+    // MULTI-TENANT MIGRATION (Phase 30)
+    // 1. Add businessUnitId columns if not exist
+    try {
+      console.log('🔄 Checking Multi-Tenant Schema...')
+      await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "businessUnitId" INTEGER REFERENCES business_units(id)')
+      await pool.query('ALTER TABLE bills_to_pay ADD COLUMN IF NOT EXISTS "businessUnitId" INTEGER REFERENCES business_units(id)')
+      await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "migratedToTenant" BOOLEAN DEFAULT FALSE')
+
+      // 2. Migrate Orhpan Data: Create Default "Personal" Unit for existing users and assign transactions
+      // Find users who have NO business units
+      const usersWithoutUnits = await pool.query(`
+            SELECT u.id, u.name FROM users u 
+            WHERE NOT EXISTS (SELECT 1 FROM business_units b WHERE b."ownerId" = u.id)
+        `)
+
+      if (usersWithoutUnits.rows.length > 0) {
+        console.log(`🚀 Migrating ${usersWithoutUnits.rows.length} users to Multi-Tenant structure...`)
+        for (const user of usersWithoutUnits.rows) {
+          // Create Default Unit
+          const newUnit = await pool.query(`
+                    INSERT INTO business_units ("ownerId", name, "taxLimit") 
+                    VALUES ($1, $2, 81000) 
+                    RETURNING id`,
+            [user.id, `${user.name} (Principal)`]
+          )
+          const unitId = newUnit.rows[0].id
+
+          // Assign OWNER permission
+          await pool.query(`
+                    INSERT INTO user_permissions ("userId", "businessUnitId", role)
+                    VALUES ($1, $2, 'OWNER')`,
+            [user.id, unitId]
+          )
+
+          // Update Transactions
+          await pool.query(`UPDATE finance_transactions SET "businessUnitId" = $1 WHERE "userId" = $2 AND "businessUnitId" IS NULL`, [unitId, user.id])
+          await pool.query(`UPDATE bills_to_pay SET "businessUnitId" = $1 WHERE "userId" = $2 AND "businessUnitId" IS NULL`, [unitId, user.id])
+
+          console.log(`✅ User ${user.id} migrated to Unit ${unitId}`)
+        }
+      }
+    } catch (mtMigErr) {
+      console.error('❌ Multi-Tenant Migration Error:', mtMigErr)
     }
 
     console.log('✅ Database Schema Synced')

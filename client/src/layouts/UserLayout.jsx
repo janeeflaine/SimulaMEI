@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import TenantSwitcher from '../components/Family/TenantSwitcher'
 import './UserLayout.css'
 
 export default function UserLayout() {
@@ -43,6 +44,7 @@ export default function UserLayout() {
 
                             {user ? (
                                 <>
+                                    <TenantSwitcher />
                                     <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>
                                         📊 Dashboard
                                     </Link>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useTenant } from '../../context/TenantContext'
 import FeatureLock from '../../components/FeatureLock'
 import {
     FileText,
@@ -21,6 +22,7 @@ import './FinancialStatement.css'
 
 export default function FinancialStatement() {
     const { user } = useAuth()
+    const { currentTenant } = useTenant()
     const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -36,14 +38,21 @@ export default function FinancialStatement() {
     const rowsPerPage = 15
 
     useEffect(() => {
-        fetchTransactions()
-    }, [])
+        if (currentTenant) {
+            fetchTransactions()
+        }
+    }, [currentTenant])
 
     const fetchTransactions = async () => {
         try {
             const token = localStorage.getItem('token')
+            if (!currentTenant) return
+
             const res = await fetch('/api/finance/transactions', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-tenant-id': currentTenant.id
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -63,7 +72,10 @@ export default function FinancialStatement() {
             const token = localStorage.getItem('token')
             const res = await fetch(`/api/finance/transactions/${id}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-tenant-id': currentTenant.id
+                }
             })
             if (res.ok) {
                 setTransactions(prev => prev.filter(t => t.id !== id))

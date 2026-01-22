@@ -33,7 +33,20 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/plans', planRoutes)
 app.use('/api/payments', paymentRoutes)
 app.use('/api/alerts', alertRoutes)
+const alertRoutes = require('./routes/alert.routes')
+const financeRoutes = require('./routes/finance.routes')
+const familyRoutes = require('./routes/family.routes')
+
+app.use('/api/settings', settingsRoutes)
+app.use('/api/auth', authRoutes)
+app.use('/api/simulate', simulationRoutes)
+app.use('/api/simulations', simulationRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/plans', planRoutes)
+app.use('/api/payments', paymentRoutes)
+app.use('/api/alerts', alertRoutes)
 app.use('/api/finance', financeRoutes)
+app.use('/api/family', familyRoutes)
 
 
 // Health check

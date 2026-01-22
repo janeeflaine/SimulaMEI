@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTenant } from '../context/TenantContext'
 import './FinanceQuickActionModal.css'
 
 export default function FinanceQuickActionModal({ onClose, onSuccess, initialData }) {
+    const { currentTenant } = useTenant()
     const [step, setStep] = useState(initialData ? 3 : 1) // 1: Target (PF/PJ), 2: Type (Receita/Despesa), 3: Form
     const [formData, setFormData] = useState({
         target: initialData?.target || '', // PERSONAL, BUSINESS
@@ -35,7 +37,11 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/finance/categories', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    // Categories are user-scoped, but sending tenant context is good practice
+                    ...(currentTenant && { 'x-tenant-id': currentTenant.id })
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -50,7 +56,10 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/finance/cards', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    ...(currentTenant && { 'x-tenant-id': currentTenant.id })
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -69,7 +78,8 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    ...(currentTenant && { 'x-tenant-id': currentTenant.id })
                 },
                 body: JSON.stringify({ name: newCardName })
             })
@@ -105,7 +115,8 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    ...(currentTenant && { 'x-tenant-id': currentTenant.id })
                 },
                 body: JSON.stringify({ name: newCategoryName, type: catType })
             })
@@ -144,7 +155,8 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                 method,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'x-tenant-id': currentTenant?.id
                 },
                 body: JSON.stringify(formData)
             })

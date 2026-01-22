@@ -1,7 +1,8 @@
 const express = require('express')
 const router = express.Router()
 const { db } = require('../db')
-const { authMiddleware } = require('../middleware/auth')
+const { authMiddleware } = require('../middleware/auth.middleware') // Fixed import path assumption if needed, likely just '../middleware/auth' based on previous file
+const checkTenant = require('../middleware/tenant')
 
 // Utility to ensure only Ouro plan users can change data
 const ouroOnly = (req, res, next) => {
@@ -115,16 +116,16 @@ router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
 
 // --- BILLS (CONTAS A PAGAR) ---
 
-router.get('/bills', authMiddleware, async (req, res) => {
+router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
     try {
         const { rows } = await db.query(`
             SELECT b.*, c.name as "categoryName", cr.name as "cardName"
             FROM bills_to_pay b
             LEFT JOIN finance_categories c ON b."categoryId" = c.id
             LEFT JOIN credit_cards cr ON b."cardId" = cr.id
-            WHERE b."userId" = $1
+            WHERE b."businessUnitId" = $1
             ORDER BY b."dueDate" ASC
-        `, [req.user.id])
+        `, [req.tenant.id])
         res.json(rows)
     } catch (err) {
         console.error(err)
@@ -132,12 +133,12 @@ router.get('/bills', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/bills', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/bills', authMiddleware, checkTenant, ouroOnly, async (req, res) => {
     const { description, amount, dueDate, categoryId, cardId } = req.body
     try {
         const { rows: [newBill] } = await db.query(
-            'INSERT INTO bills_to_pay ("userId", description, amount, "dueDate", "categoryId", "cardId") VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [req.user.id, description, amount, dueDate, categoryId, cardId]
+            'INSERT INTO bills_to_pay ("userId", "businessUnitId", description, amount, "dueDate", "categoryId", "cardId") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+            [req.user.id, req.tenant.id, description, amount, dueDate, categoryId, cardId]
         )
         res.json(newBill)
     } catch (err) {
@@ -172,16 +173,16 @@ router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
 
 // --- TRANSACTIONS ---
 
-router.get('/transactions', authMiddleware, async (req, res) => {
+router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
     try {
         const { rows } = await db.query(
             `SELECT t.*, c.name as "categoryName", cr.name as "cardName" 
              FROM finance_transactions t 
              LEFT JOIN finance_categories c ON t."categoryId" = c.id 
              LEFT JOIN credit_cards cr ON t."cardId" = cr.id
-             WHERE t."userId" = $1 
+             WHERE t."businessUnitId" = $1 
              ORDER BY t.date DESC`,
-            [req.user.id]
+            [req.tenant.id]
         )
         res.json(rows)
     } catch (err) {
@@ -190,7 +191,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/transactions', authMiddleware, checkTenant, ouroOnly, async (req, res) => {
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
 
     // Normalize empty strings to null for ID and date columns
@@ -204,9 +205,9 @@ router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
     try {
         const { rows: [newTransaction] } = await db.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate") 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-            [req.user.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate]
+            ("userId", "businessUnitId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+            [req.user.id, req.tenant.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate]
         )
         res.json(newTransaction)
     } catch (err) {
@@ -293,7 +294,7 @@ router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) =>
 })
 
 // Get monthly cash flow stats for charts (last 6 months)
-router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
+router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => {
     try {
         const query = `
             WITH RECURSIVE last_months AS (
@@ -310,12 +311,12 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
             FROM last_months m
             LEFT JOIN finance_transactions t ON 
                 date_trunc('month', t.date) = m.month_date AND 
-                t."userId" = $1 AND 
+                t."businessUnitId" = $1 AND 
                 t.status = 'PAID'
             GROUP BY m.month_date
             ORDER BY m.month_date ASC
         `;
-        const { rows } = await db.query(query, [req.user.id]);
+        const { rows } = await db.query(query, [req.tenant.id]);
         res.json(rows);
     } catch (err) {
         console.error('Erro ao buscar estatísticas de fluxo de caixa:', err);
