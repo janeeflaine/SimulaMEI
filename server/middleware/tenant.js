@@ -11,25 +11,34 @@ const checkTenant = async (req, res, next) => {
         // Get Tenant ID from Header, Body, or Query
         let tenantId = req.headers['x-business-unit-id'] || req.headers['x-tenant-id'] || req.body.businessUnitId || req.query.businessUnitId
 
+
         // Auto-resolve if no tenantId provided (Fallback to Primary)
-        if (!tenantId) {
+        if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
+            console.log(`⚠️ Tenant Middleware: Nenhum ID fornecido. Tentando fallback para usuário ${userId}...`)
+
+            // 1. Tenta encontrar a Principal
             const primaryRes = await pool.query(`
                 SELECT id FROM business_units WHERE "ownerId" = $1 AND "isPrimary" = true LIMIT 1
             `, [userId])
 
             if (primaryRes.rows.length > 0) {
                 tenantId = primaryRes.rows[0].id
+                // console.log(`✅ Fallback: Usando unidade Principal (${tenantId})`)
             } else {
-                // Try finding any unit
+                // 2. Tenta encontrar QUALQUER uma
                 const anyRes = await pool.query(`
-                    SELECT id FROM business_units WHERE "ownerId" = $1 LIMIT 1
+                    SELECT id FROM business_units WHERE "ownerId" = $1 ORDER BY id ASC LIMIT 1
                 `, [userId])
-                if (anyRes.rows.length > 0) tenantId = anyRes.rows[0].id
+                if (anyRes.rows.length > 0) {
+                    tenantId = anyRes.rows[0].id
+                    // console.log(`⚠️ Fallback: Usando primeira unidade disponível (${tenantId})`)
+                }
             }
         }
 
         if (!tenantId) {
-            return res.status(400).json({ message: 'Nenhuma Empresa/MEI selecionada e nenhuma encontrada.' })
+            console.warn(`❌ Tenant Middleware: Nenhuma unidade encontrada para usuário ${userId}.`)
+            return res.status(400).json({ message: 'Crie sua primeira MEI/Empresa para começar.', code: 'NO_UNIT_FOUND' })
         }
 
         if (tenantId === 'consolidated') {
