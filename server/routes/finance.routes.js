@@ -199,7 +199,7 @@ router.get('/transactions/due-today', authMiddleware, checkTenant, async (req, r
         res.json(rows)
     } catch (err) {
         console.error('Erro ao buscar contas vencendo hoje:', err)
-        res.status(500).json({ message: 'Erro ao buscar contas do dia' })
+        res.status(500).json({ message: 'Erro ao buscar contas do dia', error: err.message })
     }
 })
 
@@ -232,7 +232,7 @@ router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
         res.json(rows)
     } catch (err) {
         console.error('Erro transactions:', err)
-        res.status(500).json({ message: 'Erro ao buscar transações' })
+        res.status(500).json({ message: 'Erro ao buscar transações', error: err.message, stack: err.stack })
     }
 })
 
@@ -343,7 +343,7 @@ router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => 
         res.json(rows);
     } catch (err) {
         console.error('Erro no gráfico:', err);
-        res.status(500).json({ message: 'Erro ao buscar dados do gráfico' });
+        res.status(500).json({ message: 'Erro ao buscar dados do gráfico', error: err.message });
     }
 });
 
