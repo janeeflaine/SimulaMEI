@@ -1,6 +1,6 @@
 const router = require('express').Router()
 const { pool } = require('../db')
-const authMiddleware = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 
 router.use(authMiddleware)
 
