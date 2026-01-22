@@ -1,6 +1,6 @@
 {
     "name": "simulamei-monorepo",
-    "description": "MEI Management Platform - Multi-Tenant Refactor",
+    "description": "MEI Management Platform - Multi-Tenant Refactor (Validation)",
     "version": "1.0.0",
     "private": true,
     "engines": {

@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { db } = require('../db')
-const { authMiddleware } = require('../middleware/auth.middleware') // Fixed import path assumption if needed, likely just '../middleware/auth' based on previous file
+const { authMiddleware } = require('../middleware/auth')
 const checkTenant = require('../middleware/tenant')
 
 // Utility to ensure only Ouro plan users can change data

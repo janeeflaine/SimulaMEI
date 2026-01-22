@@ -18,6 +18,12 @@ export function TenantProvider({ children }) {
             return
         }
 
+        // HOTFIX: Prevent infinite loop
+        if (currentTenant && tenants.length > 0) {
+            setLoading(false)
+            return
+        }
+
         const fetchTenants = async () => {
             try {
                 const token = localStorage.getItem('token')

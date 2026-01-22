@@ -5,8 +5,21 @@ require('dotenv').config()
 
 const { init } = require('./db')
 
+<<<<<<< HEAD
+    // Initialize DB
+    (async () => {
+        try {
+            console.log('⏳ Inicializando aplicação...')
+            await init()
+            console.log('✅ Banco de dados inicializado.')
+        } catch (err) {
+            console.error('❌ Falha na inicialização do banco:', err)
+        }
+    })()
+=======
 init()
 
+>>>>>>> 49062d847291f70b25cb657c045a6bdd1e557a8c
 const authRoutes = require('./routes/auth.routes')
 const simulationRoutes = require('./routes/simulation.routes')
 const adminRoutes = require('./routes/admin.routes')
@@ -23,6 +36,12 @@ const PORT = process.env.PORT || 3001
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))
+<<<<<<< HEAD
+const alertRoutes = require('./routes/alert.routes')
+const financeRoutes = require('./routes/finance.routes')
+const familyRoutes = require('./routes/family.routes')
+
+=======
 
 app.use('/api/auth', authRoutes)
 app.use('/api/simulate', simulationRoutes)
@@ -30,6 +49,7 @@ app.use('/api/simulations', simulationRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/plans', planRoutes)
 app.use('/api/payments', paymentRoutes)
+>>>>>>> 49062d847291f70b25cb657c045a6bdd1e557a8c
 app.use('/api/settings', settingsRoutes)
 app.use('/api/alerts', alertRoutes)
 app.use('/api/finance', financeRoutes)
@@ -55,5 +75,10 @@ app.use((err, req, res, next) => {
 })
 
 app.listen(PORT, () => {
+<<<<<<< HEAD
+    console.log(`✅ Servidor ouvindo na porta ${PORT}`)
+    console.log(`🚀 API Pronta: http://localhost:${PORT}`)
+=======
     console.log('🚀 Servidor rodando com sucesso na porta ' + PORT)
+>>>>>>> 49062d847291f70b25cb657c045a6bdd1e557a8c
 })
