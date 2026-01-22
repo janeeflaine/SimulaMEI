@@ -1,112 +1,98 @@
 const router = require('express').Router()
-const { pool } = require('../db')
-const authMiddleware = require('../middleware/auth.middleware') // Assuming this exists based on partial file reads
+const { pool } = require('../db') // Garanta que seu db.js exporta o 'pool'
+const authMiddleware = require('../middleware/auth.middleware')
 
-// Apply Auth to all routes
-// We can't apply checkTenant globally here because some routes (like 'list') don't need a specific tenant yet
-router.use(async (req, res, next) => {
-    // Basic Auth Middleware placeholder usage
-    // In real app, import the actual auth middleware
-    // ensuring req.user is populated
-    next()
-})
+// Aplicar autenticação em todas as rotas de família
+router.use(authMiddleware)
 
-// RE-IMPORT Auth Middleware correctly if previous assumption was loose.
-// Based on file list, it's likely 'middleware/auth.middleware.js' or similar. 
-// I will assume the caller applies the standard auth middleware in server.js before this router
-// OR I should use it here. Let's try to verify if I can just use it.
-// Checking file listing: `middleware` folder exists. 
-
-// LIST TASKS
-// Get all Business Units for the current user
+// LISTAR UNIDADES (MEIs) DA FAMÍLIA
 router.get('/units', async (req, res) => {
     try {
         const userId = req.user.id
         const result = await pool.query(`
             SELECT b.*, p.role 
-            FROM business_units b
-            JOIN user_permissions p ON b.id = p."businessUnitId"
+            FROM "business_units" b
+            JOIN "user_permissions" p ON b."id" = p."businessUnitId"
             WHERE p."userId" = $1
-            ORDER BY b.id ASC
+            ORDER BY b."id" ASC
         `, [userId])
 
         res.json(result.rows)
     } catch (error) {
-        console.error(error)
-        res.status(500).json({ message: 'Error fetching business units' })
+        console.error('Erro ao buscar unidades:', error)
+        res.status(500).json({ message: 'Erro ao buscar unidades de negócio' })
     }
 })
 
-// CREATE UNIT
-// Add a new MEI/Business Unit
+// CADASTRAR NOVA MEI FAMILIAR
 router.post('/units', async (req, res) => {
     const client = await pool.connect()
     try {
-        const { name, document, taxLimit } = req.body
+        const { name, cnpj } = req.body
         const userId = req.user.id
 
         await client.query('BEGIN')
 
-        // 1. Create Unit
+        // 1. Inserir a nova unidade (Usando os nomes corretos do banco)
         const unitRes = await client.query(`
-            INSERT INTO business_units ("ownerId", name, document, "taxLimit")
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO "business_units" ("ownerId", "name", "cnpj", "isPrimary")
+            VALUES ($1, $2, $3, false)
             RETURNING id, name
-        `, [userId, name, document, taxLimit || 81000])
+        `, [userId, name, cnpj])
 
         const newUnitId = unitRes.rows[0].id
 
-        // 2. Assign Owner Permission
+        // 2. Atribuir permissão de DONO
         await client.query(`
-            INSERT INTO user_permissions ("userId", "businessUnitId", role)
+            INSERT INTO "user_permissions" ("userId", "businessUnitId", "role")
             VALUES ($1, $2, 'OWNER')
         `, [userId, newUnitId])
 
         await client.query('COMMIT')
 
         res.status(201).json({
-            message: 'Business Unit created successfully',
+            message: 'Unidade de Negócio familiar criada com sucesso',
             unit: unitRes.rows[0]
         })
     } catch (error) {
         await client.query('ROLLBACK')
-        console.error(error)
-        res.status(500).json({ message: 'Error creating business unit' })
+        console.error('Erro ao criar unidade:', error)
+        res.status(500).json({ message: 'Erro ao criar unidade de negócio' })
     } finally {
         client.release()
     }
 })
 
-// CONSOLIDATED REVENUE
-// Get aggregated info for Dashboard
+// CONSULTA DE FATURAMENTO CONSOLIDADO (A soma dos 162 mil)
 router.get('/consolidated', async (req, res) => {
     try {
         const userId = req.user.id
 
-        const units = await pool.query(`
+        const result = await pool.query(`
             SELECT 
-                b.id, 
-                b.name, 
-                b."taxLimit",
-                COALESCE(SUM(case when t.type = 'RECEITA' then t.amount else 0 end), 0) as "currentRevenue"
-            FROM business_units b
-            JOIN user_permissions p ON b.id = p."businessUnitId"
-            LEFT JOIN finance_transactions t ON b.id = t."businessUnitId"
+                b."id", 
+                b."name", 
+                COALESCE(SUM(CASE WHEN t."type" = 'RECEITA' THEN t."amount" ELSE 0 END), 0) as "currentRevenue"
+            FROM "business_units" b
+            JOIN "user_permissions" p ON b."id" = p."businessUnitId"
+            LEFT JOIN "finance_transactions" t ON b."id" = t."businessUnitId"
             WHERE p."userId" = $1
-            GROUP BY b.id
+            GROUP BY b."id"
         `, [userId])
 
-        const totalRevenue = units.rows.reduce((acc, u) => acc + parseFloat(u.currentRevenue), 0)
+        const units = result.rows
+        const totalFamilyRevenue = units.reduce((acc, u) => acc + parseFloat(u.currentRevenue), 0)
 
         res.json({
-            units: units.rows,
-            totalFamilyRevenue: totalRevenue,
-            clusterCount: units.rows.length
+            units,
+            totalFamilyRevenue,
+            clusterCount: units.length,
+            combinedLimit: units.length * 81000
         })
 
     } catch (error) {
-        console.error(error)
-        res.status(500).json({ message: 'Error calculating consolidated revenue' })
+        console.error('Erro na consolidação:', error)
+        res.status(500).json({ message: 'Erro ao calcular faturamento consolidado' })
     }
 })
 
