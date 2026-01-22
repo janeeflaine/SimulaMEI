@@ -116,8 +116,8 @@ router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
 
         // Fallback de segurança: Se não houver tenant, busca tudo do usuário (evita erro 500)
         if (!req.tenant || !req.tenant.id) {
-             query += ` WHERE b."userId" = $1`
-             params.push(req.user.id)
+            query += ` WHERE b."userId" = $1`
+            params.push(req.user.id)
         } else if (req.tenant.id === 'consolidated') {
             query += ` WHERE b."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
             params.push(req.user.id)
@@ -174,6 +174,35 @@ router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // --- TRANSAÇÕES (Corrige o erro 500) ---
+router.get('/transactions/due-today', authMiddleware, checkTenant, async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+
+        // CORREÇÃO: Usar a conexão do DB correta (db.query) e incluir filtro de status
+        let query = `
+            SELECT b.*, c.name as "categoryName"
+            FROM bills_to_pay b
+            LEFT JOIN finance_categories c ON b."categoryId" = c.id
+            WHERE b."dueDate" = $1 AND b.status != 'PAID'
+        `
+        const params = [today]
+
+        if (req.tenant.id === 'consolidated') {
+            query += ` AND b."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $2)`
+            params.push(req.user.id)
+        } else {
+            query += ` AND b."businessUnitId" = $2`
+            params.push(req.tenant.id)
+        }
+
+        const { rows } = await db.query(query, params)
+        res.json(rows)
+    } catch (err) {
+        console.error('Erro ao buscar contas vencendo hoje:', err)
+        res.status(500).json({ message: 'Erro ao buscar contas do dia' })
+    }
+})
+
 router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
     try {
         let query = `
@@ -187,8 +216,8 @@ router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
 
         // Lógica Blindada: Se req.tenant for nulo, busca pelo usuário
         if (!req.tenant || !req.tenant.id) {
-             query += ` WHERE t."userId" = $1`
-             params.push(req.user.id)
+            query += ` WHERE t."userId" = $1`
+            params.push(req.user.id)
         } else if (req.tenant.id === 'consolidated') {
             query += ` WHERE t."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
             params.push(req.user.id)
@@ -211,7 +240,7 @@ router.post('/transactions', authMiddleware, checkTenant, ouroOnly, async (req, 
     if (req.tenant.id === 'consolidated') return res.status(400).json({ message: 'Selecione uma empresa específica.' })
 
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
-    
+
     // Normalização de dados
     const finalCategoryId = categoryId || null
     const finalCardId = paymentMethod === 'Cartão de Crédito' ? (cardId || null) : null
@@ -246,7 +275,7 @@ router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, 
 
 router.patch('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
-    
+
     const finalCategoryId = categoryId || null
     const finalCardId = paymentMethod === 'Cartão de Crédito' ? (cardId || null) : null
     const finalDueDate = dueDate || null
@@ -303,9 +332,9 @@ router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => 
             LEFT JOIN finance_transactions t ON 
                 date_trunc('month', t.date) = m.month_date AND 
                 ${isConsolidated
-                    ? `t."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
-                    : `t."businessUnitId" = $1`
-                } AND
+                ? `t."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
+                : `t."businessUnitId" = $1`
+            } AND
                 t.status = 'PAID'
             GROUP BY m.month_date
             ORDER BY m.month_date ASC
