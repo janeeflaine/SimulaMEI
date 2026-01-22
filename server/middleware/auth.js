@@ -1,4 +1,4 @@
-const { db } = require('../db')
+const { pool: db } = require('../db'); // Isso evita erro de 'db is undefined'
 const jwt = require('jsonwebtoken')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'simulamei-secret-key-change-in-production'

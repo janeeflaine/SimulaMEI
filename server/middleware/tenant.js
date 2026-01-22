@@ -9,10 +9,27 @@ const checkTenant = async (req, res, next) => {
         const userId = req.user.id // Assumes authMiddleware has already run
 
         // Get Tenant ID from Header, Body, or Query
-        const tenantId = req.headers['x-tenant-id'] || req.body.businessUnitId || req.query.businessUnitId
+        let tenantId = req.headers['x-business-unit-id'] || req.headers['x-tenant-id'] || req.body.businessUnitId || req.query.businessUnitId
+
+        // Auto-resolve if no tenantId provided (Fallback to Primary)
+        if (!tenantId) {
+            const primaryRes = await pool.query(`
+                SELECT id FROM business_units WHERE "ownerId" = $1 AND "isPrimary" = true LIMIT 1
+            `, [userId])
+
+            if (primaryRes.rows.length > 0) {
+                tenantId = primaryRes.rows[0].id
+            } else {
+                // Try finding any unit
+                const anyRes = await pool.query(`
+                    SELECT id FROM business_units WHERE "ownerId" = $1 LIMIT 1
+                `, [userId])
+                if (anyRes.rows.length > 0) tenantId = anyRes.rows[0].id
+            }
+        }
 
         if (!tenantId) {
-            return res.status(400).json({ message: 'Business Unit ID (x-tenant-id) is required.' })
+            return res.status(400).json({ message: 'Nenhuma Empresa/MEI selecionada e nenhuma encontrada.' })
         }
 
         if (tenantId === 'consolidated') {
@@ -27,7 +44,7 @@ const checkTenant = async (req, res, next) => {
         `, [userId, tenantId])
 
         if (result.rows.length === 0) {
-            return res.status(403).json({ message: 'Access denied to this Business Unit.' })
+            return res.status(403).json({ message: 'Acesso negado a esta unidade.' })
         }
 
         // Attach Tenant Context to Request

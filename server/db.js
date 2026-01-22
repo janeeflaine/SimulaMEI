@@ -18,32 +18,80 @@ const db = {
   query: (text, params) => pool.query(text, params)
 }
 
+const ensureMultiTenantData = async () => {
+  try {
+    console.log('🔧 Verificando integridade Multi-Tenant...')
+
+    // 1. Ensure Column
+    await pool.query('ALTER TABLE business_units ADD COLUMN IF NOT EXISTS "isPrimary" BOOLEAN DEFAULT FALSE');
+    await pool.query('ALTER TABLE business_units ADD COLUMN IF NOT EXISTS "cnpj" TEXT');
+
+    // 2. Create Units for Users without any
+    await pool.query(`
+          INSERT INTO business_units ("ownerId", name, "isPrimary")
+          SELECT DISTINCT t."userId", 'Principal', true
+          FROM finance_transactions t
+          LEFT JOIN business_units b ON t."userId" = b."ownerId"
+          WHERE b.id IS NULL AND t."userId" IS NOT NULL
+      `);
+
+    // 3. Create Permissions
+    await pool.query(`
+          INSERT INTO user_permissions ("userId", "businessUnitId", role)
+          SELECT b."ownerId", b.id, 'OWNER'
+          FROM business_units b
+          LEFT JOIN user_permissions p ON b.id = p."businessUnitId" AND b."ownerId" = p."userId"
+          WHERE p.id IS NULL
+      `);
+
+    // 4. Link Transactions
+    await pool.query(`
+          UPDATE finance_transactions t
+          SET "businessUnitId" = (
+              SELECT id FROM business_units WHERE "ownerId" = t."userId" ORDER BY "isPrimary" DESC, id ASC LIMIT 1
+          )
+          WHERE t."businessUnitId" IS NULL AND t."userId" IS NOT NULL
+      `);
+
+    // 5. Link Bills
+    await pool.query(`
+          UPDATE bills_to_pay b
+          SET "businessUnitId" = (
+              SELECT id FROM business_units WHERE "ownerId" = b."userId" ORDER BY "isPrimary" DESC, id ASC LIMIT 1
+          )
+          WHERE b."businessUnitId" IS NULL AND b."userId" IS NOT NULL
+      `);
+
+    // 6. Ensure Primary
+    await pool.query(`
+          UPDATE business_units
+          SET "isPrimary" = true
+          WHERE id IN (
+              SELECT MIN(id) FROM business_units GROUP BY "ownerId"
+          ) AND "ownerId" NOT IN (
+              SELECT "ownerId" FROM business_units WHERE "isPrimary" = true
+          )
+      `);
+
+    console.log('✅ Auto-migração Multi-Tenant concluída.')
+
+  } catch (err) {
+    console.error('⚠️ Erro na auto-migração (não crítico):', err.message)
+  }
+}
+
 const init = async () => {
   try {
     console.log('🔄 Tentando conectar ao banco...')
-
-    // Simple verification query instead of full migration
     const res = await pool.query('SELECT NOW()')
     console.log('✅ Banco conectado! Time:', res.rows[0].now)
 
-    /* 
-    // AUTO-MIGRATION DISABLED FOR PRODUCTION STABILITY
-    // The following logic previously auto-created tables and migrated data.
-    // Since the database is already migrated, we disable this to prevent 
-    // startup loops or race conditions on "Service Waking Up".
-
-    // Users Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-         ...
-      );
-    `)
-    ... (rest of the schema creation and migration logic commented out) ...
-    */
+    // Run Auto-Migration
+    await ensureMultiTenantData()
+    await seedDefaults()
 
   } catch (err) {
     console.error('❌ Erro crítico ao conectar no banco:', err)
-    // Do not throw here to allow server to stay alive for debugging
   }
 }
 

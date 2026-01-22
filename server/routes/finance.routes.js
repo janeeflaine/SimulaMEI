@@ -1,28 +1,24 @@
 const express = require('express')
 const router = express.Router()
-const { db } = require('../db')
+const { pool: db } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const checkTenant = require('../middleware/tenant')
 
-// Utility to ensure only Ouro plan users can change data
+// Utilitário para garantir que apenas usuários do plano Ouro (ou Trial) alterem dados
 const ouroOnly = (req, res, next) => {
     const isOuro = req.user.plan === 'Ouro' || Number(req.user.planId) === 3 || req.user.isInTrial === true
 
     if (!isOuro) {
-        console.log(`[ouroOnly] Access Denied for user ${req.user.id}. Plan: ${req.user.plan}, PlanId: ${req.user.planId}, Trial: ${req.user.isInTrial}`)
+        console.log(`[ouroOnly] Acesso Negado: Usuário ${req.user.id}. Plano: ${req.user.plan}`);
         return res.status(403).json({
             message: 'Acesso exclusivo para assinantes do plano Ouro',
-            debug: {
-                plan: req.user.plan,
-                planId: req.user.planId,
-                isInTrial: req.user.isInTrial
-            }
+            debug: { plan: req.user.plan, isInTrial: req.user.isInTrial }
         })
     }
     next()
 }
 
-// --- CATEGORIES ---
+// --- CATEGORIAS ---
 
 router.get('/categories', authMiddleware, async (req, res) => {
     try {
@@ -51,20 +47,6 @@ router.post('/categories', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
-router.patch('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
-    const { name, type } = req.body
-    try {
-        const { rows: [updated] } = await db.query(
-            'UPDATE finance_categories SET name = $1, type = $2 WHERE id = $3 AND "userId" = $4 RETURNING *',
-            [name, type, req.params.id, req.user.id]
-        )
-        res.json(updated)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao atualizar categoria' })
-    }
-})
-
 router.delete('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
     try {
         await db.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
@@ -75,7 +57,7 @@ router.delete('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
-// --- CREDIT CARDS ---
+// --- CARTÕES DE CRÉDITO ---
 
 router.get('/cards', authMiddleware, async (req, res) => {
     try {
@@ -90,31 +72,7 @@ router.get('/cards', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/cards', authMiddleware, ouroOnly, async (req, res) => {
-    const { name, lastFour, brand, closingDay, dueDate, imageUrl } = req.body
-    try {
-        const { rows: [newCard] } = await db.query(
-            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate", "imageUrl") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl]
-        )
-        res.json(newCard)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao criar cartão' })
-    }
-})
-
-router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
-    try {
-        await db.query('DELETE FROM credit_cards WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
-        res.json({ message: 'Cartão excluído' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao excluir cartão' })
-    }
-})
-
-// --- BILLS (CONTAS A PAGAR) ---
+// --- CONTAS A PAGAR (BILLS) ---
 
 router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
     try {
@@ -127,7 +85,6 @@ router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
         const params = []
 
         if (req.tenant.id === 'consolidated') {
-            // Fetch for all units user has permission to view
             query += ` WHERE b."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
             params.push(req.user.id)
         } else {
@@ -148,7 +105,6 @@ router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
 router.post('/bills', authMiddleware, checkTenant, ouroOnly, async (req, res) => {
     const { description, amount, dueDate, categoryId, cardId } = req.body
 
-    // Cannot create in consolidated mode
     if (req.tenant.id === 'consolidated') {
         return res.status(400).json({ message: 'Selecione uma empresa específica para adicionar registros.' })
     }
@@ -165,31 +121,7 @@ router.post('/bills', authMiddleware, checkTenant, ouroOnly, async (req, res) =>
     }
 })
 
-router.patch('/bills/:id/status', authMiddleware, ouroOnly, async (req, res) => {
-    const { status } = req.body
-    try {
-        const { rows: [updated] } = await db.query(
-            'UPDATE bills_to_pay SET status = $1 WHERE id = $2 AND "userId" = $3 RETURNING *',
-            [status, req.params.id, req.user.id]
-        )
-        res.json(updated)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao atualizar status' })
-    }
-})
-
-router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
-    try {
-        await db.query('DELETE FROM bills_to_pay WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
-        res.json({ message: 'Conta excluída' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao excluir conta' })
-    }
-})
-
-// --- TRANSACTIONS ---
+// --- TRANSAÇÕES (Onde entra o limite familiar) ---
 
 router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
     try {
@@ -221,19 +153,15 @@ router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
 })
 
 router.post('/transactions', authMiddleware, checkTenant, ouroOnly, async (req, res) => {
-
     if (req.tenant.id === 'consolidated') {
         return res.status(400).json({ message: 'Selecione uma empresa específica para adicionar registros.' })
     }
 
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
 
-    // Normalize empty strings to null for ID and date columns
-    const finalCategoryId = categoryId === '' || categoryId === null ? null : categoryId
-    const finalCardId = (paymentMethod === 'Cartão de Crédito' && cardId !== '' && cardId !== null) ? cardId : null
-    const finalDueDate = dueDate === '' || dueDate === null ? null : dueDate
-
-    // If it's a Boleto, it starts as PENDING
+    const finalCategoryId = categoryId || null
+    const finalCardId = paymentMethod === 'Cartão de Crédito' ? (cardId || null) : null
+    const finalDueDate = dueDate || null
     const status = paymentMethod === 'Boleto' ? 'PENDING' : 'PAID'
 
     try {
@@ -250,84 +178,8 @@ router.post('/transactions', authMiddleware, checkTenant, ouroOnly, async (req, 
     }
 })
 
-// Confirm payment of a pending transaction
-router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
-    try {
-        // Update status to PAID and date to current timestamp
-        const { rows: [updated] } = await db.query(
-            'UPDATE finance_transactions SET status = \'PAID\', date = CURRENT_TIMESTAMP WHERE id = $1 AND "userId" = $2 RETURNING *',
-            [req.params.id, req.user.id]
-        )
-        if (!updated) return res.status(404).json({ message: 'Transação não encontrada' })
-        res.json(updated)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao confirmar pagamento' })
-    }
-})
+// --- ESTATÍSTICAS DO GRÁFICO ---
 
-// Get bills due today (for alerts)
-router.get('/transactions/due-today', authMiddleware, async (req, res) => {
-    try {
-        const { rows } = await db.query(
-            `SELECT t.*, c.name as "categoryName" 
-             FROM finance_transactions t 
-             LEFT JOIN finance_categories c ON t."categoryId" = c.id 
-             WHERE t."userId" = $1 
-             AND t.status = 'PENDING' 
-             AND DATE(t."dueDate") = CURRENT_DATE 
-             ORDER BY t."dueDate" ASC`,
-            [req.user.id]
-        )
-        res.json(rows)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao buscar contas do dia' })
-    }
-})
-
-// Update a transaction
-router.patch('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
-    let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
-
-    // Normalize empty strings to null
-    const finalCategoryId = categoryId === '' || categoryId === null ? null : categoryId
-    const finalCardId = (paymentMethod === 'Cartão de Crédito' && cardId !== '' && cardId !== null) ? cardId : null
-    const finalDueDate = dueDate === '' || dueDate === null ? null : dueDate
-
-    try {
-        const { rows: [updated] } = await db.query(
-            `UPDATE finance_transactions 
-            SET type = $1, target = $2, amount = $3, date = $4, "categoryId" = $5, 
-                "paymentMethod" = $6, "cardId" = $7, description = $8, 
-                "isRecurring" = $9, "isSubscription" = $10, "dueDate" = $11
-            WHERE id = $12 AND "userId" = $13 RETURNING *`,
-            [type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, finalDueDate, req.params.id, req.user.id]
-        )
-        if (!updated) return res.status(404).json({ message: 'Transação não encontrada' })
-        res.json(updated)
-    } catch (err) {
-        console.error('Erro ao atualizar transação:', err)
-        res.status(500).json({ message: 'Erro ao atualizar transação' })
-    }
-})
-
-// Delete a transaction
-router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
-    try {
-        const { rowCount } = await db.query(
-            'DELETE FROM finance_transactions WHERE id = $1 AND "userId" = $2',
-            [req.params.id, req.user.id]
-        )
-        if (rowCount === 0) return res.status(404).json({ message: 'Transação não encontrada' })
-        res.json({ message: 'Transação excluída com sucesso' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao excluir transação' })
-    }
-})
-
-// Get monthly cash flow stats for charts
 router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => {
     try {
         const isConsolidated = req.tenant.id === 'consolidated'
@@ -348,9 +200,9 @@ router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => 
             LEFT JOIN finance_transactions t ON 
                 date_trunc('month', t.date) = m.month_date AND 
                 ${isConsolidated
-                ? `t."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
-                : `t."businessUnitId" = $1`
-            } AND
+                    ? `t."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
+                    : `t."businessUnitId" = $1`
+                } AND
                 t.status = 'PAID'
             GROUP BY m.month_date
             ORDER BY m.month_date ASC
@@ -358,7 +210,7 @@ router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => 
         const { rows } = await db.query(query, [isConsolidated ? req.user.id : req.tenant.id]);
         res.json(rows);
     } catch (err) {
-        console.error('Erro ao buscar estatísticas de fluxo de caixa:', err);
+        console.error('Erro no gráfico:', err);
         res.status(500).json({ message: 'Erro ao buscar dados do gráfico' });
     }
 });
