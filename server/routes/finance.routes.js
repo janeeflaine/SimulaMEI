@@ -118,14 +118,26 @@ router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
 
 router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
     try {
-        const { rows } = await db.query(`
+        let query = `
             SELECT b.*, c.name as "categoryName", cr.name as "cardName"
             FROM bills_to_pay b
             LEFT JOIN finance_categories c ON b."categoryId" = c.id
             LEFT JOIN credit_cards cr ON b."cardId" = cr.id
-            WHERE b."businessUnitId" = $1
-            ORDER BY b."dueDate" ASC
-        `, [req.tenant.id])
+        `
+        const params = []
+
+        if (req.tenant.id === 'consolidated') {
+            // Fetch for all units user has permission to view
+            query += ` WHERE b."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
+            params.push(req.user.id)
+        } else {
+            query += ` WHERE b."businessUnitId" = $1`
+            params.push(req.tenant.id)
+        }
+
+        query += ` ORDER BY b."dueDate" ASC`
+
+        const { rows } = await db.query(query, params)
         res.json(rows)
     } catch (err) {
         console.error(err)
@@ -135,6 +147,12 @@ router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
 
 router.post('/bills', authMiddleware, checkTenant, ouroOnly, async (req, res) => {
     const { description, amount, dueDate, categoryId, cardId } = req.body
+
+    // Cannot create in consolidated mode
+    if (req.tenant.id === 'consolidated') {
+        return res.status(400).json({ message: 'Selecione uma empresa específica para adicionar registros.' })
+    }
+
     try {
         const { rows: [newBill] } = await db.query(
             'INSERT INTO bills_to_pay ("userId", "businessUnitId", description, amount, "dueDate", "categoryId", "cardId") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
@@ -175,15 +193,26 @@ router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
 
 router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
     try {
-        const { rows } = await db.query(
-            `SELECT t.*, c.name as "categoryName", cr.name as "cardName" 
+        let query = `
+            SELECT t.*, c.name as "categoryName", cr.name as "cardName", b.name as "unitName"
              FROM finance_transactions t 
              LEFT JOIN finance_categories c ON t."categoryId" = c.id 
              LEFT JOIN credit_cards cr ON t."cardId" = cr.id
-             WHERE t."businessUnitId" = $1 
-             ORDER BY t.date DESC`,
-            [req.tenant.id]
-        )
+             LEFT JOIN business_units b ON t."businessUnitId" = b.id
+        `
+        const params = []
+
+        if (req.tenant.id === 'consolidated') {
+            query += ` WHERE t."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
+            params.push(req.user.id)
+        } else {
+            query += ` WHERE t."businessUnitId" = $1`
+            params.push(req.tenant.id)
+        }
+
+        query += ` ORDER BY t.date DESC`
+
+        const { rows } = await db.query(query, params)
         res.json(rows)
     } catch (err) {
         console.error(err)
@@ -192,6 +221,11 @@ router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
 })
 
 router.post('/transactions', authMiddleware, checkTenant, ouroOnly, async (req, res) => {
+
+    if (req.tenant.id === 'consolidated') {
+        return res.status(400).json({ message: 'Selecione uma empresa específica para adicionar registros.' })
+    }
+
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
 
     // Normalize empty strings to null for ID and date columns
@@ -293,9 +327,11 @@ router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) =>
     }
 })
 
-// Get monthly cash flow stats for charts (last 6 months)
+// Get monthly cash flow stats for charts
 router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => {
     try {
+        const isConsolidated = req.tenant.id === 'consolidated'
+
         const query = `
             WITH RECURSIVE last_months AS (
                 SELECT date_trunc('month', CURRENT_DATE) - INTERVAL '5 months' as month_date
@@ -311,12 +347,15 @@ router.get('/stats/cash-flow', authMiddleware, checkTenant, async (req, res) => 
             FROM last_months m
             LEFT JOIN finance_transactions t ON 
                 date_trunc('month', t.date) = m.month_date AND 
-                t."businessUnitId" = $1 AND 
+                ${isConsolidated
+                ? `t."businessUnitId" IN (SELECT "businessUnitId" FROM user_permissions WHERE "userId" = $1)`
+                : `t."businessUnitId" = $1`
+            } AND
                 t.status = 'PAID'
             GROUP BY m.month_date
             ORDER BY m.month_date ASC
         `;
-        const { rows } = await db.query(query, [req.tenant.id]);
+        const { rows } = await db.query(query, [isConsolidated ? req.user.id : req.tenant.id]);
         res.json(rows);
     } catch (err) {
         console.error('Erro ao buscar estatísticas de fluxo de caixa:', err);

@@ -31,12 +31,15 @@ export function TenantProvider({ children }) {
 
                     // Determine active tenant
                     const savedTenantId = localStorage.getItem('activeTenantId')
-                    const selected = data.find(t => t.id === Number(savedTenantId)) || data[0] // Default to first (Personal)
 
-                    if (selected) {
-                        setCurrentTenant(selected)
-                        // Ensure we save the default if none was saved
-                        if (!savedTenantId) localStorage.setItem('activeTenantId', selected.id)
+                    if (savedTenantId === 'consolidated') {
+                        setCurrentTenant({ id: 'consolidated', name: 'Visão Consolidada' })
+                    } else {
+                        const selected = data.find(t => t.id === Number(savedTenantId)) || data[0] // Default to first
+                        if (selected) {
+                            setCurrentTenant(selected)
+                            if (!savedTenantId) localStorage.setItem('activeTenantId', selected.id)
+                        }
                     }
                 }
             } catch (error) {
@@ -50,6 +53,12 @@ export function TenantProvider({ children }) {
     }, [user])
 
     const switchTenant = (tenantId) => {
+        if (tenantId === 'consolidated') {
+            setCurrentTenant({ id: 'consolidated', name: 'Visão Consolidada' })
+            localStorage.setItem('activeTenantId', 'consolidated')
+            return
+        }
+
         const tenant = tenants.find(t => t.id === Number(tenantId))
         if (tenant) {
             setCurrentTenant(tenant)

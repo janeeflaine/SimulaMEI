@@ -15,6 +15,11 @@ const checkTenant = async (req, res, next) => {
             return res.status(400).json({ message: 'Business Unit ID (x-tenant-id) is required.' })
         }
 
+        if (tenantId === 'consolidated') {
+            req.tenant = { id: 'consolidated', role: 'VIEWER' } // specific role logic can be discussed
+            return next()
+        }
+
         // Check Permissions
         const result = await pool.query(`
             SELECT role FROM user_permissions 

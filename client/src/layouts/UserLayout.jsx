@@ -77,6 +77,10 @@ export default function UserLayout() {
                                         💎 Planos
                                     </Link>
 
+                                    <Link to="/financeiro/familia" className={`nav-link ${location.pathname === '/financeiro/familia' ? 'active' : ''}`}>
+                                        👨‍👩‍👧 Gestão Familiar
+                                    </Link>
+
                                     <div className="user-menu">
                                         <span className="user-name">{user.name}</span>
                                         <button onClick={logout} className="btn btn-secondary btn-sm">

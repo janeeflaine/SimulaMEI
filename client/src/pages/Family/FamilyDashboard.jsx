@@ -80,7 +80,15 @@ export default function FamilyDashboard() {
                             <div className="value">R$ {parseFloat(stats.totalFamilyRevenue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                             <small>Soma de {stats.clusterCount} unidades</small>
                         </div>
-                        {/* More consolidated stats can go here */}
+
+                        <div className="stat-card">
+                            <h3>Limite Total Combinado</h3>
+                            {/* Assuming 81k per unit for now, or sum of unit limits */}
+                            <div className="value" style={{ color: '#4f46e5' }}>
+                                R$ {(stats.units.reduce((acc, u) => acc + (u.taxLimit || 81000), 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                            <small>Soma dos tetos de faturamento</small>
+                        </div>
                     </div>
 
                     <h2 className="section-title mt-4">Unidades de Negócio</h2>

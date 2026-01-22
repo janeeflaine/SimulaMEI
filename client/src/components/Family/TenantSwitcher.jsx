@@ -35,6 +35,17 @@ export default function TenantSwitcher() {
             {isOpen && (
                 <div className="tenant-dropdown">
                     <div className="tenant-label">Selecione o Contexto:</div>
+                    <button
+                        className={`tenant-option ${currentTenant?.id === 'consolidated' ? 'active' : ''}`}
+                        onClick={() => {
+                            switchTenant('consolidated')
+                            setIsOpen(false)
+                            window.location.reload()
+                        }}
+                    >
+                        🌐 Visão Consolidada
+                        {currentTenant?.id === 'consolidated' && <span className="check">✓</span>}
+                    </button>
                     {tenants.map(tenant => (
                         <button
                             key={tenant.id}
