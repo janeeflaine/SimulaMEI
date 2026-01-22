@@ -7,6 +7,8 @@ const { init } = require('./db')
 
 // Initialize DB
 init()
+
+// Import Routes (Apenas uma vez cada)
 const authRoutes = require('./routes/auth.routes')
 const simulationRoutes = require('./routes/simulation.routes')
 const adminRoutes = require('./routes/admin.routes')
@@ -15,6 +17,7 @@ const paymentRoutes = require('./routes/payments.routes')
 const settingsRoutes = require('./routes/settings.routes')
 const alertRoutes = require('./routes/alert.routes')
 const financeRoutes = require('./routes/finance.routes')
+const familyRoutes = require('./routes/family.routes')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -24,51 +27,29 @@ app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))
 
-// Routes
-app.use('/api/settings', settingsRoutes)
+// API Routes (Uma declaração por rota)
 app.use('/api/auth', authRoutes)
 app.use('/api/simulate', simulationRoutes)
 app.use('/api/simulations', simulationRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/plans', planRoutes)
 app.use('/api/payments', paymentRoutes)
-app.use('/api/alerts', alertRoutes)
-const alertRoutes = require('./routes/alert.routes')
-const financeRoutes = require('./routes/finance.routes')
-const familyRoutes = require('./routes/family.routes')
-
 app.use('/api/settings', settingsRoutes)
-app.use('/api/auth', authRoutes)
-app.use('/api/simulate', simulationRoutes)
-app.use('/api/simulations', simulationRoutes)
-app.use('/api/admin', adminRoutes)
-app.use('/api/plans', planRoutes)
-app.use('/api/payments', paymentRoutes)
 app.use('/api/alerts', alertRoutes)
 app.use('/api/finance', financeRoutes)
 app.use('/api/family', familyRoutes)
-
 
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
-// API Root message moved or removed to allow frontend serving
-// app.get('/', (req, res) => {
-//     res.json({ message: '🚀 SimulaMEI API is running!' })
-// })
-
 // Serve static files (Production handling)
 const clientBuildPath = path.join(__dirname, '../client/dist')
-console.log('Checking for static files at:', clientBuildPath)
-
 app.use(express.static(clientBuildPath))
 
-// Catch-all for SPA (must be last route)
-// Express 5 requires Regex or specific syntax for wildcard
+// Catch-all for SPA
 app.get(/.*/, (req, res) => {
-    // Avoid serving index.html for API 404s
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ message: 'API Route not found' })
     }
@@ -82,5 +63,5 @@ app.use((err, req, res, next) => {
 })
 
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando em http://localhost:${PORT}`)
+    console.log(`🚀 Servidor rodando na porta ${PORT}`)
 })
