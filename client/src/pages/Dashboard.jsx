@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useTenant } from '../context/TenantContext'
 import FeatureLock from '../components/FeatureLock'
 import FinanceQuickActionModal from '../components/FinanceQuickActionModal'
 import './Dashboard.css'
@@ -44,6 +45,7 @@ import {
 
 export default function Dashboard() {
     const { user } = useAuth()
+    const { currentTenant } = useTenant()
     const [simulations, setSimulations] = useState([])
     const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
@@ -74,7 +76,7 @@ export default function Dashboard() {
 
     // Fetch plan-dependent data
     useEffect(() => {
-        if (userPlan) {
+        if (userPlan && currentTenant) {
             if (userPlan.features?.historico) fetchSimulations()
             if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
                 fetchTransactions()
@@ -83,7 +85,7 @@ export default function Dashboard() {
             }
             if (!userPlan.features?.historico) setLoading(false)
         }
-    }, [userPlan])
+    }, [userPlan, currentTenant])
 
     const fetchUserPlan = async () => {
         try {
@@ -103,7 +105,10 @@ export default function Dashboard() {
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/simulations/stats', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-business-unit-id': currentTenant?.id
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -118,7 +123,10 @@ export default function Dashboard() {
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/simulations', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-business-unit-id': currentTenant?.id
+                }
             })
             const data = await res.json()
             setSimulations(data.simulations || [])
@@ -133,7 +141,10 @@ export default function Dashboard() {
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/finance/transactions', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-business-unit-id': currentTenant?.id
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -148,7 +159,10 @@ export default function Dashboard() {
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/finance/stats/cash-flow', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-business-unit-id': currentTenant?.id
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -163,7 +177,10 @@ export default function Dashboard() {
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/alerts/check', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-business-unit-id': currentTenant?.id
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -178,7 +195,10 @@ export default function Dashboard() {
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/finance/transactions/due-today', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-business-unit-id': currentTenant?.id
+                }
             })
             if (res.ok) {
                 const data = await res.json()
@@ -209,7 +229,10 @@ export default function Dashboard() {
             const token = localStorage.getItem('token')
             const res = await fetch(`/api/finance/transactions/${id}/confirm`, {
                 method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-business-unit-id': currentTenant?.id
+                }
             })
             if (res.ok) {
                 setDueTodayBills(prev => prev.filter(b => b.id !== id))

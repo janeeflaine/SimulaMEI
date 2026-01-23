@@ -16,10 +16,12 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
         description: initialData?.description || '',
         dueDate: initialData?.dueDate ? initialData.dueDate.substring(0, 10) : '',
         isRecurring: initialData?.isRecurring || false,
-        isSubscription: initialData?.isSubscription || false
+        isSubscription: initialData?.isSubscription || false,
+        businessUnitId: initialData?.businessUnitId || (currentTenant && currentTenant.id !== 'consolidated' ? currentTenant.id : '')
     })
     const [categories, setCategories] = useState([])
     const [cards, setCards] = useState([])
+    const [units, setUnits] = useState([])
     const [loading, setLoading] = useState(false)
     const [isAddingCategory, setIsAddingCategory] = useState(false)
     const [isAddingCard, setIsAddingCard] = useState(false)
@@ -30,6 +32,7 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
         if (step === 3) {
             fetchCategories()
             fetchCards()
+            fetchUnits()
         }
     }, [step])
 
@@ -67,6 +70,34 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
             }
         } catch (err) {
             console.error('Erro ao buscar cartões:', err)
+        }
+    }
+
+    const fetchUnits = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/family/units', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setUnits(data)
+
+                // Set default if not set (and not editing)
+                if (!initialData && data.length > 0 && !formData.businessUnitId) {
+                    // Logic: if currentTenant is valid (not consolidated), use it. Else use Primary.
+                    const currentIsValid = currentTenant && currentTenant.id !== 'consolidated' && data.some(u => u.id === currentTenant.id)
+                    if (currentIsValid) {
+                        setFormData(prev => ({ ...prev, businessUnitId: currentTenant.id }))
+                    } else {
+                        // Find primary or first
+                        // data is already sorted by ID usually, maybe correct logic is to fetch primary first
+                        // For now, let's just pick the first one if consolidated
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao buscar unidades:', err)
         }
     }
 
@@ -370,6 +401,25 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                                     />
                                 </div>
                             )}
+
+                            <div className="form-group full-width">
+                                <label>Unidade de Negócio (Quem está pagando/recebendo?)</label>
+                                <select
+                                    value={formData.businessUnitId || ''}
+                                    onChange={(e) => setFormData({ ...formData, businessUnitId: e.target.value })}
+                                    className="unit-selector-highlight"
+                                >
+                                    <option value="">Selecione a Unidade...</option>
+                                    {units.map(u => (
+                                        <option key={u.id} value={u.id}>
+                                            {u.name} {u.role === 'OWNER' ? '(Dono)' : '(Permissão)'}
+                                        </option>
+                                    ))}
+                                </select>
+                                <small style={{ color: '#64748b', marginTop: '4px', display: 'block' }}>
+                                    Deixe em branco para usar a unidade atual do cabeçalho.
+                                </small>
+                            </div>
 
                             <div className="form-group full-width">
                                 <label>Descrição</label>

@@ -23,7 +23,7 @@ const startServer = async () => {
         const simulationRoutes = require('./routes/simulation.routes')
         const adminRoutes = require('./routes/admin.routes')
         const planRoutes = require('./routes/plan.routes')
-        const paymentRoutes = require('./routes/payments.routes')
+        const paymentRoutes = require('./routes/payment.routes')
         const settingsRoutes = require('./routes/settings.routes')
         const alertRoutes = require('./routes/alert.routes')
         const financeRoutes = require('./routes/finance.routes')

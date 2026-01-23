@@ -237,7 +237,29 @@ router.get('/transactions', authMiddleware, checkTenant, async (req, res) => {
 })
 
 router.post('/transactions', authMiddleware, checkTenant, ouroOnly, async (req, res) => {
-    if (req.tenant.id === 'consolidated') return res.status(400).json({ message: 'Selecione uma empresa específica.' })
+    // Se "businessUnitId" vier no body, usamos ele. Senão, usamos o do header (req.tenant.id).
+    // Se nenhum dos dois for válido (ex: 'consolidated' no header e sem body), barrar.
+
+    let targetUnitId = req.body.businessUnitId || req.tenant.id
+
+    if (!targetUnitId || targetUnitId === 'consolidated') {
+        return res.status(400).json({ message: 'Selecione uma empresa específica.' })
+    }
+
+    // Se a unidade veio do body, precisamos garantir que o usuário tem acesso a ela (OWNER ou permissão)
+    if (req.body.businessUnitId) {
+        try {
+            const perm = await db.query(
+                'SELECT role FROM user_permissions WHERE "userId" = $1 AND "businessUnitId" = $2',
+                [req.user.id, targetUnitId]
+            )
+            if (perm.rows.length === 0) {
+                return res.status(403).json({ message: 'Você não tem permissão nesta unidade.' })
+            }
+        } catch (error) {
+            return res.status(500).json({ message: 'Erro ao validar permissão da unidade.' })
+        }
+    }
 
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
 
@@ -252,10 +274,11 @@ router.post('/transactions', authMiddleware, checkTenant, ouroOnly, async (req, 
             `INSERT INTO finance_transactions 
             ("userId", "businessUnitId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate") 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
-            [req.user.id, req.tenant.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate]
+            [req.user.id, targetUnitId, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate]
         )
         res.json(newTransaction)
     } catch (err) {
+        console.error('Erro transaction:', err)
         res.status(500).json({ message: 'Erro ao criar transação' })
     }
 })
@@ -274,24 +297,43 @@ router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, 
 })
 
 router.patch('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
-    let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
+    let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate, businessUnitId } = req.body
 
     const finalCategoryId = categoryId || null
     const finalCardId = paymentMethod === 'Cartão de Crédito' ? (cardId || null) : null
     const finalDueDate = dueDate || null
 
     try {
+        // Se estiver tentando mudar de unidade, verificar permissão
+        if (businessUnitId) {
+            const perm = await db.query(
+                'SELECT role FROM user_permissions WHERE "userId" = $1 AND "businessUnitId" = $2',
+                [req.user.id, businessUnitId]
+            )
+            if (perm.rows.length === 0) {
+                return res.status(403).json({ message: 'Você não tem permissão na unidade de destino.' })
+            }
+        }
+
+        // Construir query dinâmica seria melhor, mas vou manter simples e atualizar businessUnitId se vier
+        // Se businessUnitId não vier, mantém o atual (coalesce ou não mexe? UPDATE normal em SQL substitui. Se undefined, vira NULL se passar direto.)
+        // Vou buscar a transação atual primeiro pra garantir ou usar COALESCE na query.
+
+        // Melhor: Usar COALESCE na query SQL.
+
         const { rows: [updated] } = await db.query(
             `UPDATE finance_transactions 
             SET type = $1, target = $2, amount = $3, date = $4, "categoryId" = $5, 
                 "paymentMethod" = $6, "cardId" = $7, description = $8, 
-                "isRecurring" = $9, "isSubscription" = $10, "dueDate" = $11
+                "isRecurring" = $9, "isSubscription" = $10, "dueDate" = $11,
+                "businessUnitId" = COALESCE($14, "businessUnitId")
             WHERE id = $12 AND "userId" = $13 RETURNING *`,
-            [type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, finalDueDate, req.params.id, req.user.id]
+            [type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, finalDueDate, req.params.id, req.user.id, businessUnitId]
         )
         if (!updated) return res.status(404).json({ message: 'Transação não encontrada' })
         res.json(updated)
     } catch (err) {
+        console.error('Erro update transaction:', err)
         res.status(500).json({ message: 'Erro ao atualizar transação' })
     }
 })

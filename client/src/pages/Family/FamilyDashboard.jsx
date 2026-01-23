@@ -41,6 +41,33 @@ export default function FamilyDashboard() {
     const [backupDownloaded, setBackupDownloaded] = useState(false)
 
     // ... create unit logic ...
+    const handleCreateUnit = async (e) => {
+        e.preventDefault()
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/family/units', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ name: newUnitName, cnpj: newUnitDoc })
+            })
+
+            if (res.ok) {
+                alert('Nova Unidade de Negócio criada com sucesso!')
+                setShowCreateModal(false)
+                setNewUnitName('')
+                setNewUnitDoc('')
+                window.location.reload()
+            } else {
+                alert('Erro ao criar unidade.')
+            }
+        } catch (error) {
+            console.error(error)
+            alert('Erro de conexão.')
+        }
+    }
     const handleUpdateUnit = async (e) => {
         e.preventDefault()
         try {

@@ -61,6 +61,24 @@
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.05);
 }
 
+@media (max-width: 768px) {
+    .units-list {
+        grid-template-columns: 1fr;
+        /* Force single column on mobile */
+    }
+
+    .unit-actions {
+        display: flex;
+        gap: 16px;
+        /* Larger gap for touch */
+    }
+
+    .btn-icon {
+        padding: 12px;
+        /* A bit larger touch area */
+    }
+}
+
 .unit-card.danger {
     border-color: #feb2b2;
     background: #fff5f5;
