@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useTenant } from '../../context/TenantContext'
 import { useAuth } from '../../context/AuthContext'
 import './FamilyDashboard.css'
+import { Pencil, Trash2, FileDown, AlertTriangle } from 'lucide-react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function FamilyDashboard() {
     const { user } = useAuth()
@@ -33,25 +36,103 @@ export default function FamilyDashboard() {
         fetchStats()
     }, [])
 
-    const handleCreateUnit = async (e) => {
+    const [editingUnit, setEditingUnit] = useState(null)
+    const [deletingUnit, setDeletingUnit] = useState(null)
+    const [backupDownloaded, setBackupDownloaded] = useState(false)
+
+    // ... create unit logic ...
+    const handleUpdateUnit = async (e) => {
         e.preventDefault()
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch('/api/family/units', {
-                method: 'POST',
+            const res = await fetch(`/api/family/units/${editingUnit.id}`, {
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ name: newUnitName, document: newUnitDoc })
+                body: JSON.stringify({ name: newUnitName, cnpj: newUnitDoc })
             })
 
             if (res.ok) {
-                alert('Nova empresa criada com sucesso!')
-                setShowCreateModal(false)
-                window.location.reload() // Reload to refresh context
+                alert('Empresa atualizada!')
+                setEditingUnit(null)
+                window.location.reload()
+            }
+        } catch (error) {
+            console.error(error)
+        }
+    }
+
+    const generateBackupPDF = async (unitId, unitName) => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/family/units/${unitId}/backup`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            const data = await res.json()
+
+            const doc = new jsPDF()
+            doc.setFontSize(18)
+            doc.text(`Backup de Dados: ${unitName}`, 14, 20)
+            doc.setFontSize(10)
+            doc.text(`Gerado em: ${new Date().toLocaleString()}`, 14, 28)
+
+            // Transactions Table
+            if (data.transactions?.length > 0) {
+                doc.text('Transações', 14, 40)
+                autoTable(doc, {
+                    startY: 45,
+                    head: [['Data', 'Tipo', 'Categoria', 'Valor', 'Status']],
+                    body: data.transactions.map(t => [
+                        new Date(t.date).toLocaleDateString(),
+                        t.type,
+                        t.categoryId, // Ideal would be to map to name, keeping simple for backup
+                        `R$ ${t.amount}`,
+                        t.status
+                    ])
+                })
+            }
+
+            // Bills Table
+            if (data.bills?.length > 0) {
+                const finalY = doc.lastAutoTable.finalY || 45
+                doc.text('Contas a Pagar', 14, finalY + 15)
+                autoTable(doc, {
+                    startY: finalY + 20,
+                    head: [['Vencimento', 'Descrição', 'Valor', 'Status']],
+                    body: data.bills.map(b => [
+                        new Date(b.dueDate).toLocaleDateString(),
+                        b.description,
+                        `R$ ${b.amount}`,
+                        b.status
+                    ])
+                })
+            }
+
+            doc.save(`backup-${unitName.replace(/\s+/g, '_')}.pdf`)
+            setBackupDownloaded(true)
+        } catch (err) {
+            console.error(err)
+            alert('Erro ao gerar backup.')
+        }
+    }
+
+    const handleDeleteUnit = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/family/units/${deletingUnit.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+
+            if (res.ok) {
+                alert('Unidade excluída com sucesso.')
+                setDeletingUnit(null)
+                window.location.reload()
             } else {
-                alert('Erro ao criar empresa')
+                const err = await res.json()
+                alert(`Erro: ${err.message}`)
             }
         } catch (error) {
             console.error(error)
@@ -115,14 +196,41 @@ export default function FamilyDashboard() {
                                         <span>Faturado: R$ {revenue.toLocaleString('pt-BR')}</span>
                                         <span>Limite: R$ {limit.toLocaleString('pt-BR')}</span>
                                     </div>
-                                    <div className="mt-3">
-                                        {percentage > 100 ? (
-                                            <div className="alert alert-danger">⚠️ Limite Excedido!</div>
-                                        ) : isDanger ? (
-                                            <div className="alert alert-warning">⚠️ Atenção: Próximo ao teto! Considere faturar em outra unidade.</div>
-                                        ) : (
-                                            <div className="text-success text-sm">✅ Situação Regular</div>
-                                        )}
+                                    <div className="mt-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div className="status-indicator">
+                                            {percentage > 100 ? (
+                                                <span className="text-danger">⚠️ Limite Excedido!</span>
+                                            ) : isDanger ? (
+                                                <span className="text-warning">⚠️ Atenção: Próximo ao teto!</span>
+                                            ) : (
+                                                <span className="text-success">✅ Situação Regular</span>
+                                            )}
+                                        </div>
+                                        <div className="unit-actions">
+                                            <button
+                                                className="btn-icon"
+                                                title="Editar"
+                                                onClick={() => {
+                                                    setEditingUnit(unit)
+                                                    setNewUnitName(unit.name)
+                                                    setNewUnitDoc(unit.cnpj || '')
+                                                }}
+                                            >
+                                                <Pencil size={18} color="#64748b" />
+                                            </button>
+                                            {!unit.isPrimary && (
+                                                <button
+                                                    className="btn-icon"
+                                                    title="Excluir"
+                                                    onClick={() => {
+                                                        setDeletingUnit(unit)
+                                                        setBackupDownloaded(false)
+                                                    }}
+                                                >
+                                                    <Trash2 size={18} color="#ef4444" />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             )
@@ -131,11 +239,12 @@ export default function FamilyDashboard() {
                 </>
             )}
 
-            {showCreateModal && (
+            {/* CREATE / EDIT MODAL */}
+            {(showCreateModal || editingUnit) && (
                 <div className="modal-overlay">
                     <div className="modal-content">
-                        <h3>Nova Unidade de Negócio</h3>
-                        <form onSubmit={handleCreateUnit}>
+                        <h3>{editingUnit ? 'Editar Unidade' : 'Nova Unidade de Negócio'}</h3>
+                        <form onSubmit={editingUnit ? handleUpdateUnit : handleCreateUnit}>
                             <div className="form-group">
                                 <label>Razão Social / Nome</label>
                                 <input
@@ -156,10 +265,51 @@ export default function FamilyDashboard() {
                                 />
                             </div>
                             <div className="modal-actions">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Cancelar</button>
-                                <button type="submit" className="btn btn-primary">Criar</button>
+                                <button type="button" className="btn btn-secondary" onClick={() => { setShowCreateModal(false); setEditingUnit(null); }}>Cancelar</button>
+                                <button type="submit" className="btn btn-primary">{editingUnit ? 'Salvar' : 'Criar'}</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* DELETE WARNING MODAL */}
+            {deletingUnit && (
+                <div className="modal-overlay">
+                    <div className="modal-content warning-modal">
+                        <div className="modal-header-danger">
+                            <AlertTriangle size={32} color="#ef4444" />
+                            <h3>Zona de Perigo</h3>
+                        </div>
+                        <p>Você está prestes a excluir <strong>{deletingUnit.name}</strong>.</p>
+                        <ul className="warning-list">
+                            <li>Isso apagará <strong>todas</strong> as transações financeiras.</li>
+                            <li>Isso apagará <strong>todas</strong> as contas a pagar.</li>
+                            <li>Esta ação é <strong>irreversível</strong>.</li>
+                        </ul>
+
+                        <div className="backup-section">
+                            <p className="text-sm text-slate-600 mb-2">Recomendação: Baixe o backup antes de continuar.</p>
+                            <button
+                                onClick={() => generateBackupPDF(deletingUnit.id, deletingUnit.name)}
+                                className={`btn ${backupDownloaded ? 'btn-success-outline' : 'btn-outline'} w-full flex items-center justify-center gap-2`}
+                            >
+                                <FileDown size={18} />
+                                {backupDownloaded ? 'Backup Baixado' : 'Baixar Backup em PDF'}
+                            </button>
+                        </div>
+
+                        <div className="modal-actions vertical">
+                            <button
+                                className="btn btn-danger w-full"
+                                onClick={handleDeleteUnit}
+                                disabled={!backupDownloaded}
+                                title={!backupDownloaded ? "Baixe o backup primeiro" : ""}
+                            >
+                                Excluir Permanentemente
+                            </button>
+                            <button className="btn btn-secondary w-full" onClick={() => setDeletingUnit(null)}>Cancelar</button>
+                        </div>
                     </div>
                 </div>
             )}

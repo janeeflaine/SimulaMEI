@@ -22,11 +22,21 @@ async function debugRoutes() {
 
         // --- DIAGNÓSTICO DE DADOS ---
         const billsCount = await client.query('SELECT count(*) FROM bills_to_pay WHERE "userId" = $1', [user.id]);
-        const billsNullUnit = await client.query('SELECT count(*) FROM bills_to_pay WHERE "userId" = $1 AND "businessUnitId" IS NULL', [user.id]);
+        const transCount = await client.query('SELECT count(*) FROM finance_transactions WHERE "userId" = $1', [user.id]);
+
+        const globalBills = await client.query('SELECT count(*) FROM bills_to_pay');
+        const globalTrans = await client.query('SELECT count(*) FROM finance_transactions');
 
         console.log(`\n📊 Diagnóstico de Dados para Usuário ${user.id}:`);
-        console.log(`   Total de Contas: ${billsCount.rows[0].count}`);
-        console.log(`   Contas sem Unidade (NULL): ${billsNullUnit.rows[0].count}`);
+        console.log(`   Bills (User): ${billsCount.rows[0].count}`);
+        console.log(`   Transactions (User): ${transCount.rows[0].count}`);
+        console.log(`   Bills (Global): ${globalBills.rows[0].count}`);
+        console.log(`   Transactions (Global): ${globalTrans.rows[0].count}`);
+
+        if (parseInt(globalTrans.rows[0].count) > 0 && parseInt(transCount.rows[0].count) === 0) {
+            const sample = await client.query('SELECT "userId", "businessUnitId" FROM finance_transactions LIMIT 1');
+            console.log(`⚠️ Alerta: Existem transações de OUTROS usuários. Exemplo: User ${sample.rows[0].userId}`);
+        }
 
         // --- TESTE ROTA /bills (Contas a Pagar) ---
         console.log('\n🧪 Testando Query: GET /bills');

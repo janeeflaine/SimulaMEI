@@ -70,4 +70,110 @@ router.get('/consolidated', async (req, res) => {
     }
 })
 
+// EDITAR UNIDADE
+router.put('/units/:id', async (req, res) => {
+    const client = await pool.connect()
+    try {
+        const { name, cnpj } = req.body
+        const unitId = req.params.id
+        const userId = req.user.id
+
+        // Verificar permissão (apenas OWNER)
+        const permRes = await client.query(`
+            SELECT role FROM user_permissions WHERE "userId" = $1 AND "businessUnitId" = $2
+        `, [userId, unitId])
+
+        if (permRes.rows.length === 0 || permRes.rows[0].role !== 'OWNER') {
+            return res.status(403).json({ message: 'Apenas o proprietário pode editar a unidade.' })
+        }
+
+        await client.query(`
+            UPDATE business_units SET name = $1, cnpj = $2 WHERE id = $3
+        `, [name, cnpj, unitId])
+
+        res.json({ message: 'Unidade atualizada com sucesso' })
+    } catch (error) {
+        console.error('Erro ao editar unidade:', error)
+        res.status(500).json({ message: 'Erro ao editar unidade' })
+    } finally {
+        client.release()
+    }
+})
+
+// OBTER DADOS PARA BACKUP (Antes de excluir)
+router.get('/units/:id/backup', async (req, res) => {
+    try {
+        const unitId = req.params.id
+        const userId = req.user.id
+
+        // Check permission
+        const permRes = await pool.query(`
+            SELECT role FROM user_permissions WHERE "userId" = $1 AND "businessUnitId" = $2
+        `, [userId, unitId])
+        if (permRes.rows.length === 0 || permRes.rows[0].role !== 'OWNER') {
+            return res.status(403).json({ message: 'Acesso negado.' })
+        }
+
+        const transactions = await pool.query('SELECT * FROM finance_transactions WHERE "businessUnitId" = $1 ORDER BY date DESC', [unitId])
+        const bills = await pool.query('SELECT * FROM bills_to_pay WHERE "businessUnitId" = $1', [unitId])
+        const categories = await pool.query('SELECT * FROM finance_categories WHERE "userId" = $1', [userId]) // Shared categories usually
+
+        res.json({
+            transactions: transactions.rows,
+            bills: bills.rows,
+            categories: categories.rows
+        })
+    } catch (error) {
+        console.error('Erro backup:', error)
+        res.status(500).json({ message: 'Erro ao gerar backup' })
+    }
+})
+
+// EXCLUIR UNIDADE (Cascading Delete)
+router.delete('/units/:id', async (req, res) => {
+    const client = await pool.connect()
+    try {
+        const unitId = req.params.id
+        const userId = req.user.id
+
+        // Verificar permissão
+        const permRes = await client.query(`
+            SELECT role FROM user_permissions WHERE "userId" = $1 AND "businessUnitId" = $2
+        `, [userId, unitId])
+
+        // Prevent deleting the primary unit (optional safety, or just allow it if intended)
+        const unitRes = await client.query('SELECT "isPrimary" FROM business_units WHERE id = $1', [unitId])
+        if (unitRes.rows.length > 0 && unitRes.rows[0].isPrimary) {
+            return res.status(400).json({ message: 'Não é possível excluir a unidade principal.' })
+        }
+
+        if (permRes.rows.length === 0 || permRes.rows[0].role !== 'OWNER') {
+            return res.status(403).json({ message: 'Apenas o proprietário pode excluir a unidade.' })
+        }
+
+        await client.query('BEGIN')
+
+        // 1. Transactions
+        await client.query('DELETE FROM finance_transactions WHERE "businessUnitId" = $1', [unitId])
+
+        // 2. Bills
+        await client.query('DELETE FROM bills_to_pay WHERE "businessUnitId" = $1', [unitId])
+
+        // 3. Permissions
+        await client.query('DELETE FROM user_permissions WHERE "businessUnitId" = $1', [unitId])
+
+        // 4. Units
+        await client.query('DELETE FROM business_units WHERE id = $1', [unitId])
+
+        await client.query('COMMIT')
+        res.json({ message: 'Unidade e dados excluídos com sucesso' })
+    } catch (error) {
+        await client.query('ROLLBACK')
+        console.error('Erro ao excluir unidade:', error)
+        res.status(500).json({ message: 'Erro ao excluir unidade' })
+    } finally {
+        client.release()
+    }
+})
+
 module.exports = router
