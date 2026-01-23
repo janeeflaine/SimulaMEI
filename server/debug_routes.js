@@ -20,8 +20,41 @@ async function debugRoutes() {
         const unitId = unitRes.rows.length > 0 ? unitRes.rows[0].id : null;
         console.log(`🏢 Unidade de teste: ${unitId}`);
 
-        if (!unitId) {
-            console.warn('⚠️ Usuário sem unidade. Testando queries com userId direto (Fallback da rota transactions)...');
+        // --- DIAGNÓSTICO DE DADOS ---
+        const billsCount = await client.query('SELECT count(*) FROM bills_to_pay WHERE "userId" = $1', [user.id]);
+        const billsNullUnit = await client.query('SELECT count(*) FROM bills_to_pay WHERE "userId" = $1 AND "businessUnitId" IS NULL', [user.id]);
+
+        console.log(`\n📊 Diagnóstico de Dados para Usuário ${user.id}:`);
+        console.log(`   Total de Contas: ${billsCount.rows[0].count}`);
+        console.log(`   Contas sem Unidade (NULL): ${billsNullUnit.rows[0].count}`);
+
+        // --- TESTE ROTA /bills (Contas a Pagar) ---
+        console.log('\n🧪 Testando Query: GET /bills');
+        try {
+            let query = `
+                SELECT b.*, c.name as "categoryName", cr.name as "cardName"
+                FROM bills_to_pay b
+                LEFT JOIN finance_categories c ON b."categoryId" = c.id
+                LEFT JOIN credit_cards cr ON b."cardId" = cr.id
+            `
+            let params = [];
+
+            if (unitId) {
+                query += ` WHERE b."businessUnitId" = $1`;
+                params.push(unitId);
+            } else {
+                query += ` WHERE b."userId" = $1`;
+                params.push(user.id);
+            }
+            query += ` ORDER BY b."dueDate" ASC`
+
+            const res = await client.query(query, params);
+            console.log(`✅ /bills: Query executada com SUCESSO. Registros encontrados: ${res.rows.length}`);
+            if (res.rows.length > 0) {
+                console.log('   Exemplo:', JSON.stringify(res.rows[0], null, 2));
+            }
+        } catch (err) {
+            console.error('❌ /bills: FALHA na Query:', err.message);
         }
 
         // --- TESTE ROTA /transactions (Erro 500) ---

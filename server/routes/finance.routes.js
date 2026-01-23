@@ -132,7 +132,7 @@ router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
         res.json(rows)
     } catch (err) {
         console.error('Erro bills:', err)
-        res.status(500).json({ message: 'Erro ao buscar contas' })
+        res.status(500).json({ message: 'Erro ao buscar contas', error: err.message, stack: err.stack })
     }
 })
 

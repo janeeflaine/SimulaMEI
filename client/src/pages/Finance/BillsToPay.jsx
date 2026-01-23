@@ -18,7 +18,7 @@ export default function BillsToPay() {
     const fetchBills = async () => {
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch('/api/finance/transactions', {
+            const res = await fetch('/api/finance/bills', {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (res.ok) {
@@ -37,9 +37,13 @@ export default function BillsToPay() {
         if (!confirm('Confirmar o pagamento deste boleto hoje?')) return
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch(`/api/finance/transactions/${id}/confirm`, {
+            const res = await fetch(`/api/finance/bills/${id}/status`, {
                 method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status: 'PAID' })
             })
             if (res.ok) {
                 alert('Pagamento confirmado!')
