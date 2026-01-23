@@ -518,19 +518,24 @@ export default function Dashboard() {
                                     <AreaChart data={memoizedCashFlowData}>
                                         <defs>
                                             <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
+                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
                                                 <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                                             </linearGradient>
+                                            <linearGradient id="colorSaida" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} />
+                                                <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                            </linearGradient>
                                         </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={(val) => `R$ ${val / 1000}k`} />
                                         <Tooltip
-                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                                            contentStyle={{ backgroundColor: '#1a1d24', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)' }}
+                                            itemStyle={{ color: '#fff' }}
                                             formatter={(value) => formatCurrency(value)}
                                         />
                                         <Area type="monotone" dataKey="entrada" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorEntrada)" />
-                                        <Area type="monotone" dataKey="saida" stroke="#ef4444" strokeWidth={3} fill="transparent" />
+                                        <Area type="monotone" dataKey="saida" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorSaida)" />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </div>
@@ -547,17 +552,22 @@ export default function Dashboard() {
                                         <PieChart>
                                             <Pie
                                                 data={categoryData}
-                                                innerRadius={60}
-                                                outerRadius={80}
-                                                paddingAngle={5}
+                                                innerRadius={65}
+                                                outerRadius={85}
+                                                paddingAngle={8}
                                                 dataKey="value"
+                                                stroke="none"
                                             >
                                                 {categoryData.map((entry, index) => (
                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                                 ))}
                                             </Pie>
-                                            <Tooltip formatter={(value) => formatCurrency(value)} />
-                                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
+                                            <Tooltip
+                                                contentStyle={{ backgroundColor: '#1a1d24', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px' }}
+                                                itemStyle={{ color: '#fff' }}
+                                                formatter={(value) => formatCurrency(value)}
+                                            />
+                                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', color: '#94a3b8' }} />
                                         </PieChart>
                                     </ResponsiveContainer>
                                 ) : (
