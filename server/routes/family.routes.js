@@ -70,6 +70,32 @@ router.get('/consolidated', async (req, res) => {
     }
 })
 
+// BUSCAR UNIDADE POR ID
+router.get('/units/:id', async (req, res) => {
+    try {
+        const unitId = req.params.id
+        const userId = req.user.id
+
+        // Verificar permissão
+        const permRes = await pool.query(`
+            SELECT role FROM user_permissions WHERE "userId" = $1 AND "businessUnitId" = $2
+        `, [userId, unitId])
+
+        if (permRes.rows.length === 0) {
+            return res.status(403).json({ message: 'Acesso negado.' })
+        }
+
+        const unitRes = await pool.query('SELECT * FROM business_units WHERE id = $1', [unitId])
+        if (unitRes.rows.length === 0) {
+            return res.status(404).json({ message: 'Unidade não encontrada.' })
+        }
+
+        res.json(unitRes.rows[0])
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao buscar unidade' })
+    }
+})
+
 // EDITAR UNIDADE
 router.put('/units/:id', async (req, res) => {
     const client = await pool.connect()

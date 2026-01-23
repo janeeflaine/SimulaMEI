@@ -52,7 +52,8 @@ export default function Header() {
                     </Link>
                 </div>
 
-                <div className={`header-nav-container ${isMobileMenuOpen ? 'mobile-active' : ''}`}>
+                {/* DESKTOP NAV */}
+                <div className="header-right desktop-only">
                     <nav className="main-nav">
                         {navItems.map((item) => (
                             <Link
@@ -66,10 +67,10 @@ export default function Header() {
                         ))}
                     </nav>
 
-                    <div className="header-divider mobile-only" />
+                    <div className="header-divider" />
 
-                    <div className="header-right-group">
-                        {/* Unit Selector */}
+                    <div className="header-actions">
+                        {/* Unit Selector Desktop */}
                         <div className="unit-selector-container">
                             <button
                                 className="unit-selector-btn"
@@ -79,7 +80,6 @@ export default function Header() {
                                     <Building2 size={16} />
                                 </div>
                                 <div className="unit-info">
-                                    <span className="unit-label">Unidade Ativa</span>
                                     <span className="unit-name">
                                         {currentTenant ? currentTenant.name : 'Console...'}
                                     </span>
@@ -101,7 +101,6 @@ export default function Header() {
                                                 }}
                                             >
                                                 <span className="tenant-name">{tenant.name}</span>
-                                                {tenant.isPrimary && <span className="p-badge">Principal</span>}
                                             </button>
                                         ))}
                                     </div>
@@ -119,22 +118,69 @@ export default function Header() {
                             )}
                         </div>
 
-                        <div className="header-divider desktop-only" />
-
-                        <button className="logout-button" onClick={logout}>
-                            <LogOut size={18} />
-                            <span>Sair</span>
+                        <button className="logout-button" onClick={logout} title="Sair">
+                            <LogOut size={20} />
                         </button>
                     </div>
                 </div>
 
+                {/* MOBILE HAMBURGER */}
                 <button
-                    className="hamburger-menu"
-                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                    className="hamburger-menu mobile-only"
+                    onClick={() => setIsMobileMenuOpen(true)}
                     aria-label="Menu"
                 >
-                    {isMobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
+                    <Menu size={28} color="white" />
                 </button>
+
+                {/* MOBILE SIDEBAR OVERLAY */}
+                {isMobileMenuOpen && (
+                    <div className="mobile-sidebar-backdrop" onClick={() => setIsMobileMenuOpen(false)}>
+                        <div className="mobile-sidebar" onClick={e => e.stopPropagation()}>
+                            <div className="mobile-sidebar-header">
+                                <span className="logo-text">Menu</span>
+                                <button onClick={() => setIsMobileMenuOpen(false)}>
+                                    <X size={24} color="#94a3b8" />
+                                </button>
+                            </div>
+
+                            <div className="mobile-unit-selector">
+                                <label>Unidade Atual</label>
+                                <select
+                                    className="mobile-select"
+                                    value={currentTenant?.id || ''}
+                                    onChange={(e) => {
+                                        switchTenant(e.target.value)
+                                        setIsMobileMenuOpen(false)
+                                    }}
+                                >
+                                    {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                    <option value="consolidated">Visão Consolidada</option>
+                                </select>
+                            </div>
+
+                            <nav className="mobile-nav-list">
+                                {navItems.map((item) => (
+                                    <Link
+                                        key={item.path}
+                                        to={item.path}
+                                        className={`mobile-nav-link ${isActive(item.path) ? 'active' : ''}`}
+                                        onClick={() => setIsMobileMenuOpen(false)}
+                                    >
+                                        <item.icon size={20} />
+                                        <span>{item.label}</span>
+                                    </Link>
+                                ))}
+                            </nav>
+
+                            <div className="mobile-footer">
+                                <button className="mobile-logout" onClick={logout}>
+                                    <LogOut size={20} /> Sair do Sistema
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </header>
     )

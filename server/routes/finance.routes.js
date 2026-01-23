@@ -104,7 +104,7 @@ router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // --- CONTAS A PAGAR ---
-router.get('/bills', authMiddleware, checkTenant, async (req, res) => {
+router.get('/bills', authMiddleware, async (req, res) => {
     try {
         let query = `
             SELECT b.*, c.name as "categoryName", cr.name as "cardName"
