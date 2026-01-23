@@ -25,7 +25,7 @@ import './AdminLayout.css'
 
 export default function AdminLayout() {
     return (
-        <div className="admin-layout" data-theme="dark">
+        <div className="admin-layout" data-theme="light">
             <main className="admin-main">
                 <Header />
                 <div className="admin-content">

@@ -1,7 +1,7 @@
 .dashboard-page {
     padding: 2rem 0;
     min-height: calc(100vh - 72px);
-    background-color: #0f1117;
+    background-color: #f8fafc;
 }
 
 .dashboard-container {
@@ -20,13 +20,13 @@
 .header-welcome h1 {
     font-size: 2rem;
     font-weight: 800;
-    color: #ffffff;
+    color: #0f172a;
     letter-spacing: -0.03em;
     margin-bottom: 0.5rem;
 }
 
 .header-welcome p {
-    color: #94a3b8;
+    color: #64748b;
     font-size: 0.9375rem;
 }
 
@@ -44,18 +44,17 @@
 }
 
 .summary-card {
-    background: #1a1d24;
+    background: white;
     padding: 1.75rem;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid #e2e8f0;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
 }
 
 .summary-card:hover {
     transform: translateY(-5px);
-    background: #1e222a;
-    border-color: rgba(99, 102, 241, 0.3);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08);
 }
 
 .card-icon {
@@ -66,6 +65,26 @@
     align-items: center;
     justify-content: center;
     margin-bottom: 1.25rem;
+}
+
+.summary-card.revenue .card-icon {
+    background: #ecfdf5;
+    color: #10b981;
+}
+
+.summary-card.expense .card-icon {
+    background: #fff1f2;
+    color: #f43f5e;
+}
+
+.summary-card.profit .card-icon {
+    background: #eef2ff;
+    color: #6366f1;
+}
+
+.summary-card.balance .card-icon {
+    background: #f1f5f9;
+    color: #64748b;
 }
 
 .card-label {
@@ -80,8 +99,17 @@
 .card-value {
     font-size: 1.75rem;
     font-weight: 800;
-    color: #ffffff;
+    color: #0f172a;
     letter-spacing: -0.02em;
+}
+
+.card-subtext {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 /* Charts */
@@ -93,16 +121,24 @@
 }
 
 .chart-container {
-    background: #1a1d24;
+    background: white;
     padding: 2rem;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
 }
 
 .chart-header h3 {
     font-size: 1.125rem;
     font-weight: 700;
-    color: white;
+    color: #1e293b;
 }
 
 /* Bottom Grid */
@@ -113,34 +149,71 @@
 }
 
 .dashboard-section {
-    background: #1a1d24;
+    background: white;
     padding: 2rem;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e293b;
 }
 
 .history-item {
     padding: 1rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid #f1f5f9;
     display: grid;
     grid-template-columns: 100px 1fr 140px;
     align-items: center;
     gap: 1rem;
+    transition: background 0.2s;
+}
+
+.history-item:hover {
+    background: #f8fafc;
 }
 
 .history-item:last-child {
     border-bottom: none;
 }
 
+.item-date {
+    font-size: 0.8125rem;
+    color: #94a3b8;
+}
+
 .item-title {
     font-size: 1rem;
     font-weight: 600;
-    color: white;
+    color: #1e293b;
 }
 
 .item-subtitle {
     color: #64748b;
     font-size: 0.8125rem;
+}
+
+.item-amount {
+    font-weight: 700;
+    text-align: right;
+}
+
+.item-amount.positive {
+    color: #10b981;
+}
+
+.item-amount.negative {
+    color: #f43f5e;
 }
 
 /* Responsive */

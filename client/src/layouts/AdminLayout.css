@@ -1,10 +1,8 @@
 /* Admin Layout - Premium Top Nav Style */
 :root {
-    --color-bg: #0f1117;
-    --color-sidebar: #13151a;
-    --color-primary: #6366f1;
-    --color-primary-rgb: 99, 102, 241;
-    --color-border: rgba(255, 255, 255, 0.06);
+    --color-bg: #f8fafc;
+    --color-primary: #10b981;
+    --color-border: #e2e8f0;
     --transition-speed: 0.3s;
 }
 
