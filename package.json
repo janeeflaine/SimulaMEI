@@ -1,0 +1,20 @@
+{
+    "name": "simulamei-monorepo",
+    "version": "1.0.0",
+    "private": true,
+    "engines": {
+        "node": "20.x"
+    },
+    "scripts": {
+        "install-all": "npm install && cd client && npm install --include=dev && cd ../server && npm install",
+        "postinstall": "cd client && npm install --include=dev && cd ../server && npm install",
+        "build": "cd client && npm install --include=dev && npm run build && cd ../server && npm install",
+        "start": "cd server && npm start",
+        "dev": "concurrently \"cd server && npm run dev\" \"cd client && npm run dev\""
+    },
+    "dependencies": {
+        "concurrently": "^8.0.0",
+        "dotenv": "^17.2.3",
+        "pg": "^8.17.1"
+    }
+}
