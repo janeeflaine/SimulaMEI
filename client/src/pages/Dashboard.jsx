@@ -403,13 +403,16 @@ export default function Dashboard() {
             <div className="ambient-glow glow-2"></div>
             <div className="dashboard-container">
 
-                {/* Header Section */}
-                <div className="dashboard-header">
+                {/* Header Section - Massive Typographic Hero */}
+                <div className="dashboard-header animate-enter">
                     <div className="header-welcome">
-                        <h1>Olá, {user?.name?.split(' ')[0]} 👋</h1>
-                        <p>Bem-vindo à sua central de inteligência financeira.</p>
+                        <span className="header-pre-title">Saldo Disponível</span>
+                        <div className="header-balance-display">
+                            <span className="header-balance-currency">R$</span>
+                            {(financialSummary.balance).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
                     </div>
-                    <div className="header-actions">
+                    <div className="header-actions animate-enter delay-100">
                         {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
                             <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
                                 <PlusCircle size={18} /> Novo Lançamento
@@ -473,7 +476,7 @@ export default function Dashboard() {
                 {/* Master Financial Summary */}
                 {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) ? (
                     <div className="financial-summary-section">
-                        <div className="summary-grid">
+                        <div className="summary-grid animate-enter delay-200">
                             <div className="summary-card revenue">
                                 <div className="card-header">
                                     <div className="card-icon"><TrendingUp size={20} /></div>
@@ -515,18 +518,34 @@ export default function Dashboard() {
                         </div>
                     </div>
                 ) : (
-                    <div className="stats-grid" style={{ marginBottom: '40px' }}>
-                        <div className="stat-card">
-                            <div className="stat-card-label">Simulações</div>
-                            <div className="stat-card-value">{stats.totalSimulations}</div>
+                    <div className="summary-grid animate-enter delay-200">
+                        <div className="summary-card revenue">
+                            <div className="card-header">
+                                <span className="card-label">Receita Mensal</span>
+                                <TrendingUp className="card-icon" size={20} />
+                            </div>
+                            <div className="card-value tnum text-emerald-600">
+                                {formatCurrency(stats.avgRevenue)}
+                            </div>
+                            <div className="card-footer" style={{ marginTop: '0.5rem' }}>
+                                <span className="badge badge-success">+12%</span>
+                            </div>
                         </div>
-                        <div className="stat-card">
-                            <div className="stat-card-label">Faturamento Médio</div>
-                            <div className="stat-card-value text-primary">{formatCurrency(stats.avgRevenue)}</div>
+                        <div className="summary-card">
+                            <div className="card-header">
+                                <span className="card-label">Simulações</span>
+                                <BarChart3 className="card-icon" size={20} />
+                            </div>
+                            <div className="card-value tnum">
+                                {stats.totalSimulations}
+                            </div>
                         </div>
-                        <div className="stat-card">
-                            <div className="stat-card-label">Status do Limite</div>
-                            <div className="stat-card-value">
+                        <div className="summary-card">
+                            <div className="card-header">
+                                <span className="card-label">Status Limite</span>
+                                <AlertCircle className="card-icon" size={20} />
+                            </div>
+                            <div className="card-value">
                                 <span className={`badge badge-${stats.limitStatus}`}>
                                     {stats.limitStatus === 'success' ? 'Normal' : 'Atenção'}
                                 </span>
@@ -536,89 +555,105 @@ export default function Dashboard() {
                 )}
 
                 {/* Visual Analysis (Ouro) */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
-                    <div className="charts-grid">
-                        <div className="chart-container">
-                            <div className="chart-header">
-                                <div>
-                                    <h3>Fluxo de Caixa Mensal</h3>
-                                    <p className="chart-subtitle">Entradas vs Saídas</p>
+                {
+                    (userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
+                        <div className="charts-grid">
+                            <div className="chart-container">
+                                <div className="chart-header">
+                                    <div>
+                                        <h3>Fluxo de Caixa Mensal</h3>
+                                        <p className="chart-subtitle">Entradas vs Saídas</p>
+                                    </div>
+                                    <div className="chart-actions">
+                                        <button className="chart-action-btn active">6M</button>
+                                        <button className="chart-action-btn">1A</button>
+                                        <button className="chart-action-btn icon"><Clock size={16} /></button>
+                                    </div>
                                 </div>
-                                <div className="chart-actions">
-                                    <button className="chart-action-btn active">6M</button>
-                                    <button className="chart-action-btn">1A</button>
-                                    <button className="chart-action-btn icon"><Clock size={16} /></button>
-                                </div>
-                            </div>
-                            <div style={{ width: '100%', height: '300px' }}>
-                                <ResponsiveContainer>
-                                    <AreaChart data={memoizedCashFlowData}>
-                                        <defs>
-                                            <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#1E3A8A" stopOpacity={0.1} />
-                                                <stop offset="95%" stopColor="#1E3A8A" stopOpacity={0} />
-                                            </linearGradient>
-                                            <linearGradient id="colorSaida" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#DC2626" stopOpacity={0.05} />
-                                                <stop offset="95%" stopColor="#DC2626" stopOpacity={0} />
-                                            </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} tickFormatter={(val) => `R$ ${val / 1000}k`} />
-                                        <Tooltip
-                                            contentStyle={{ backgroundColor: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}
-                                            itemStyle={{ color: '#111827' }}
-                                            formatter={(value) => formatCurrency(value)}
-                                        />
-                                        <Area type="monotone" dataKey="entrada" stroke="#1E3A8A" strokeWidth={2} fillOpacity={1} fill="url(#colorEntrada)" />
-                                        <Area type="monotone" dataKey="saida" stroke="#DC2626" strokeWidth={2} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorSaida)" />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        <div className="chart-container">
-                            <div className="chart-header">
-                                <div>
-                                    <h3>Gastos por Categoria</h3>
-                                    <p className="chart-subtitle">Análise de despesas</p>
-                                </div>
-                                <button className="chart-action-btn icon"><PieChartIcon size={16} /></button>
-                            </div>
-                            <div style={{ width: '100%', height: 300 }}>
-                                {categoryData.length > 0 ? (
+                                <div style={{ width: '100%', height: '300px' }}>
                                     <ResponsiveContainer>
-                                        <PieChart>
-                                            <Pie
-                                                data={categoryData}
-                                                innerRadius={65}
-                                                outerRadius={85}
-                                                paddingAngle={8}
-                                                dataKey="value"
-                                                stroke="none"
-                                            >
-                                                {categoryData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Pie>
+                                        <AreaChart data={memoizedCashFlowData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                                            <defs>
+                                                <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#059669" stopOpacity={0.1} />
+                                                    <stop offset="95%" stopColor="#059669" stopOpacity={0} />
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                                            <XAxis
+                                                dataKey="name"
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tick={{ fill: '#94A3B8', fontSize: 11, fontFamily: 'Inter' }}
+                                                dy={10}
+                                            />
+                                            <YAxis
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tick={{ fill: '#94A3B8', fontSize: 11, fontFamily: 'Inter' }}
+                                                tickFormatter={(val) => `R$ ${val / 1000}k`}
+                                            />
                                             <Tooltip
-                                                contentStyle={{ backgroundColor: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}
-                                                itemStyle={{ color: '#111827' }}
+                                                contentStyle={{
+                                                    backgroundColor: '#fff',
+                                                    border: '1px solid #E2E8F0',
+                                                    borderRadius: '6px',
+                                                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                                                    fontFamily: 'Inter',
+                                                    fontSize: '12px'
+                                                }}
+                                                itemStyle={{ color: '#0F172A' }}
                                                 formatter={(value) => formatCurrency(value)}
                                             />
-                                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', color: '#6B7280' }} />
-                                        </PieChart>
+                                            <Area type="monotone" dataKey="entrada" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorEntrada)" activeDot={{ r: 4, strokeWidth: 0 }} />
+                                            <Area type="monotone" dataKey="saida" stroke="#E11D48" strokeWidth={2} strokeDasharray="4 4" fill="transparent" activeDot={{ r: 4, strokeWidth: 0 }} />
+                                        </AreaChart>
                                     </ResponsiveContainer>
-                                ) : (
-                                    <div className="empty-state">
-                                        <p>Sem dados de despesas</p>
+                                </div>
+                            </div>
+
+                            <div className="chart-container">
+                                <div className="chart-header">
+                                    <div>
+                                        <h3>Gastos por Categoria</h3>
+                                        <p className="chart-subtitle">Análise de despesas</p>
                                     </div>
-                                )}
+                                    <button className="chart-action-btn icon"><PieChartIcon size={16} /></button>
+                                </div>
+                                <div style={{ width: '100%', height: 300 }}>
+                                    {categoryData.length > 0 ? (
+                                        <ResponsiveContainer>
+                                            <PieChart>
+                                                <Pie
+                                                    data={categoryData}
+                                                    innerRadius={65}
+                                                    outerRadius={85}
+                                                    paddingAngle={8}
+                                                    dataKey="value"
+                                                    stroke="none"
+                                                >
+                                                    {categoryData.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}
+                                                    itemStyle={{ color: '#111827' }}
+                                                    formatter={(value) => formatCurrency(value)}
+                                                />
+                                                <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', color: '#6B7280' }} />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="empty-state">
+                                            <p>Sem dados de despesas</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Bottom Section: History & Side Panel */}
                 <div className="bottom-grid">
@@ -741,7 +776,7 @@ export default function Dashboard() {
                         </div>
                     </div>
                 </div>
-            </div>
+            </div >
 
             {isFinanceModalOpen && (
                 <FinanceQuickActionModal
@@ -755,6 +790,6 @@ export default function Dashboard() {
                     }}
                 />
             )}
-        </div>
+        </div >
     )
 }
