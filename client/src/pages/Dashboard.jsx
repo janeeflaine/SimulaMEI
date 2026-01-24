@@ -77,13 +77,29 @@ export default function Dashboard() {
     // Fetch plan-dependent data
     useEffect(() => {
         if (userPlan && currentTenant) {
-            if (userPlan.features?.historico) fetchSimulations()
-            if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
-                fetchTransactions()
-                fetchDueTodayBills()
-                fetchCashFlowData()
+            const loadData = async () => {
+                setLoading(true)
+                try {
+                    const promises = []
+
+                    if (userPlan.features?.historico) {
+                        promises.push(fetchSimulations())
+                    }
+
+                    if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
+                        promises.push(fetchTransactions())
+                        promises.push(fetchDueTodayBills())
+                        promises.push(fetchCashFlowData())
+                    }
+
+                    await Promise.allSettled(promises)
+                } catch (error) {
+                    console.error('Error loading dashboard data:', error)
+                } finally {
+                    setLoading(false)
+                }
             }
-            if (!userPlan.features?.historico) setLoading(false)
+            loadData()
         }
     }, [userPlan, currentTenant])
 
@@ -132,8 +148,6 @@ export default function Dashboard() {
             setSimulations(data.simulations || [])
         } catch (error) {
             console.error('Erro ao carregar simulações:', error)
-        } finally {
-            setLoading(false)
         }
     }
 
@@ -286,7 +300,7 @@ export default function Dashboard() {
         return Object.entries(categories).map(([name, value]) => ({ name, value }))
     }, [transactions])
 
-    const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6']
+    const COLORS = ['#1E3A8A', '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE', '#A5B4FC']
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -541,24 +555,24 @@ export default function Dashboard() {
                                     <AreaChart data={memoizedCashFlowData}>
                                         <defs>
                                             <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
-                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                                <stop offset="5%" stopColor="#1E3A8A" stopOpacity={0.1} />
+                                                <stop offset="95%" stopColor="#1E3A8A" stopOpacity={0} />
                                             </linearGradient>
                                             <linearGradient id="colorSaida" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.05} />
-                                                <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                                <stop offset="5%" stopColor="#DC2626" stopOpacity={0.05} />
+                                                <stop offset="95%" stopColor="#DC2626" stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#cbd5e1', fontSize: 12 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#cbd5e1', fontSize: 12 }} tickFormatter={(val) => `R$ ${val / 1000}k`} />
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} tickFormatter={(val) => `R$ ${val / 1000}k`} />
                                         <Tooltip
-                                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)' }}
-                                            itemStyle={{ color: '#f8fafc' }}
+                                            contentStyle={{ backgroundColor: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}
+                                            itemStyle={{ color: '#111827' }}
                                             formatter={(value) => formatCurrency(value)}
                                         />
-                                        <Area type="monotone" dataKey="entrada" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorEntrada)" />
-                                        <Area type="monotone" dataKey="saida" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorSaida)" />
+                                        <Area type="monotone" dataKey="entrada" stroke="#1E3A8A" strokeWidth={2} fillOpacity={1} fill="url(#colorEntrada)" />
+                                        <Area type="monotone" dataKey="saida" stroke="#DC2626" strokeWidth={2} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorSaida)" />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </div>
@@ -589,11 +603,11 @@ export default function Dashboard() {
                                                 ))}
                                             </Pie>
                                             <Tooltip
-                                                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.5)' }}
-                                                itemStyle={{ color: '#f8fafc' }}
+                                                contentStyle={{ backgroundColor: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}
+                                                itemStyle={{ color: '#111827' }}
                                                 formatter={(value) => formatCurrency(value)}
                                             />
-                                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', color: '#cbd5e1' }} />
+                                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', color: '#6B7280' }} />
                                         </PieChart>
                                     </ResponsiveContainer>
                                 ) : (

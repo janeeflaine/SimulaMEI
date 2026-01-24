@@ -1,57 +1,18 @@
 .dashboard-page {
     padding: 2rem 0;
-    min-height: calc(100vh - var(--header-height));
+    flex: 1;
+    display: flex;
+    flex-direction: column;
     background-color: var(--color-bg);
-    position: relative;
-    overflow-x: hidden;
-    /* Prevent horizontal scroll from glow */
-}
-
-/* Ambient Glow */
-.ambient-glow {
-    position: absolute;
-    width: 600px;
-    height: 600px;
-    background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
-    border-radius: 50%;
-    pointer-events: none;
-    z-index: 0;
-    filter: blur(80px);
-}
-
-.glow-1 {
-    top: -200px;
-    left: -100px;
-    animation: float 10s ease-in-out infinite;
-}
-
-.glow-2 {
-    bottom: -200px;
-    right: -100px;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, rgba(0, 0, 0, 0) 70%);
-    animation: float 15s ease-in-out infinite reverse;
-}
-
-@keyframes float {
-
-    0%,
-    100% {
-        transform: translate(0, 0);
-    }
-
-    50% {
-        transform: translate(30px, 30px);
-    }
 }
 
 .dashboard-container {
     max-width: 1400px;
     margin: 0 auto;
     padding: 0 2rem;
-    position: relative;
-    z-index: 1;
 }
 
+/* Header */
 .dashboard-header {
     display: flex;
     justify-content: space-between;
@@ -60,11 +21,11 @@
 }
 
 .header-welcome h1 {
-    font-size: 2rem;
-    font-weight: 800;
+    font-size: 1.875rem;
+    font-weight: 700;
     color: var(--color-text-heading);
-    letter-spacing: -0.03em;
-    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
 }
 
 .header-welcome p {
@@ -75,70 +36,67 @@
 .header-actions {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem;
 }
 
 /* Quick Actions Group */
 .quick-actions-group {
     display: flex;
-    gap: 0.75rem;
-    background: var(--color-bg-secondary);
-    padding: 0.5rem;
-    border-radius: 12px;
+    gap: 0.5rem;
+    background: white;
+    padding: 0.375rem;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
 }
 
 .btn-icon-only {
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     border: 1px solid transparent;
     cursor: pointer;
     transition: all 0.2s;
     background: transparent;
-    color: var(--color-text-muted);
+    color: var(--color-gray-500);
 }
 
 .btn-icon-only:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--color-text-heading);
+    background: var(--color-gray-50);
+    color: var(--color-primary);
 }
 
 .btn-icon-only.success:hover {
-    background: rgba(16, 185, 129, 0.1);
+    background: #ECFDF5;
     color: var(--color-success);
-    border-color: rgba(16, 185, 129, 0.2);
 }
 
 .btn-icon-only.danger:hover {
-    background: rgba(239, 68, 68, 0.1);
+    background: #FEF2F2;
     color: var(--color-danger);
-    border-color: rgba(239, 68, 68, 0.2);
 }
 
 .btn-outline-primary {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    color: var(--color-text-body);
+    padding: 0 0.875rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
     font-weight: 600;
     font-size: 0.875rem;
-    background: transparent;
+    background: white;
     transition: all 0.2s;
     text-decoration: none;
-    height: 38px;
+    height: 36px;
 }
 
 .btn-outline-primary:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    background: rgba(16, 185, 129, 0.05);
+    background: var(--color-gray-50);
 }
 
 /* Summary Grid */
@@ -150,71 +108,66 @@
 }
 
 .summary-card {
-    background: rgba(30, 41, 59, 0.7);
-    /* Slightly transparent */
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    padding: 1.75rem;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    background: white;
+    padding: 1.5rem;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-card);
+    transition: transform 0.2s, box-shadow 0.2s;
     position: relative;
     overflow: hidden;
 }
 
 .summary-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
-    border-color: var(--color-primary);
-    background: rgba(30, 41, 59, 0.9);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--color-primary-light);
 }
 
 .summary-card .card-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1rem;
+    align-items: center;
+    margin-bottom: 1.25rem;
 }
 
 .card-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 14px;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 1.25rem;
 }
 
 /* Specific Card Colors */
 .summary-card.revenue .card-icon {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
+    background: #ECFDF5;
+    color: #059669;
 }
 
 .summary-card.expense .card-icon {
-    background: rgba(244, 63, 94, 0.15);
-    color: #f43f5e;
+    background: #FEF2F2;
+    color: #DC2626;
 }
 
 .summary-card.profit .card-icon {
-    background: rgba(99, 102, 241, 0.15);
-    color: #6366f1;
+    background: #b0c9f1;
+    color: var(--color-primary);
 }
 
 .summary-card.balance .card-icon {
-    background: rgba(148, 163, 184, 0.15);
-    color: #94a3b8;
+    background: #F3F4F6;
+    color: var(--color-text-muted);
 }
 
 .card-label {
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: 0.8125rem;
+    font-weight: 600;
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    padding-top: 0.5rem;
-    /* Align with icon top visually */
 }
 
 /* Trend Badge */
@@ -222,43 +175,30 @@
     font-size: 0.75rem;
     font-weight: 700;
     padding: 2px 8px;
-    border-radius: 12px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
+    border-radius: 99px;
 }
 
 .trend-badge.positive {
-    color: var(--color-success);
-    background: rgba(16, 185, 129, 0.1);
-    border-color: rgba(16, 185, 129, 0.2);
+    color: #059669;
+    background: #ECFDF5;
 }
 
 .trend-badge.negative {
-    color: var(--color-danger);
-    /* Usually green is good for profit, red bad for expense, but context matters */
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.2);
-}
-
-/* In expense card, negative might mean "bad" (spending more) or just direction */
-.summary-card.expense .trend-badge.positive {
-    color: var(--color-danger);
-    /* Increase in expense is red */
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.2);
+    color: #DC2626;
+    background: #FEF2F2;
 }
 
 .card-value {
     font-size: 2rem;
-    font-weight: 800;
-    color: var(--color-text-heading);
-    letter-spacing: -0.02em;
+    font-weight: 700;
+    color: var(--color-gray-900);
+    letter-spacing: -0.03em;
     margin-bottom: 0.5rem;
 }
 
 .card-subtext {
     font-size: 0.8125rem;
-    color: var(--color-text-muted);
+    color: var(--color-gray-500);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -273,13 +213,11 @@
 }
 
 .chart-container {
-    background: rgba(30, 41, 59, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    padding: 2rem;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    background: white;
+    padding: 1.5rem;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-card);
 }
 
 .chart-header {
@@ -292,7 +230,7 @@
 .chart-header h3 {
     font-size: 1.125rem;
     font-weight: 700;
-    color: var(--color-text-heading);
+    color: var(--color-gray-900);
     margin-bottom: 0.25rem;
 }
 
@@ -303,39 +241,32 @@
 
 .chart-actions {
     display: flex;
-    gap: 0.5rem;
-    background: var(--color-bg);
-    padding: 4px;
+    gap: 0.25rem;
+    background: var(--color-gray-100);
+    padding: 2px;
     border-radius: 8px;
-    border: 1px solid var(--color-border);
 }
 
 .chart-action-btn {
     border: none;
     background: transparent;
-    color: var(--color-text-muted);
+    color: var(--color-gray-500);
     font-size: 0.75rem;
     font-weight: 600;
-    padding: 4px 8px;
+    padding: 4px 10px;
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .chart-action-btn:hover {
-    color: var(--color-text-heading);
+    color: var(--color-gray-900);
 }
 
 .chart-action-btn.active {
-    background: var(--color-bg-secondary);
+    background: white;
     color: var(--color-primary);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.chart-action-btn.icon {
-    padding: 4px;
-    display: flex;
-    align-items: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 /* Bottom Grid */
@@ -346,13 +277,11 @@
 }
 
 .dashboard-section {
-    background: rgba(30, 41, 59, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    padding: 2rem;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    background: white;
+    padding: 1.5rem;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-card);
 }
 
 .section-header {
@@ -363,15 +292,15 @@
 }
 
 .section-header h2 {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 700;
-    color: var(--color-text-heading);
+    color: var(--color-gray-900);
 }
 
 /* Transaction List Items */
 .history-item {
-    padding: 1rem 0;
-    border-bottom: 1px solid var(--color-border);
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--color-border-light);
     display: grid;
     grid-template-columns: 100px 1fr 140px;
     align-items: center;
@@ -380,7 +309,7 @@
 }
 
 .history-item:hover {
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--color-gray-50);
 }
 
 .history-item:last-child {
@@ -393,28 +322,28 @@
 }
 
 .item-title {
-    font-size: 1rem;
+    font-size: 0.9375rem;
     font-weight: 600;
-    color: var(--color-text-heading);
+    color: var(--color-gray-900);
 }
 
 .item-subtitle {
-    color: var(--color-text-muted);
-    font-size: 0.8125rem;
+    color: var(--color-gray-500);
+    font-size: 0.75rem;
 }
 
 .item-amount {
-    font-weight: 700;
+    font-weight: 600;
     text-align: right;
-    font-family: 'Inter', sans-serif;
+    color: var(--color-gray-900);
 }
 
 .item-amount.positive {
-    color: #10b981;
+    color: #059669;
 }
 
 .item-amount.negative {
-    color: #f43f5e;
+    color: #DC2626;
 }
 
 /* Responsive */
@@ -438,64 +367,40 @@
     .dashboard-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 1.5rem;
-        margin-bottom: 2rem;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
     }
 
     .header-actions {
         width: 100%;
-        gap: 1rem;
-        flex-direction: column;
-        align-items: stretch;
+        justify-content: space-between;
     }
 
     .quick-actions-group {
-        justify-content: space-between;
-        padding: 0.75rem;
-    }
-
-    .btn-icon-only {
-        width: 48px;
-        height: 48px;
+        width: auto;
     }
 
     .summary-grid {
         grid-template-columns: 1fr;
+        margin-bottom: 1.5rem;
     }
 
-    /* Mobile Transaction Cards */
     .history-item {
         display: flex;
         flex-direction: column;
         align-items: flex-start;
         padding: 1rem;
-        background: rgba(255, 255, 255, 0.03);
+        background: white;
         border: 1px solid var(--color-border);
         border-radius: 12px;
         margin-bottom: 0.75rem;
-        gap: 0.5rem;
-    }
-
-    .history-item:last-child {
-        margin-bottom: 0;
-    }
-
-    .item-date {
-        display: block;
-        font-size: 0.75rem;
-        opacity: 0.7;
+        gap: 0.25rem;
     }
 
     .item-title {
-        width: 100%;
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        font-size: 1.125rem;
-    }
-
-    .item-amount {
-        text-align: left;
-        font-size: 1.125rem;
+        width: 100%;
+        font-size: 1rem;
     }
 }

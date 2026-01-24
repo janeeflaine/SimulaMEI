@@ -16,16 +16,27 @@ const ouroOnly = (req, res, next) => {
 // --- ROTA RESTAURADA: CONTAS DO DIA (Isso corrige o erro 404) ---
 router.get('/transactions/due-today', authMiddleware, async (req, res) => {
     try {
-        const { rows } = await db.query(
-            `SELECT t.*, c.name as "categoryName" 
-             FROM finance_transactions t 
-             LEFT JOIN finance_categories c ON t."categoryId" = c.id 
-             WHERE t."userId" = $1 
-             AND t.status = 'PENDING' 
-             AND DATE(t."dueDate") = CURRENT_DATE 
-             ORDER BY t."dueDate" ASC`,
-            [req.user.id]
-        )
+        const today = new Date().toISOString().split('T')[0]
+        let query = `
+            SELECT t.*, c.name as "categoryName" 
+            FROM finance_transactions t 
+            LEFT JOIN finance_categories c ON t."categoryId" = c.id 
+            WHERE t."userId" = $1 
+            AND t.status = 'PENDING' 
+            AND DATE(t."dueDate") = $2
+        `
+        const params = [req.user.id, today]
+
+        if (req.tenant && req.tenant.id) {
+            if (req.tenant.id !== 'consolidated') {
+                query += ` AND t."businessUnitId" = $3`
+                params.push(req.tenant.id)
+            }
+        }
+
+        query += ` ORDER BY t."dueDate" ASC`
+
+        const { rows } = await db.query(query, params)
         res.json(rows)
     } catch (err) {
         console.error('Erro ao buscar contas do dia:', err)

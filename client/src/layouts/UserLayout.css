@@ -1,7 +1,7 @@
 .user-layout {
-    min-height: 100vh;
     display: flex;
     flex-direction: column;
+    flex: 1;
 }
 
 /* Header & Nav */
@@ -41,6 +41,7 @@
     font-weight: 800;
     background: var(--gradient-primary);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     letter-spacing: -0.5px;
 }
