@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import './FinanceQuickActionModal.css'
 
 export default function FinanceQuickActionModal({ onClose, onSuccess, initialData }) {
-    const [step, setStep] = useState(initialData ? 3 : 1) // 1: Target (PF/PJ), 2: Type (Receita/Despesa), 3: Form
+    const [step, setStep] = useState(initialData ? 4 : 1) // 1: Target (PF/PJ), 2: Type (Receita/Despesa), 3: Wallet Selection, 4: Form
     const [formData, setFormData] = useState({
         target: initialData?.target || '', // PERSONAL, BUSINESS
         type: initialData?.type || '', // RECEITA, DESPESA
+        business_unit_id: initialData?.business_unit_id || '', // Wallet ID
         amount: initialData?.amount || '',
         date: initialData?.date ? initialData.date.substring(0, 10) : new Date().toLocaleDateString('sv-SE'),
         categoryId: initialData?.categoryId || '',
@@ -18,6 +19,7 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
     })
     const [categories, setCategories] = useState([])
     const [cards, setCards] = useState([])
+    const [wallets, setWallets] = useState([]) // New state for wallets
     const [loading, setLoading] = useState(false)
     const [isAddingCategory, setIsAddingCategory] = useState(false)
     const [isAddingCard, setIsAddingCard] = useState(false)
@@ -25,11 +27,29 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
     const [newCardName, setNewCardName] = useState('')
 
     useEffect(() => {
-        if (step === 3) {
+        if (step === 3 && wallets.length === 0) {
+            fetchWallets()
+        }
+        if (step === 4) {
             fetchCategories()
             fetchCards()
         }
     }, [step])
+
+    const fetchWallets = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/business-units', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setWallets(data)
+            }
+        } catch (err) {
+            console.error('Erro ao buscar carteiras:', err)
+        }
+    }
 
     const fetchCategories = async () => {
         try {
@@ -204,6 +224,36 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                     </div>
                 )
             case 3:
+                const filteredWallets = wallets.filter(w => {
+                    if (formData.target === 'BUSINESS') return w.account_type === 'PJ'
+                    return w.account_type === 'PF'
+                })
+
+                return (
+                    <div className="modal-step">
+                        <button className="back-btn" onClick={() => setStep(2)}>← Voltar</button>
+                        <h3>De quem é a transação?</h3>
+                        <div className="selection-grid wallets-grid">
+                            {filteredWallets.map(wallet => (
+                                <button className="selection-card wallet-card" key={wallet.id} onClick={() => handleNext('business_unit_id', wallet.id)}>
+                                    <div className="wallet-avatar">
+                                        {wallet.logo_url || wallet.photo_url ? (
+                                            <img src={wallet.logo_url || wallet.photo_url} alt={wallet.name} />
+                                        ) : (
+                                            <span className="icon">
+                                                {wallet.account_type === 'PJ' ? '🏢' : '👤'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <strong>{wallet.name}</strong>
+                                    <small>{wallet.account_type} • {wallet.cnpj || 'Pessoal'}</small>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )
+
+            case 4:
                 const title = formData.type === 'RECEITA'
                     ? 'Adicionar Receita'
                     : formData.target === 'BUSINESS'
@@ -211,8 +261,9 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                         : 'Adicionar Despesa Pessoal'
 
                 return (
+                return (
                     <form className="modal-step" onSubmit={handleSubmit}>
-                        <button type="button" className="back-btn" onClick={() => setStep(2)}>← Voltar</button>
+                        <button type="button" className="back-btn" onClick={() => setStep(3)}>← Voltar</button>
                         <header className="form-header">
                             <h3>{title}</h3>
                             <div className="badge-setup">
