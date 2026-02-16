@@ -1,0 +1,129 @@
+.cropper-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1100;
+    backdrop-filter: blur(4px);
+}
+
+.cropper-modal-content {
+    background: white;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 500px;
+    padding: 1.5rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.cropper-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.cropper-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-slate-900);
+}
+
+.cropper-body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #f1f5f9;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    user-select: none;
+    /* Aspect ratio container */
+    max-height: 400px;
+}
+
+/* Updated approach: Using a container for the crop area */
+.crop-container {
+    position: relative;
+    width: 300px;
+    height: 300px;
+    overflow: hidden;
+    background: #000;
+    border-radius: 8px;
+    cursor: move;
+}
+
+.crop-image {
+    position: absolute;
+    /* Transform handled by inline styles for zoom/pan */
+    transform-origin: center center;
+    max-width: none;
+    /* Important to allow zooming beyond 100% */
+}
+
+/* Overlay to darken outside the crop circle/square */
+.crop-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    /* Make it look like a circle crop if desired, or 0 for square */
+    z-index: 10;
+}
+
+/* For square crop */
+.crop-overlay.square {
+    border-radius: 0;
+    border: 2px solid white;
+}
+
+/* Controls */
+.cropper-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.zoom-control {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.zoom-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    outline: none;
+}
+
+.zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.cropper-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}

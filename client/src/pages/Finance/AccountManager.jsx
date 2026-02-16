@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     Briefcase,
     User,
@@ -8,8 +8,11 @@ import {
     Trash2,
     ShieldCheck,
     Building2,
-    Image as ImageIcon
+    Image as ImageIcon,
+    Upload,
+    Camera
 } from 'lucide-react'
+import ImageCropperModal from '../../components/ImageCropperModal'
 import './AccountManager.css'
 
 export default function AccountManager() {
@@ -23,6 +26,11 @@ export default function AccountManager() {
         document: '',
         photo_url: '',
     })
+
+    // Image Upload State
+    const [isCropperOpen, setIsCropperOpen] = useState(false)
+    const [tempImageSrc, setTempImageSrc] = useState(null)
+    const fileInputRef = useRef(null)
 
     // Fetch accounts on mount
     useEffect(() => {
@@ -52,8 +60,8 @@ export default function AccountManager() {
             setCurrentAccount(account)
             setFormData({
                 name: account.name,
-                type: account.account_type, // Assuming 'PF' or 'PJ' from DB
-                document: account.cnpj, // DB field is 'cnpj' for both
+                type: account.account_type,
+                document: account.cnpj,
                 photo_url: account.photo_url || ''
             })
         } else {
@@ -78,18 +86,14 @@ export default function AccountManager() {
         let finalValue = value
 
         if (name === 'document') {
-            // Remove non-digits
             const onlyNums = value.replace(/\D/g, '')
-
             if (formData.type === 'PF') {
-                // Apply CPF Mask: 000.000.000-00
                 finalValue = onlyNums
                     .replace(/(\d{3})(\d)/, '$1.$2')
                     .replace(/(\d{3})(\d)/, '$1.$2')
                     .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
                     .slice(0, 14)
             } else {
-                // Apply CNPJ Mask: 00.000.000/0000-00
                 finalValue = onlyNums
                     .replace(/^(\d{2})(\d)/, '$1.$2')
                     .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
@@ -98,14 +102,38 @@ export default function AccountManager() {
                     .slice(0, 18)
             }
         }
-
         setFormData(prev => ({ ...prev, [name]: finalValue }))
     }
 
-    // Re-apply mask if type changes
     useEffect(() => {
         setFormData(prev => ({ ...prev, document: '' }))
     }, [formData.type])
+
+
+    // File Upload Handlers
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0]
+        if (file) {
+            const reader = new FileReader()
+            reader.onload = () => {
+                setTempImageSrc(reader.result)
+                setIsCropperOpen(true)
+                e.target.value = null
+            }
+            reader.readAsDataURL(file)
+        }
+    }
+
+    const handleCropSave = (base64Image) => {
+        setFormData(prev => ({ ...prev, photo_url: base64Image }))
+        setIsCropperOpen(false)
+        setTempImageSrc(null)
+    }
+
+    const handleCropCancel = () => {
+        setIsCropperOpen(false)
+        setTempImageSrc(null)
+    }
 
 
     const handleSave = async (e) => {
@@ -126,7 +154,7 @@ export default function AccountManager() {
             const payload = {
                 name: formData.name,
                 account_type: formData.type,
-                cnpj: formData.document, // Save to 'cnpj' column regardless
+                cnpj: formData.document,
                 photo_url: formData.photo_url
             }
 
@@ -154,14 +182,12 @@ export default function AccountManager() {
 
     const handleDelete = async (id) => {
         if (!window.confirm('Tem certeza que deseja excluir esta conta?')) return
-
         try {
             const token = localStorage.getItem('token')
             const res = await fetch(`/api/business-units/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             })
-
             if (res.ok) {
                 setAccounts(prev => prev.filter(acc => acc.id !== id))
             } else {
@@ -317,18 +343,56 @@ export default function AccountManager() {
                                 </div>
 
                                 <div className="form-group">
-                                    <label>URL da Foto / Logo (Opcional)</label>
-                                    <div style={{ position: 'relative' }}>
-                                        <ImageIcon size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                                        <input
-                                            type="url"
-                                            name="photo_url"
-                                            className="form-control"
-                                            placeholder="https://..."
-                                            style={{ paddingLeft: '40px' }}
-                                            value={formData.photo_url}
-                                            onChange={handleInputChange}
-                                        />
+                                    <label>Foto do Perfil</label>
+                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                        {/* Preview Area */}
+                                        <div style={{
+                                            width: '80px',
+                                            height: '80px',
+                                            borderRadius: '50%',
+                                            background: '#f1f5f9',
+                                            overflow: 'hidden',
+                                            border: '2px solid #e2e8f0',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}>
+                                            {formData.photo_url ? (
+                                                <img src={formData.photo_url} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <Camera size={32} color="#94a3b8" />
+                                            )}
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                style={{ display: 'none' }}
+                                                ref={fileInputRef}
+                                                onChange={handleFileSelect}
+                                            />
+                                            <button
+                                                type="button"
+                                                className="btn btn-outline btn-sm"
+                                                onClick={() => fileInputRef.current?.click()}
+                                                style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+                                            >
+                                                <Upload size={14} style={{ marginRight: '6px' }} />
+                                                {formData.photo_url ? 'Alterar Foto' : 'Carregar Foto'}
+                                            </button>
+
+                                            {formData.photo_url && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData(p => ({ ...p, photo_url: '' }))}
+                                                    style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.8rem', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+                                                >
+                                                    Remover foto
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -339,6 +403,15 @@ export default function AccountManager() {
                         </form>
                     </div>
                 </div>
+            )}
+
+            {/* Cropper Modal */}
+            {isCropperOpen && tempImageSrc && (
+                <ImageCropperModal
+                    imageSrc={tempImageSrc}
+                    onCancel={handleCropCancel}
+                    onSave={handleCropSave}
+                />
             )}
         </div>
     )
