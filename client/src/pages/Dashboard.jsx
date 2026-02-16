@@ -224,7 +224,8 @@ export default function Dashboard() {
 
     // Calculations for Summary
     const financialSummary = useMemo(() => {
-        const paidTransactions = transactions.filter(t => t.status !== 'PENDING')
+        const safeTransactions = Array.isArray(transactions) ? transactions : []
+        const paidTransactions = safeTransactions.filter(t => t.status !== 'PENDING')
         const revenuePF = paidTransactions.filter(t => t.type === 'RECEITA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0)
         const revenuePJ = paidTransactions.filter(t => t.type === 'RECEITA' && t.target === 'BUSINESS').reduce((acc, t) => acc + t.amount, 0)
         const expensePF = paidTransactions.filter(t => t.type === 'DESPESA' && t.target === 'PERSONAL').reduce((acc, t) => acc + t.amount, 0)
@@ -241,7 +242,7 @@ export default function Dashboard() {
 
     // Data for Charts
     const memoizedCashFlowData = useMemo(() => {
-        if (cashFlowData && cashFlowData.length > 0) return cashFlowData
+        if (Array.isArray(cashFlowData) && cashFlowData.length > 0) return cashFlowData
 
         // Fallback placeholder while loading or if no data exists
         return [
@@ -256,7 +257,8 @@ export default function Dashboard() {
 
     const categoryData = useMemo(() => {
         const categories = {}
-        transactions.filter(t => t.type === 'DESPESA').forEach(t => {
+        const safeTransactions = Array.isArray(transactions) ? transactions : []
+        safeTransactions.filter(t => t.type === 'DESPESA').forEach(t => {
             const name = t.categoryName || 'Outros'
             categories[name] = (categories[name] || 0) + t.amount
         })
