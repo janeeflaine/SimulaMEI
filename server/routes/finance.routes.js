@@ -135,7 +135,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 
         // Dynamic Filtering
         if (walletId && walletId !== 'ALL') {
-            params.push(walletId)
+            params.push(parseInt(walletId))
             query += ` AND t."business_unit_id" = $${params.length}`
         }
 
