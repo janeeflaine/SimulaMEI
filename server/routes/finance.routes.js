@@ -328,7 +328,7 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
 router.get('/business-units', authMiddleware, async (req, res) => {
     try {
         const { rows } = await db.query(
-            'SELECT * FROM business_units WHERE "userId" = $1 ORDER BY "isPrimary" DESC, name ASC',
+            'SELECT * FROM business_units WHERE "ownerId" = $1 ORDER BY "isPrimary" DESC, name ASC',
             [req.user.id]
         )
         res.json(rows)
@@ -339,18 +339,33 @@ router.get('/business-units', authMiddleware, async (req, res) => {
 })
 
 router.post('/business-units', authMiddleware, ouroOnly, async (req, res) => {
+    // Recebe os dados do Frontend
     const { name, account_type, cnpj, photo_url, isPrimary } = req.body
+
     try {
-        // If sticking as primary, unset others?
-        // simple implementation for now
+        // CORREÇÃO: 
+        // 1. Mudamos "userId" para "ownerId" (para bater com seu banco)
+        // 2. Mudamos "photo_url" para "logo_url" (se sua coluna no banco for logo_url)
+
         const { rows: [newUnit] } = await db.query(
-            'INSERT INTO business_units ("userId", name, "account_type", cnpj, "photo_url", "isPrimary") VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [req.user.id, name, account_type, cnpj, photo_url, isPrimary || false]
+            `INSERT INTO business_units 
+            ("ownerId", name, account_type, cnpj, logo_url, "isPrimary") 
+            VALUES ($1, $2, $3, $4, $5, $6) 
+            RETURNING *`,
+            [
+                req.user.id,        // $1: Vai para ownerId
+                name,               // $2: Vai para name
+                account_type,       // $3: Vai para account_type
+                cnpj,               // $4: Vai para cnpj
+                photo_url,          // $5: Salva em logo_url
+                isPrimary || false  // $6: isPrimary
+            ]
         )
         res.json(newUnit)
+
     } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao criar carteira' })
+        console.error("ERRO AO CRIAR CARTEIRA:", err)
+        res.status(500).json({ message: 'Erro ao criar carteira. Verifique o console do servidor.' })
     }
 })
 
@@ -358,7 +373,7 @@ router.put('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => 
     const { name, account_type, cnpj, photo_url, isPrimary } = req.body
     try {
         const { rows: [updated] } = await db.query(
-            'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "photo_url" = $4, "isPrimary" = $5 WHERE id = $6 AND "userId" = $7 RETURNING *',
+            'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "logo_url" = $4, "isPrimary" = $5 WHERE id = $6 AND "ownerId" = $7 RETURNING *',
             [name, account_type, cnpj, photo_url, isPrimary, req.params.id, req.user.id]
         )
         if (!updated) return res.status(404).json({ message: 'Carteira não encontrada' })

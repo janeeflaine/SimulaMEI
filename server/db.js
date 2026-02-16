@@ -214,11 +214,11 @@ const init = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS business_units (
         id SERIAL PRIMARY KEY,
-        "userId" INTEGER NOT NULL REFERENCES users(id),
+        "ownerId" INTEGER NOT NULL REFERENCES users(id),
         name TEXT NOT NULL,
         "account_type" TEXT NOT NULL CHECK ("account_type" IN ('PF', 'PJ')),
         cnpj TEXT, 
-        "photo_url" TEXT,
+        "logo_url" TEXT,
         "isPrimary" BOOLEAN DEFAULT FALSE,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -232,6 +232,20 @@ const init = async () => {
       await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS "imageUrl" TEXT')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_name TEXT')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_cpf TEXT')
+
+      // Fix for business_units schema change (userId -> ownerId, photo_url -> logo_url)
+      // We check if "userId" exists and rename it
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='business_units' AND column_name='userId') THEN
+             ALTER TABLE business_units RENAME COLUMN "userId" TO "ownerId";
+          END IF;
+          IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='business_units' AND column_name='photo_url') THEN
+             ALTER TABLE business_units RENAME COLUMN "photo_url" TO "logo_url";
+          END IF;
+        END $$;
+      `)
     } catch (migErr) {
       console.log('Migration note (finance):', migErr.message)
     }
