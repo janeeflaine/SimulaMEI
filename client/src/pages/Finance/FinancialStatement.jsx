@@ -26,31 +26,54 @@ export default function FinancialStatement() {
     const { user } = useAuth()
     const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
+    const [page, setPage] = useState(1)
+    const [hasMore, setHasMore] = useState(true)
+    const [totalCount, setTotalCount] = useState(0) // New state for total records
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
     const [editingTransaction, setEditingTransaction] = useState(null)
 
-    // --- MUDANÇA 1: Estado do filtro atualizado para usar walletId (ID da Carteira) ---
     const [filters, setFilters] = useState({
         search: '',
         type: 'ALL',
-        walletId: 'ALL', // Novo filtro de Carteira
+        walletId: 'ALL',
+        categoryId: 'ALL',
         dateStart: '',
         dateEnd: ''
     })
 
+    // Debounce for search
+    const [debouncedSearch, setDebouncedSearch] = useState('')
 
-    // --- INFINITE SCROLL ---
-    const [visibleCount, setVisibleCount] = useState(15)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(filters.search)
+        }, 500)
+        return () => clearTimeout(timer)
+    }, [filters.search])
+
     const loadMoreRef = useRef(null)
     const [editingWalletTransactionId, setEditingWalletTransactionId] = useState(null)
 
     const [wallets, setWallets] = useState([])
+    const [categories, setCategories] = useState([])
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false)
 
     useEffect(() => {
+        setPage(1)
+        setHasMore(true)
+        setTransactions([]) // Clear list on filter change
+        setTotalCount(0)
+        setLoading(true)
+    }, [debouncedSearch, filters.type, filters.walletId, filters.categoryId, filters.dateStart, filters.dateEnd])
+
+    useEffect(() => {
         fetchTransactions()
+    }, [page, debouncedSearch, filters.type, filters.walletId, filters.categoryId, filters.dateStart, filters.dateEnd])
+
+    useEffect(() => {
         fetchWallets()
+        fetchCategories()
     }, [])
 
     const fetchWallets = async () => {
@@ -65,6 +88,21 @@ export default function FinancialStatement() {
             }
         } catch (error) {
             console.error('Erro ao buscar carteiras:', error)
+        }
+    }
+
+    const fetchCategories = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/categories', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setCategories(data)
+            }
+        } catch (error) {
+            console.error('Erro ao buscar categorias:', error)
         }
     }
 
@@ -103,15 +141,33 @@ export default function FinancialStatement() {
     const fetchTransactions = async () => {
         try {
             const token = localStorage.getItem('token')
+            const params = new URLSearchParams({
+                page,
+                limit: 15,
+                walletId: filters.walletId,
+                categoryId: filters.categoryId,
+                type: filters.type,
+                search: debouncedSearch,
+                startDate: filters.dateStart,
+                endDate: filters.dateEnd
+            })
 
-            const res = await fetch('/api/finance/transactions', {
+            const res = await fetch(`/api/finance/transactions?${params}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             })
             if (res.ok) {
-                const data = await res.json()
-                setTransactions(data)
+                const { data, totalPages, totalCount } = await res.json()
+
+                setTransactions(prev => {
+                    if (page === 1) return data
+                    // Avoid duplicates if race conditions occur
+                    const newIds = new Set(data.map(d => d.id))
+                    return [...prev.filter(p => !newIds.has(p.id)), ...data]
+                })
+                setHasMore(page < totalPages)
+                setTotalCount(totalCount)
             }
         } catch (error) {
             console.error('Erro ao buscar transações:', error)
@@ -143,36 +199,13 @@ export default function FinancialStatement() {
         }
     }
 
-    // --- MUDANÇA 3: Lógica de Filtragem atualizada ---
-    const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => {
-            const matchSearch = t.description?.toLowerCase().includes(filters.search.toLowerCase()) ||
-                t.categoryName?.toLowerCase().includes(filters.search.toLowerCase())
 
-            const matchType = filters.type === 'ALL' || t.type === filters.type
-
-            // Filtro novo: Compara o ID da unidade de negocio (Carteira)
-            // Se walletId for 'ALL', mostra tudo. Senão, compara o ID.
-            const matchWallet = filters.walletId === 'ALL' || t.business_unit_id === Number(filters.walletId)
-
-            let matchDate = true
-            if (filters.dateStart) matchDate = matchDate && t.date >= filters.dateStart
-            if (filters.dateEnd) matchDate = matchDate && t.date <= filters.dateEnd
-
-            return matchSearch && matchType && matchWallet && matchDate
-        })
-    }, [transactions, filters])
-
-    // Reset pagination when filters change
-    useEffect(() => {
-        setVisibleCount(15)
-    }, [filters])
 
     // Infinite Scroll Observer
     useEffect(() => {
         const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting) {
-                setVisibleCount(prev => prev + 15)
+            if (entries[0].isIntersecting && hasMore && !loading) {
+                setPage(prev => prev + 1)
             }
         }, { threshold: 1.0 })
 
@@ -185,9 +218,10 @@ export default function FinancialStatement() {
                 observer.unobserve(loadMoreRef.current)
             }
         }
-    }, [filteredTransactions])
+    }, [hasMore, loading])
 
-    const paginatedTransactions = filteredTransactions.slice(0, visibleCount)
+    // paginatedTransactions was removed, use transactions directly
+
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -251,7 +285,7 @@ export default function FinancialStatement() {
 
                     {/* --- MUDANÇA 4: O Novo Dropdown de Carteiras --- */}
                     <div className="control-group">
-                        <label>Carteira / Conta</label>
+                        <label>Carteira</label>
                         <select
                             value={filters.walletId}
                             onChange={(e) => setFilters({ ...filters, walletId: e.target.value })}
@@ -265,6 +299,19 @@ export default function FinancialStatement() {
                             <option disabled>--- PESSOAL ---</option>
                             {wallets.filter(w => w.type === 'PF').map(w => (
                                 <option key={w.id} value={w.id}>👤 {w.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="control-group">
+                        <label>Categoria</label>
+                        <select
+                            value={filters.categoryId}
+                            onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
+                        >
+                            <option value="ALL">Todas</option>
+                            {categories.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
                             ))}
                         </select>
                     </div>
@@ -306,7 +353,7 @@ export default function FinancialStatement() {
                             <tbody>
                                 {loading ? (
                                     <tr><td colSpan="7" style={{ textAlign: 'center', padding: '3rem' }}>Carregando transações...</td></tr>
-                                ) : paginatedTransactions.length === 0 ? (
+                                ) : transactions.length === 0 ? (
                                     <tr>
                                         <td colSpan="7">
                                             <div className="statement-empty">
@@ -316,14 +363,14 @@ export default function FinancialStatement() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    paginatedTransactions.map(t => (
-                                        <tr key={t.id}><td className="td-date">
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <Calendar size={14} />
-                                                {formatDate(t.date)}
-                                            </div>
-                                        </td>
-                                            {/* --- MUDANÇA 5: Exibição da Carteira na linha --- */}
+                                    transactions.map(t => (
+                                        <tr key={t.id}>
+                                            <td className="td-date">
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <Calendar size={14} />
+                                                    {formatDate(t.date)}
+                                                </div>
+                                            </td>
                                             <td className="td-target">
                                                 {editingWalletTransactionId === t.id ? (
                                                     <select
@@ -422,7 +469,7 @@ export default function FinancialStatement() {
                     </div>
 
                     {/* SENTINEL ELEMENT FOR INFINITE SCROLL */}
-                    {visibleCount < filteredTransactions.length && (
+                    {hasMore && (
                         <div
                             ref={loadMoreRef}
                             style={{
@@ -440,47 +487,53 @@ export default function FinancialStatement() {
                     {/* Footer com contagem total */}
                     <div className="statement-footer">
                         <span style={{ fontSize: '0.875rem', color: 'var(--color-slate-500)' }}>
-                            Mostrando <strong>{Math.min(visibleCount, filteredTransactions.length)}</strong> de <strong>{filteredTransactions.length}</strong> transações
+                            Mostrando <strong>{transactions.length}</strong> de <strong>{totalCount}</strong> transações
                         </span>
                     </div>
                 </div>
             </div>
 
-            {isEditModalOpen && (
-                <FinanceQuickActionModal
-                    initialData={editingTransaction}
-                    onClose={() => {
-                        setIsEditModalOpen(false)
-                        setEditingTransaction(null)
-                    }}
-                    onSuccess={() => {
-                        setIsEditModalOpen(false)
-                        setEditingTransaction(null)
-                        fetchTransactions()
-                    }}
-                />
-            )}
+            {
+                isEditModalOpen && (
+                    <FinanceQuickActionModal
+                        initialData={editingTransaction}
+                        onClose={() => {
+                            setIsEditModalOpen(false)
+                            setEditingTransaction(null)
+                        }}
+                        onSuccess={() => {
+                            setIsEditModalOpen(false)
+                            setEditingTransaction(null)
+                            fetchTransactions()
+                        }}
+                    />
+                )
+            }
 
-            {isCreateModalOpen && (
-                <FinanceQuickActionModal
-                    onClose={() => setIsCreateModalOpen(false)}
-                    onSuccess={() => {
-                        setIsCreateModalOpen(false)
-                        fetchTransactions()
-                    }}
-                />
-            )}
+            {
+                isCreateModalOpen && (
+                    <FinanceQuickActionModal
+                        onClose={() => setIsCreateModalOpen(false)}
+                        onSuccess={() => {
+                            setIsCreateModalOpen(false)
+                            fetchTransactions()
+                        }}
+                    />
+                )
+            }
 
-            {isTransferModalOpen && (
-                <TransferModal
-                    wallets={wallets}
-                    onClose={() => setIsTransferModalOpen(false)}
-                    onSuccess={() => {
-                        setIsTransferModalOpen(false)
-                        fetchTransactions()
-                    }}
-                />
-            )}
-        </div>
+            {
+                isTransferModalOpen && (
+                    <TransferModal
+                        wallets={wallets}
+                        onClose={() => setIsTransferModalOpen(false)}
+                        onSuccess={() => {
+                            setIsTransferModalOpen(false)
+                            fetchTransactions()
+                        }}
+                    />
+                )
+            }
+        </div >
     )
 }

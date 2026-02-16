@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
+const { validateWalletOwnership } = require('../middleware/walletSecurity')
 
 // Utility to ensure only Ouro plan users can change data
 const ouroOnly = (req, res, next) => {
@@ -114,83 +115,83 @@ router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // --- BILLS (CONTAS A PAGAR) ---
-
-router.get('/bills', authMiddleware, async (req, res) => {
-    try {
-        const { rows } = await db.query(`
-            SELECT b.*, c.name as "categoryName", cr.name as "cardName"
-            FROM bills_to_pay b
-            LEFT JOIN finance_categories c ON b."categoryId" = c.id
-            LEFT JOIN credit_cards cr ON b."cardId" = cr.id
-            WHERE b."userId" = $1
-            ORDER BY b."dueDate" ASC
-        `, [req.user.id])
-        res.json(rows)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao buscar contas' })
-    }
-})
-
-router.post('/bills', authMiddleware, ouroOnly, async (req, res) => {
-    const { description, amount, dueDate, categoryId, cardId } = req.body
-    try {
-        const { rows: [newBill] } = await db.query(
-            'INSERT INTO bills_to_pay ("userId", description, amount, "dueDate", "categoryId", "cardId") VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [req.user.id, description, amount, dueDate, categoryId, cardId]
-        )
-        res.json(newBill)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao criar conta' })
-    }
-})
-
-router.patch('/bills/:id/status', authMiddleware, ouroOnly, async (req, res) => {
-    const { status } = req.body
-    try {
-        const { rows: [updated] } = await db.query(
-            'UPDATE bills_to_pay SET status = $1 WHERE id = $2 AND "userId" = $3 RETURNING *',
-            [status, req.params.id, req.user.id]
-        )
-        res.json(updated)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao atualizar status' })
-    }
-})
-
-router.delete('/bills/:id', authMiddleware, ouroOnly, async (req, res) => {
-    try {
-        await db.query('DELETE FROM bills_to_pay WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
-        res.json({ message: 'Conta excluída' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao excluir conta' })
-    }
-})
+// [REMOVED] Deprecated in favor of 'finance_transactions' with status=PENDING
 
 // --- TRANSACTIONS ---
 
 router.get('/transactions', authMiddleware, async (req, res) => {
     try {
-        const { rows } = await db.query(
-            `SELECT t.*, c.name as "categoryName", cr.name as "cardName" 
-             FROM finance_transactions t 
-             LEFT JOIN finance_categories c ON t."categoryId" = c.id 
-             LEFT JOIN credit_cards cr ON t."cardId" = cr.id
-             WHERE t."userId" = $1 
-             ORDER BY t.date DESC`,
-            [req.user.id]
-        )
-        res.json(rows)
+        const { page = 1, limit = 15, walletId, type, search, startDate, endDate } = req.query
+
+        const offset = (page - 1) * limit
+        const params = [req.user.id]
+        let query = `
+            SELECT t.*, c.name as "categoryName", cr.name as "cardName" 
+            FROM finance_transactions t 
+            LEFT JOIN finance_categories c ON t."categoryId" = c.id 
+            LEFT JOIN credit_cards cr ON t."cardId" = cr.id
+            WHERE t."userId" = $1
+        `
+
+        // Dynamic Filtering
+        if (walletId && walletId !== 'ALL') {
+            params.push(walletId)
+            query += ` AND t."business_unit_id" = $${params.length}`
+        }
+
+        if (type && type !== 'ALL') {
+            params.push(type)
+            query += ` AND t.type = $${params.length}`
+        }
+
+        // New Category Filter
+        if (req.query.categoryId && req.query.categoryId !== 'ALL') {
+            params.push(req.query.categoryId)
+            query += ` AND t."categoryId" = $${params.length}`
+        }
+
+        if (search) {
+            params.push(`%${search}%`)
+            query += ` AND (t.description ILIKE $${params.length} OR c.name ILIKE $${params.length})` // Case-insensitive
+        }
+
+        if (startDate) {
+            params.push(startDate)
+            query += ` AND t.date >= $${params.length}`
+        }
+
+        if (endDate) {
+            params.push(endDate)
+            query += ` AND t.date <= $${params.length}`
+        }
+
+        // Count Total (for pagination metadata)
+        // We use a separate query to count the total filtered records
+        // Simple regex replace to get count query might be fragile, but effective here
+        const countQueryStr = `SELECT COUNT(*) FROM (` + query + `) as filtered_data`
+        const countRes = await db.query(countQueryStr, params)
+        const totalCount = parseInt(countRes.rows[0].count)
+
+        // Pagination
+        query += ` ORDER BY t.date DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+        params.push(limit, offset)
+
+        const { rows } = await db.query(query, params)
+
+        res.json({
+            data: rows,
+            totalCount,
+            totalPages: Math.ceil(totalCount / limit),
+            currentPage: Number(page)
+        })
+
     } catch (err) {
         console.error(err)
         res.status(500).json({ message: 'Erro ao buscar transações' })
     }
 })
 
-router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/transactions', authMiddleware, ouroOnly, validateWalletOwnership, async (req, res) => {
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate, business_unit_id } = req.body
 
     // Normalize empty strings to null for ID and date columns
@@ -254,7 +255,7 @@ router.get('/transactions/due-today', authMiddleware, async (req, res) => {
 
 // Update a transaction
 // Update a transaction (supports partial updates)
-router.patch('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.patch('/transactions/:id', authMiddleware, ouroOnly, validateWalletOwnership, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     const allowedUpdates = [
@@ -347,7 +348,7 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
 
 // --- TRANSFERS ---
 
-router.post('/transfers', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/transfers', authMiddleware, ouroOnly, validateWalletOwnership, async (req, res) => {
     const { sourceWalletId, targetWalletId, amount, date, description } = req.body;
 
     if (!sourceWalletId || !targetWalletId || !amount || !date) {

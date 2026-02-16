@@ -173,20 +173,7 @@ const init = async () => {
       );
     `)
 
-    // Bills to Pay (Contas a Pagar)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS bills_to_pay (
-        id SERIAL PRIMARY KEY,
-        "userId" INTEGER NOT NULL REFERENCES users(id),
-        description TEXT NOT NULL,
-        amount REAL NOT NULL,
-        "dueDate" TIMESTAMP NOT NULL,
-        "categoryId" INTEGER REFERENCES finance_categories(id),
-        "cardId" INTEGER REFERENCES credit_cards(id),
-        status TEXT DEFAULT 'PENDENTE' CHECK (status IN ('PENDENTE', 'PAGO')),
-        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `)
+
 
     // Finance Transactions
     await pool.query(`
@@ -255,7 +242,7 @@ const init = async () => {
       console.log('🔄 Migrating TIMESTAMP columns to DATE...')
       await pool.query('ALTER TABLE finance_transactions ALTER COLUMN date TYPE DATE')
       await pool.query('ALTER TABLE finance_transactions ALTER COLUMN "dueDate" TYPE DATE')
-      await pool.query('ALTER TABLE bills_to_pay ALTER COLUMN "dueDate" TYPE DATE')
+
       console.log('✅ Date columns migrated successfully')
     } catch (dateMigErr) {
       console.log('Date migration note:', dateMigErr.message)
