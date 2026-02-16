@@ -1,6 +1,6 @@
 const express = require('express')
 const router = express.Router()
-const { db } = require('../db')
+const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 
 // Utility to ensure only Ouro plan users can change data
@@ -191,12 +191,13 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 })
 
 router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
-    let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate } = req.body
+    let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate, business_unit_id } = req.body
 
     // Normalize empty strings to null for ID and date columns
     const finalCategoryId = categoryId === '' || categoryId === null ? null : categoryId
     const finalCardId = (paymentMethod === 'Cartão de Crédito' && cardId !== '' && cardId !== null) ? cardId : null
     const finalDueDate = dueDate === '' || dueDate === null ? null : dueDate
+    const finalBusinessUnitId = business_unit_id === '' || business_unit_id === null ? null : business_unit_id
 
     // If it's a Boleto, it starts as PENDING
     const status = paymentMethod === 'Boleto' ? 'PENDING' : 'PAID'
@@ -204,9 +205,9 @@ router.post('/transactions', authMiddleware, ouroOnly, async (req, res) => {
     try {
         const { rows: [newTransaction] } = await db.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate") 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-            [req.user.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate]
+            ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate", "business_unit_id") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+            [req.user.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate, finalBusinessUnitId]
         )
         res.json(newTransaction)
     } catch (err) {
@@ -320,6 +321,47 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Erro ao buscar estatísticas de fluxo de caixa:', err);
         res.status(500).json({ message: 'Erro ao buscar dados do gráfico' });
+    }
+});
+
+// --- TRANSFERS ---
+
+router.post('/transfers', authMiddleware, ouroOnly, async (req, res) => {
+    const { sourceWalletId, targetWalletId, amount, date, description } = req.body;
+
+    if (!sourceWalletId || !targetWalletId || !amount || !date) {
+        return res.status(400).json({ message: 'Dados incompletos para transferência.' });
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Create Expense in Source Wallet
+        await client.query(
+            `INSERT INTO finance_transactions 
+            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status) 
+            VALUES ($1, 'DESPESA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID')`,
+            [req.user.id, amount, date, sourceWalletId, `Transferência para carteira #${targetWalletId} - ${description || ''}`]
+        );
+
+        // 2. Create Income in Target Wallet
+        await client.query(
+            `INSERT INTO finance_transactions 
+            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status) 
+            VALUES ($1, 'RECEITA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID')`,
+            [req.user.id, amount, date, targetWalletId, `Transferência de carteira #${sourceWalletId} - ${description || ''}`]
+        );
+
+        await client.query('COMMIT');
+        res.json({ message: 'Transferência realizada com sucesso!' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Erro na transferência:', err);
+        res.status(500).json({ message: 'Erro ao realizar transferência.' });
+    } finally {
+        client.release();
     }
 });
 

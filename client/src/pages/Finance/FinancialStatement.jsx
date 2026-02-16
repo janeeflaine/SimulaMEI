@@ -19,6 +19,7 @@ import {
     Wallet // Ícone novo para Carteira
 } from 'lucide-react'
 import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
+import TransferModal from '../../components/TransferModal'
 import './FinancialStatement.css'
 
 export default function FinancialStatement() {
@@ -40,17 +41,28 @@ export default function FinancialStatement() {
     const [page, setPage] = useState(1)
     const rowsPerPage = 15
 
-    // --- MUDANÇA 2: Lista de Carteiras (Baseada no SQL que rodamos) ---
-    // Futuramente você pode buscar isso do banco, mas assim já funciona agora.
-    const wallets = [
-        { id: 1, name: 'Minha MEI Principal', type: 'PJ' },
-        { id: 2, name: 'Minha Conta Pessoal', type: 'PF' }, // Verifique se o ID no banco ficou 2 mesmo
-        { id: 3, name: 'Conta Pessoal Esposa', type: 'PF' } // Verifique se o ID no banco ficou 3 mesmo
-    ]
+    const [wallets, setWallets] = useState([])
+    const [isTransferModalOpen, setIsTransferModalOpen] = useState(false)
 
     useEffect(() => {
         fetchTransactions()
+        fetchWallets()
     }, [])
+
+    const fetchWallets = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/business-units', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setWallets(data)
+            }
+        } catch (error) {
+            console.error('Erro ao buscar carteiras:', error)
+        }
+    }
 
     const fetchTransactions = async () => {
         try {
@@ -153,8 +165,8 @@ export default function FinancialStatement() {
                         <p>Visão unificada das finanças Familiares e Empresariais.</p>
                     </div>
                     <div className="header-actions">
-                        {/* Botão de Transferência (placeholder visual) */}
-                        <button className="btn btn-outline" onClick={() => alert('Em breve: Funcionalidade de Transferência entre Carteiras')}>
+                        {/* Botão de Transferência */}
+                        <button className="btn btn-outline" onClick={() => setIsTransferModalOpen(true)}>
                             <ArrowUpCircle size={18} style={{ transform: 'rotate(45deg)' }} /> Transferir
                         </button>
                         <button className="btn btn-secondary" onClick={() => setIsCreateModalOpen(true)}>
@@ -363,6 +375,17 @@ export default function FinancialStatement() {
                     onClose={() => setIsCreateModalOpen(false)}
                     onSuccess={() => {
                         setIsCreateModalOpen(false)
+                        fetchTransactions()
+                    }}
+                />
+            )}
+
+            {isTransferModalOpen && (
+                <TransferModal
+                    wallets={wallets}
+                    onClose={() => setIsTransferModalOpen(false)}
+                    onSuccess={() => {
+                        setIsTransferModalOpen(false)
                         fetchTransactions()
                     }}
                 />

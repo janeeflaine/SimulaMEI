@@ -1,0 +1,46 @@
+.transfer-modal {
+    max-width: 500px;
+}
+
+.icon-transfer {
+    color: var(--color-primary);
+    margin-right: 8px;
+}
+
+.form-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.arrow-separator {
+    font-size: 1.5rem;
+    color: var(--color-slate-400);
+    margin-top: 1.5rem;
+    /* Align with inputs */
+}
+
+.select-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.select-wrapper svg {
+    position: absolute;
+    left: 10px;
+    color: var(--color-slate-400);
+    pointer-events: none;
+}
+
+.select-wrapper select {
+    padding-left: 36px;
+    width: 100%;
+}
+
+.input-amount {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--color-slate-800);
+}
