@@ -386,7 +386,7 @@ router.put('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => 
 
 router.delete('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => {
     try {
-        await db.query('DELETE FROM business_units WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
+        await db.query('DELETE FROM business_units WHERE id = $1 AND "ownerId" = $2', [req.params.id, req.user.id])
         res.json({ message: 'Carteira excluída' })
     } catch (err) {
         console.error(err)
