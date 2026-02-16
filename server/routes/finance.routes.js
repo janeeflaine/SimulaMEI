@@ -350,27 +350,49 @@ router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) =>
 // Get monthly cash flow stats for charts (last 6 months)
 router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
     try {
+        const { startDate, endDate, walletId } = req.query;
+        let dateFilter = '';
+        let walletFilter = '';
+        const params = [req.user.id];
+
+        // Build date range for monthly buckets
+        let dateRangeStart = `date_trunc('month', CURRENT_DATE) - INTERVAL '5 months'`;
+        let dateRangeEnd = `date_trunc('month', CURRENT_DATE)`;
+
+        if (startDate) {
+            params.push(startDate);
+            dateRangeStart = `date_trunc('month', $${params.length}::date)`;
+        }
+        if (endDate) {
+            params.push(endDate);
+            dateRangeEnd = `date_trunc('month', $${params.length}::date)`;
+        }
+        if (walletId) {
+            params.push(parseInt(walletId));
+            walletFilter = ` AND t.business_unit_id = $${params.length}`;
+        }
+
         const query = `
-            WITH RECURSIVE last_months AS (
-                SELECT date_trunc('month', CURRENT_DATE) - INTERVAL '5 months' as month_date
+            WITH RECURSIVE date_range AS (
+                SELECT ${dateRangeStart} as month_date
                 UNION ALL
                 SELECT month_date + INTERVAL '1 month'
-                FROM last_months
-                WHERE month_date < date_trunc('month', CURRENT_DATE)
+                FROM date_range
+                WHERE month_date < ${dateRangeEnd}
             )
             SELECT 
                 TO_CHAR(m.month_date, 'Mon') as name,
                 COALESCE(SUM(CASE WHEN t.type = 'RECEITA' THEN t.amount ELSE 0 END), 0) as entrada,
                 COALESCE(SUM(CASE WHEN t.type = 'DESPESA' THEN t.amount ELSE 0 END), 0) as saida
-            FROM last_months m
+            FROM date_range m
             LEFT JOIN finance_transactions t ON 
                 date_trunc('month', t.date) = m.month_date AND 
                 t."userId" = $1 AND 
-                t.status = 'PAID'
+                t.status = 'PAID'${walletFilter}
             GROUP BY m.month_date
             ORDER BY m.month_date ASC
         `;
-        const { rows } = await db.query(query, [req.user.id]);
+        const { rows } = await db.query(query, params);
         res.json(rows);
     } catch (err) {
         console.error('Erro ao buscar estatísticas de fluxo de caixa:', err);

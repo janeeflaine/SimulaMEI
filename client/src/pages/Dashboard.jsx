@@ -24,7 +24,9 @@ import {
     ChevronRight,
     Search,
     History,
-    CreditCard
+    CreditCard,
+    Filter,
+    ChevronDown
 } from 'lucide-react'
 import {
     ResponsiveContainer,
@@ -41,6 +43,42 @@ import {
     Bar,
     Legend
 } from 'recharts'
+
+// Helper: get date range for a filter preset
+const getDateRange = (preset) => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = now.getMonth()
+    switch (preset) {
+        case 'thisMonth': {
+            const start = new Date(y, m, 1)
+            const end = new Date(y, m + 1, 0)
+            return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) }
+        }
+        case 'lastMonth': {
+            const start = new Date(y, m - 1, 1)
+            const end = new Date(y, m, 0)
+            return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) }
+        }
+        case 'thisYear': {
+            const start = new Date(y, 0, 1)
+            const end = new Date(y, 11, 31)
+            return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) }
+        }
+        case 'all':
+            return { startDate: '', endDate: '' }
+        default:
+            return { startDate: '', endDate: '' }
+    }
+}
+
+const FILTER_LABELS = {
+    thisMonth: 'Este Mês',
+    lastMonth: 'Mês Passado',
+    thisYear: 'Este Ano',
+    all: 'Tudo',
+    custom: 'Personalizado'
+}
 
 export default function Dashboard() {
     const { user } = useAuth()
@@ -62,6 +100,41 @@ export default function Dashboard() {
     const [dueTodayBills, setDueTodayBills] = useState([])
     const [showDueTodayAlert, setShowDueTodayAlert] = useState(false)
 
+    // Smart Filters
+    const initRange = getDateRange('thisMonth')
+    const [filterPreset, setFilterPreset] = useState('thisMonth')
+    const [startDate, setStartDate] = useState(initRange.startDate)
+    const [endDate, setEndDate] = useState(initRange.endDate)
+    const [walletId, setWalletId] = useState('')
+    const [wallets, setWallets] = useState([])
+    const [isFilterOpen, setIsFilterOpen] = useState(false)
+
+    const applyPreset = (preset) => {
+        setFilterPreset(preset)
+        if (preset !== 'custom') {
+            const range = getDateRange(preset)
+            setStartDate(range.startDate)
+            setEndDate(range.endDate)
+        }
+        setIsFilterOpen(false)
+    }
+
+    // Fetch wallets for filter
+    const fetchWallets = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/business-units', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setWallets(Array.isArray(data) ? data : [])
+            }
+        } catch (err) {
+            console.error(err)
+        }
+    }
+
     // Fetch initial data
     useEffect(() => {
         const init = async () => {
@@ -72,11 +145,12 @@ export default function Dashboard() {
         init()
     }, [])
 
-    // Fetch plan-dependent data
+    // Fetch plan-dependent data (first load)
     useEffect(() => {
         if (userPlan) {
             if (userPlan.features?.historico) fetchSimulations()
             if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
+                fetchWallets()
                 fetchTransactions()
                 fetchDueTodayBills()
                 fetchCashFlowData()
@@ -84,6 +158,14 @@ export default function Dashboard() {
             if (!userPlan.features?.historico) setLoading(false)
         }
     }, [userPlan])
+
+    // Re-fetch when filters change
+    useEffect(() => {
+        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
+            fetchTransactions()
+            fetchCashFlowData()
+        }
+    }, [startDate, endDate, walletId])
 
     const fetchUserPlan = async () => {
         try {
@@ -132,14 +214,15 @@ export default function Dashboard() {
     const fetchTransactions = async () => {
         try {
             const token = localStorage.getItem('token')
-            // Request all transactions (Dashboard needs them all for summaries/charts)
-            const res = await fetch('/api/finance/transactions?limit=9999', {
+            const params = new URLSearchParams({ limit: '9999' })
+            if (startDate) params.append('startDate', startDate)
+            if (endDate) params.append('endDate', endDate)
+            if (walletId) params.append('walletId', walletId)
+            const res = await fetch(`/api/finance/transactions?${params}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (res.ok) {
                 const response = await res.json()
-                // Backend returns { data: [...], totalCount, totalPages, currentPage }
-                // Extract the actual array from response.data
                 setTransactions(Array.isArray(response.data) ? response.data : Array.isArray(response) ? response : [])
             }
         } catch (error) {
@@ -150,7 +233,11 @@ export default function Dashboard() {
     const fetchCashFlowData = async () => {
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch('/api/finance/stats/cash-flow', {
+            const params = new URLSearchParams()
+            if (startDate) params.append('startDate', startDate)
+            if (endDate) params.append('endDate', endDate)
+            if (walletId) params.append('walletId', walletId)
+            const res = await fetch(`/api/finance/stats/cash-flow?${params}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (res.ok) {
@@ -377,6 +464,53 @@ export default function Dashboard() {
                         <p>Bem-vindo à sua central de inteligência financeira.</p>
                     </div>
                     <div className="header-actions">
+                        {/* Smart Filters */}
+                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
+                            <>
+                                {/* Wallet Filter */}
+                                <select
+                                    className="dashboard-filter-select"
+                                    value={walletId}
+                                    onChange={e => setWalletId(e.target.value)}
+                                >
+                                    <option value="">🏦 Todas as Carteiras</option>
+                                    {wallets.filter(w => w.account_type === 'PJ').map(w => (
+                                        <option key={w.id} value={w.id}>🏢 {w.name}</option>
+                                    ))}
+                                    {wallets.filter(w => w.account_type === 'PF').map(w => (
+                                        <option key={w.id} value={w.id}>👤 {w.name}</option>
+                                    ))}
+                                </select>
+
+                                {/* Date Filter */}
+                                <div className="dashboard-filter-wrapper">
+                                    <button
+                                        className="dashboard-filter-btn"
+                                        onClick={() => setIsFilterOpen(!isFilterOpen)}
+                                    >
+                                        <Calendar size={16} />
+                                        <span>📅 {FILTER_LABELS[filterPreset]}</span>
+                                        <ChevronDown size={14} />
+                                    </button>
+
+                                    {isFilterOpen && (
+                                        <div className="dashboard-filter-dropdown">
+                                            <button className={`filter-option ${filterPreset === 'thisMonth' ? 'active' : ''}`} onClick={() => applyPreset('thisMonth')}>📆 Este Mês</button>
+                                            <button className={`filter-option ${filterPreset === 'lastMonth' ? 'active' : ''}`} onClick={() => applyPreset('lastMonth')}>⏪ Mês Passado</button>
+                                            <button className={`filter-option ${filterPreset === 'thisYear' ? 'active' : ''}`} onClick={() => applyPreset('thisYear')}>📅 Este Ano</button>
+                                            <button className={`filter-option ${filterPreset === 'all' ? 'active' : ''}`} onClick={() => applyPreset('all')}>♾️ Tudo</button>
+                                            <div className="filter-divider"></div>
+                                            <div className="filter-custom">
+                                                <span className="filter-custom-label">Personalizado</span>
+                                                <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setFilterPreset('custom') }} />
+                                                <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setFilterPreset('custom') }} />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
                         {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
                             <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
                                 <PlusCircle size={18} /> Novo Lançamento
