@@ -107,6 +107,30 @@ router.post('/cards', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
+router.patch('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
+    const { id } = req.params
+    const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
+    try {
+        const { rows: [updated] } = await db.query(
+            `UPDATE credit_cards SET
+                name = COALESCE($3, name),
+                "lastFour" = COALESCE($4, "lastFour"),
+                brand = COALESCE($5, brand),
+                "closingDay" = COALESCE($6, "closingDay"),
+                "dueDate" = COALESCE($7, "dueDate"),
+                "imageUrl" = COALESCE($8, "imageUrl"),
+                business_unit_id = $9
+            WHERE id = $1 AND "userId" = $2 RETURNING *`,
+            [id, req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id || null]
+        )
+        if (!updated) return res.status(404).json({ message: 'Cartão não encontrado' })
+        res.json(updated)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao atualizar cartão' })
+    }
+})
+
 router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
     try {
         await db.query('DELETE FROM credit_cards WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])

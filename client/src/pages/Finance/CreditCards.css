@@ -68,9 +68,32 @@
     color: var(--color-text-secondary);
 }
 
-.btn-delete {
-    width: 100%;
+.card-actions {
+    display: flex;
+    gap: 8px;
     margin-top: 10px;
+}
+
+.btn-edit {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #2563eb;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.btn-edit:hover {
+    background: #2563eb;
+    color: white;
+}
+
+.btn-delete {
+    flex: 1;
+    margin-top: 0;
     padding: 8px;
     border: 1px solid #fee2e2;
     background: #fef2f2;

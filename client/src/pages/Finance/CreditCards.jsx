@@ -9,6 +9,7 @@ export default function CreditCards() {
     const [wallets, setWallets] = useState([])
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [editingCardId, setEditingCardId] = useState(null) // null = creating, number = editing
     const [formData, setFormData] = useState({
         name: '',
         lastFour: '',
@@ -18,6 +19,8 @@ export default function CreditCards() {
         imageUrl: '',
         business_unit_id: ''
     })
+
+    const defaultFormData = { name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '', business_unit_id: '' }
 
     const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
 
@@ -71,12 +74,42 @@ export default function CreditCards() {
         }
     }
 
+    const openCreateModal = () => {
+        setEditingCardId(null)
+        setFormData(defaultFormData)
+        setIsModalOpen(true)
+    }
+
+    const openEditModal = (card) => {
+        setEditingCardId(card.id)
+        setFormData({
+            name: card.name || '',
+            lastFour: card.lastFour || '',
+            brand: card.brand || 'Visa',
+            closingDay: card.closingDay || '',
+            dueDate: card.dueDate || '',
+            imageUrl: card.imageUrl || '',
+            business_unit_id: card.business_unit_id ? String(card.business_unit_id) : ''
+        })
+        setIsModalOpen(true)
+    }
+
+    const closeModal = () => {
+        setIsModalOpen(false)
+        setEditingCardId(null)
+        setFormData(defaultFormData)
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault()
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch('/api/finance/cards', {
-                method: 'POST',
+            const isEditing = editingCardId !== null
+            const url = isEditing ? `/api/finance/cards/${editingCardId}` : '/api/finance/cards'
+            const method = isEditing ? 'PATCH' : 'POST'
+
+            const res = await fetch(url, {
+                method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
@@ -84,8 +117,7 @@ export default function CreditCards() {
                 body: JSON.stringify(formData)
             })
             if (res.ok) {
-                setIsModalOpen(false)
-                setFormData({ name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '', business_unit_id: '' })
+                closeModal()
                 fetchCards()
             }
         } catch (err) {
@@ -137,7 +169,7 @@ export default function CreditCards() {
                         <h1>Seus Cartões de Crédito</h1>
                         <p className="text-secondary">Gerencie limites e vencimentos das suas faturas</p>
                     </div>
-                    <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
+                    <button className="btn btn-primary" onClick={openCreateModal}>
                         ➕ Novo Cartão
                     </button>
                 </header>
@@ -149,7 +181,7 @@ export default function CreditCards() {
                         <span className="empty-icon">💳</span>
                         <h3>Nenhum cartão cadastrado</h3>
                         <p>Adicione seu primeiro cartão para começar a organizar suas despesas fixas.</p>
-                        <button className="btn btn-outline" onClick={() => setIsModalOpen(true)}>Cadastrar Agora</button>
+                        <button className="btn btn-outline" onClick={openCreateModal}>Cadastrar Agora</button>
                     </div>
                 ) : (
                     <div className="cards-grid">
@@ -175,7 +207,10 @@ export default function CreditCards() {
                                         <span>Vencimento:</span>
                                         <strong>Dia {card.dueDate}</strong>
                                     </div>
-                                    <button className="btn-delete" onClick={() => handleDelete(card.id)}>Excluir</button>
+                                    <div className="card-actions">
+                                        <button className="btn-edit" onClick={() => openEditModal(card)}>✏️ Editar</button>
+                                        <button className="btn-delete" onClick={() => handleDelete(card.id)}>🗑️ Excluir</button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -185,8 +220,8 @@ export default function CreditCards() {
                 {isModalOpen && (
                     <div className="modal-overlay">
                         <div className="modal-content">
-                            <button className="close-x" onClick={() => setIsModalOpen(false)}>×</button>
-                            <h3>Novo Cartão de Crédito</h3>
+                            <button className="close-x" onClick={closeModal}>×</button>
+                            <h3>{editingCardId ? '✏️ Editar Cartão' : '➕ Novo Cartão de Crédito'}</h3>
                             <form onSubmit={handleSubmit}>
                                 <div className="form-group">
                                     <label>Apelido do Cartão (ex: Nubank PJ)</label>
@@ -277,7 +312,9 @@ export default function CreditCards() {
                                         </div>
                                     )}
                                 </div>
-                                <button type="submit" className="btn btn-primary w-full mt-4">Salvar Cartão</button>
+                                <button type="submit" className="btn btn-primary w-full mt-4">
+                                    {editingCardId ? 'Salvar Alterações' : 'Salvar Cartão'}
+                                </button>
                             </form>
                         </div>
                     </div>
