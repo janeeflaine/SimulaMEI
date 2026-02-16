@@ -164,7 +164,7 @@ export default function FinancialStatement() {
                     if (page === 1) return data
                     // Avoid duplicates if race conditions occur
                     const newIds = new Set(data.map(d => d.id))
-                    return [...prev.filter(p => !newIds.has(p.id)), ...data]
+                    return [...(Array.isArray(prev) ? prev : []).filter(p => !newIds.has(p.id)), ...data]
                 })
                 setHasMore(page < totalPages)
                 setTotalCount(totalCount)
@@ -293,11 +293,11 @@ export default function FinancialStatement() {
                         >
                             <option value="ALL">🏠 Visão Geral (Tudo)</option>
                             <option disabled>--- EMPRESAS ---</option>
-                            {wallets.filter(w => w.type === 'PJ').map(w => (
+                            {Array.isArray(wallets) && wallets.filter(w => w.type === 'PJ').map(w => (
                                 <option key={w.id} value={w.id}>🏢 {w.name}</option>
                             ))}
                             <option disabled>--- PESSOAL ---</option>
-                            {wallets.filter(w => w.type === 'PF').map(w => (
+                            {Array.isArray(wallets) && wallets.filter(w => w.type === 'PF').map(w => (
                                 <option key={w.id} value={w.id}>👤 {w.name}</option>
                             ))}
                         </select>
