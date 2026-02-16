@@ -15,7 +15,8 @@ import {
     Calendar,
     Briefcase,
     User,
-    CreditCard
+    CreditCard,
+    Wallet // Ícone novo para Carteira
 } from 'lucide-react'
 import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import './FinancialStatement.css'
@@ -27,15 +28,25 @@ export default function FinancialStatement() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
     const [editingTransaction, setEditingTransaction] = useState(null)
+
+    // --- MUDANÇA 1: Estado do filtro atualizado para usar walletId (ID da Carteira) ---
     const [filters, setFilters] = useState({
         search: '',
-        type: 'ALL', // ALL, RECEITA, DESPESA
-        target: 'ALL', // ALL, PERSONAL, BUSINESS
+        type: 'ALL',
+        walletId: 'ALL', // Novo filtro de Carteira
         dateStart: '',
         dateEnd: ''
     })
     const [page, setPage] = useState(1)
     const rowsPerPage = 15
+
+    // --- MUDANÇA 2: Lista de Carteiras (Baseada no SQL que rodamos) ---
+    // Futuramente você pode buscar isso do banco, mas assim já funciona agora.
+    const wallets = [
+        { id: 1, name: 'Minha MEI Principal', type: 'PJ' },
+        { id: 2, name: 'Minha Conta Pessoal', type: 'PF' }, // Verifique se o ID no banco ficou 2 mesmo
+        { id: 3, name: 'Conta Pessoal Esposa', type: 'PF' } // Verifique se o ID no banco ficou 3 mesmo
+    ]
 
     useEffect(() => {
         fetchTransactions()
@@ -84,19 +95,23 @@ export default function FinancialStatement() {
         }
     }
 
+    // --- MUDANÇA 3: Lógica de Filtragem atualizada ---
     const filteredTransactions = useMemo(() => {
         return transactions.filter(t => {
             const matchSearch = t.description?.toLowerCase().includes(filters.search.toLowerCase()) ||
                 t.categoryName?.toLowerCase().includes(filters.search.toLowerCase())
+
             const matchType = filters.type === 'ALL' || t.type === filters.type
-            const matchTarget = filters.target === 'ALL' || t.target === filters.target
+
+            // Filtro novo: Compara o ID da unidade de negocio (Carteira)
+            // Se walletId for 'ALL', mostra tudo. Senão, compara o ID.
+            const matchWallet = filters.walletId === 'ALL' || t.business_unit_id === Number(filters.walletId)
 
             let matchDate = true
-            // Date is now YYYY-MM-DD string, so we can compare strings directly
             if (filters.dateStart) matchDate = matchDate && t.date >= filters.dateStart
             if (filters.dateEnd) matchDate = matchDate && t.date <= filters.dateEnd
 
-            return matchSearch && matchType && matchTarget && matchDate
+            return matchSearch && matchType && matchWallet && matchDate
         })
     }, [transactions, filters])
 
@@ -119,6 +134,12 @@ export default function FinancialStatement() {
         return new Date(dateString).toLocaleDateString('pt-BR')
     }
 
+    // Função auxiliar para achar o nome da carteira pelo ID
+    const getWalletName = (id) => {
+        const wallet = wallets.find(w => w.id === id)
+        return wallet ? wallet.name : 'Desconhecido'
+    }
+
     if (user?.plan !== 'Ouro' && Number(user?.planId) !== 3 && !user?.isInTrial) {
         return <FeatureLock feature="Extrato Financeiro" />
     }
@@ -129,9 +150,13 @@ export default function FinancialStatement() {
                 <div className="statement-header">
                     <div className="header-title">
                         <h1>Extrato Financeiro</h1>
-                        <p>Acompanhe e gerencie todas as suas movimentações.</p>
+                        <p>Visão unificada das finanças Familiares e Empresariais.</p>
                     </div>
                     <div className="header-actions">
+                        {/* Botão de Transferência (placeholder visual) */}
+                        <button className="btn btn-outline" onClick={() => alert('Em breve: Funcionalidade de Transferência entre Carteiras')}>
+                            <ArrowUpCircle size={18} style={{ transform: 'rotate(45deg)' }} /> Transferir
+                        </button>
                         <button className="btn btn-secondary" onClick={() => setIsCreateModalOpen(true)}>
                             <PlusCircle size={18} /> Novo Lançamento
                         </button>
@@ -153,21 +178,32 @@ export default function FinancialStatement() {
                         </div>
                     </div>
 
+                    {/* --- MUDANÇA 4: O Novo Dropdown de Carteiras --- */}
                     <div className="control-group">
-                        <label>Tipo</label>
-                        <select value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
-                            <option value="ALL">Todos os Tipos</option>
-                            <option value="RECEITA">Apenas Receitas</option>
-                            <option value="DESPESA">Apenas Despesas</option>
+                        <label>Carteira / Conta</label>
+                        <select
+                            value={filters.walletId}
+                            onChange={(e) => setFilters({ ...filters, walletId: e.target.value })}
+                            style={{ fontWeight: 'bold', color: filters.walletId !== 'ALL' ? 'var(--color-primary)' : 'inherit' }}
+                        >
+                            <option value="ALL">🏠 Visão Geral (Tudo)</option>
+                            <option disabled>--- EMPRESAS ---</option>
+                            {wallets.filter(w => w.type === 'PJ').map(w => (
+                                <option key={w.id} value={w.id}>🏢 {w.name}</option>
+                            ))}
+                            <option disabled>--- PESSOAL ---</option>
+                            {wallets.filter(w => w.type === 'PF').map(w => (
+                                <option key={w.id} value={w.id}>👤 {w.name}</option>
+                            ))}
                         </select>
                     </div>
 
                     <div className="control-group">
-                        <label>Pessoa</label>
-                        <select value={filters.target} onChange={(e) => setFilters({ ...filters, target: e.target.value })}>
-                            <option value="ALL">PF e PJ</option>
-                            <option value="BUSINESS">🏢 Jurídica (PJ)</option>
-                            <option value="PERSONAL">👤 Física (PF)</option>
+                        <label>Tipo</label>
+                        <select value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
+                            <option value="ALL">Todos</option>
+                            <option value="RECEITA">Entradas (+)</option>
+                            <option value="DESPESA">Saídas (-)</option>
                         </select>
                     </div>
 
@@ -188,9 +224,9 @@ export default function FinancialStatement() {
                             <thead>
                                 <tr>
                                     <th>Data</th>
+                                    <th>Carteira</th> {/* Nova Coluna */}
                                     <th>Categoria</th>
                                     <th>Descrição</th>
-                                    <th>Destino</th>
                                     <th>Método</th>
                                     <th style={{ textAlign: 'right' }}>Valor</th>
                                     <th style={{ textAlign: 'right' }}>Ações</th>
@@ -204,7 +240,7 @@ export default function FinancialStatement() {
                                         <td colSpan="7">
                                             <div className="statement-empty">
                                                 <FileText size={48} color="var(--color-slate-200)" />
-                                                <p>Nenhuma transação encontrada.</p>
+                                                <p>Nenhuma transação encontrada nesta carteira.</p>
                                             </div>
                                         </td>
                                     </tr>
@@ -217,6 +253,23 @@ export default function FinancialStatement() {
                                                     {formatDate(t.date)}
                                                 </div>
                                             </td>
+                                            {/* --- MUDANÇA 5: Exibição da Carteira na linha --- */}
+                                            <td className="td-target">
+                                                <span className={`badge`} style={{
+                                                    fontSize: '11px',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '12px',
+                                                    backgroundColor: t.business_unit_id === 1 ? '#eff6ff' : '#f0fdf4',
+                                                    color: t.business_unit_id === 1 ? '#1d4ed8' : '#15803d',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    width: 'fit-content'
+                                                }}>
+                                                    {t.business_unit_id === 1 ? <Briefcase size={12} /> : <User size={12} />}
+                                                    {getWalletName(t.business_unit_id)}
+                                                </span>
+                                            </td>
                                             <td className="td-category">
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     {t.type === 'RECEITA' ?
@@ -227,12 +280,6 @@ export default function FinancialStatement() {
                                                 </div>
                                             </td>
                                             <td className="td-description">{t.description || '-'}</td>
-                                            <td className="td-target">
-                                                <span className={`badge badge-${t.target === 'BUSINESS' ? 'primary' : 'secondary'}`} style={{ fontSize: '10px' }}>
-                                                    {t.target === 'BUSINESS' ? <Briefcase size={10} style={{ marginRight: '4px' }} /> : <User size={10} style={{ marginRight: '4px' }} />}
-                                                    {t.target === 'BUSINESS' ? 'PJ' : 'PF'}
-                                                </span>
-                                            </td>
                                             <td className="td-method">
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     {t.paymentMethod === 'Cartão de Crédito' && <CreditCard size={14} />}
