@@ -148,8 +148,8 @@ export default function AccountManager() {
             const token = localStorage.getItem('token')
             const method = currentAccount ? 'PUT' : 'POST'
             const url = currentAccount
-                ? `/api/business-units/${currentAccount.id}`
-                : '/api/business-units'
+                ? `/api/finance/business-units/${currentAccount.id}`
+                : '/api/finance/business-units'
 
             const payload = {
                 name: formData.name,
@@ -184,7 +184,7 @@ export default function AccountManager() {
         if (!window.confirm('Tem certeza que deseja excluir esta conta?')) return
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch(`/api/business-units/${id}`, {
+            const res = await fetch(`/api/finance/business-units/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             })
