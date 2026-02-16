@@ -43,6 +43,7 @@ export default function FinancialStatement() {
     // --- INFINITE SCROLL ---
     const [visibleCount, setVisibleCount] = useState(15)
     const loadMoreRef = useRef(null)
+    const [editingWalletTransactionId, setEditingWalletTransactionId] = useState(null)
 
     const [wallets, setWallets] = useState([])
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false)
@@ -64,6 +65,38 @@ export default function FinancialStatement() {
             }
         } catch (error) {
             console.error('Erro ao buscar carteiras:', error)
+        }
+    }
+
+    const handleQuickWalletChange = async (transactionId, newWalletId) => {
+        if (!newWalletId) return
+        try {
+            const token = localStorage.getItem('token')
+            // Optimistic Update
+            const updatedTransactions = transactions.map(t =>
+                t.id === transactionId ? { ...t, business_unit_id: Number(newWalletId) } : t
+            )
+            setTransactions(updatedTransactions)
+            setEditingWalletTransactionId(null)
+
+            const res = await fetch(`/api/finance/transactions/${transactionId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ business_unit_id: newWalletId })
+            })
+
+            if (!res.ok) {
+                // Revert on failure
+                fetchTransactions()
+                alert('Erro ao atualizar carteira.')
+            }
+        } catch (err) {
+            console.error(err)
+            fetchTransactions()
+            alert('Erro de conexão.')
         }
     }
 
@@ -293,20 +326,57 @@ export default function FinancialStatement() {
                                             </td>
                                             {/* --- MUDANÇA 5: Exibição da Carteira na linha --- */}
                                             <td className="td-target">
-                                                <span className={`badge`} style={{
-                                                    fontSize: '11px',
-                                                    padding: '4px 8px',
-                                                    borderRadius: '12px',
-                                                    backgroundColor: t.business_unit_id === 1 ? '#eff6ff' : '#f0fdf4',
-                                                    color: t.business_unit_id === 1 ? '#1d4ed8' : '#15803d',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '4px',
-                                                    width: 'fit-content'
-                                                }}>
-                                                    {t.business_unit_id === 1 ? <Briefcase size={12} /> : <User size={12} />}
-                                                    {getWalletName(t.business_unit_id)}
-                                                </span>
+                                                {editingWalletTransactionId === t.id ? (
+                                                    <select
+                                                        autoFocus
+                                                        value={t.business_unit_id || ''}
+                                                        onChange={(e) => handleQuickWalletChange(t.id, e.target.value)}
+                                                        onBlur={() => setEditingWalletTransactionId(null)}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        style={{
+                                                            padding: '2px 8px',
+                                                            borderRadius: '12px',
+                                                            fontSize: '11px',
+                                                            border: '1px solid var(--color-primary)',
+                                                            outline: 'none',
+                                                            maxWidth: '140px'
+                                                        }}
+                                                    >
+                                                        <option value="">Selecione...</option>
+                                                        {wallets.map(w => (
+                                                            <option key={w.id} value={w.id}>
+                                                                {w.name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <span
+                                                        className={`badge`}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            setEditingWalletTransactionId(t.id)
+                                                        }}
+                                                        style={{
+                                                            fontSize: '11px',
+                                                            padding: '4px 8px',
+                                                            borderRadius: '12px',
+                                                            backgroundColor: t.business_unit_id === 1 ? '#eff6ff' : '#f0fdf4',
+                                                            color: t.business_unit_id === 1 ? '#1d4ed8' : '#15803d',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px',
+                                                            width: 'fit-content',
+                                                            cursor: 'pointer',
+                                                            border: '1px solid transparent'
+                                                        }}
+                                                        title="Clique para alterar a carteira"
+                                                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--color-slate-300)'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'transparent'}
+                                                    >
+                                                        {t.business_unit_id === 1 ? <Briefcase size={12} /> : <User size={12} />}
+                                                        {getWalletName(t.business_unit_id)}
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="td-category">
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
