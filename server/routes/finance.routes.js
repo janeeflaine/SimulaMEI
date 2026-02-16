@@ -323,4 +323,60 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
     }
 });
 
+// --- BUSINESS UNITS (Wallets) ---
+
+router.get('/business-units', authMiddleware, async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'SELECT * FROM business_units WHERE "userId" = $1 ORDER BY "isPrimary" DESC, name ASC',
+            [req.user.id]
+        )
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao buscar carteiras' })
+    }
+})
+
+router.post('/business-units', authMiddleware, ouroOnly, async (req, res) => {
+    const { name, account_type, cnpj, photo_url, isPrimary } = req.body
+    try {
+        // If sticking as primary, unset others?
+        // simple implementation for now
+        const { rows: [newUnit] } = await db.query(
+            'INSERT INTO business_units ("userId", name, "account_type", cnpj, "photo_url", "isPrimary") VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [req.user.id, name, account_type, cnpj, photo_url, isPrimary || false]
+        )
+        res.json(newUnit)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao criar carteira' })
+    }
+})
+
+router.put('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => {
+    const { name, account_type, cnpj, photo_url, isPrimary } = req.body
+    try {
+        const { rows: [updated] } = await db.query(
+            'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "photo_url" = $4, "isPrimary" = $5 WHERE id = $6 AND "userId" = $7 RETURNING *',
+            [name, account_type, cnpj, photo_url, isPrimary, req.params.id, req.user.id]
+        )
+        if (!updated) return res.status(404).json({ message: 'Carteira não encontrada' })
+        res.json(updated)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao atualizar carteira' })
+    }
+})
+
+router.delete('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        await db.query('DELETE FROM business_units WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
+        res.json({ message: 'Carteira excluída' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ message: 'Erro ao excluir carteira' })
+    }
+});
+
 module.exports = router

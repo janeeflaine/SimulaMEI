@@ -205,6 +205,21 @@ const init = async () => {
         "isSubscription" BOOLEAN DEFAULT FALSE,
         status TEXT DEFAULT 'PAID',
         "dueDate" TIMESTAMP,
+        "business_unit_id" INTEGER,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    // Business Units (Wallets/Accounts)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS business_units (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        "account_type" TEXT NOT NULL CHECK ("account_type" IN ('PF', 'PJ')),
+        cnpj TEXT, 
+        "photo_url" TEXT,
+        "isPrimary" BOOLEAN DEFAULT FALSE,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `)

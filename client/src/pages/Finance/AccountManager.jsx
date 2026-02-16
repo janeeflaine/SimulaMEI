@@ -41,7 +41,7 @@ export default function AccountManager() {
         setIsLoading(true)
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch('/api/business-units', {
+            const res = await fetch('/api/finance/business-units', {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (res.ok) {
