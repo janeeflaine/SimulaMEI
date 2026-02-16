@@ -129,9 +129,7 @@ const filteredTransactions = useMemo(() => {
 
         return matchSearch && matchType && matchWallet && matchDate
     })
-    return matchSearch && matchType && matchWallet && matchDate
-})
-    }, [transactions, filters])
+}, [transactions, filters])
 
 // Reset pagination when filters change
 useEffect(() => {
