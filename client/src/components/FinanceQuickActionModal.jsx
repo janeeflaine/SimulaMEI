@@ -261,7 +261,6 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                         : 'Adicionar Despesa Pessoal'
 
                 return (
-                return (
                     <form className="modal-step" onSubmit={handleSubmit}>
                         <button type="button" className="back-btn" onClick={() => setStep(3)}>← Voltar</button>
                         <header className="form-header">
