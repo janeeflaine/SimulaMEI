@@ -4,19 +4,63 @@ import './ImageCropperModal.css'
 
 export default function ImageCropperModal({ imageSrc, onCancel, onSave }) {
     const [zoom, setZoom] = useState(1)
+    const [minZoom, setMinZoom] = useState(0.1) // New state for minimum zoom
     const [position, setPosition] = useState({ x: 0, y: 0 })
     const [isDragging, setIsDragging] = useState(false)
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
     const imgRef = useRef(null)
     const containerRef = useRef(null)
-    const CROP_SIZE = 256 // Final output size (and display size roughly)
+    const CROP_SIZE = 256
 
-    // Reset position when image loads if needed
+    // Calculate initial zoom to fit the image within the container
     const onImageLoad = (e) => {
         const { naturalWidth, naturalHeight } = e.target
-        // Center image initially?
-        // Using object-fit contain logic manually if needed, but CSS transform is easier
+        const CONTAINER_SIZE = 300 // Defined in CSS
+
+        // Calculate scale needed to fit the image inside container
+        // Using Math.min ensures the WHOLE image is visible (contain)
+        // If we wanted to cover the box, we'd use Math.max
+        // User requested "starts without zoom", implying full view.
+        const fitScale = Math.min(CONTAINER_SIZE / naturalWidth, CONTAINER_SIZE / naturalHeight)
+
+        // Set initial zoom to fit
+        setZoom(fitScale)
+        setMinZoom(fitScale)
     }
+
+    const handleMouseDown = (e) => {
+        setIsDragging(true)
+        setDragStart({
+            x: e.clientX - position.x,
+            y: e.clientY - position.y
+        })
+    }
+
+    // ... (keep middle handlers same, implicitly handled by not replacing them if range is right, but here I'm replacing a block so I need to be careful with lines)
+
+    const handleMouseMove = (e) => {
+        if (!isDragging) return
+        e.preventDefault()
+        setPosition({
+            x: e.clientX - dragStart.x,
+            y: e.clientY - dragStart.y
+        })
+    }
+
+    const handleMouseUp = () => {
+        setIsDragging(false)
+    }
+
+    // Touch support (omitted from comparison for brevity in logic check, but needed in replacement)
+    // Actually, I should use replace_file_content on specific blocks or include all. 
+    // The instructions say "replacing a single contiguous block".
+    // I need to replace from line 6 to ...
+    // Let's look at the file content again.
+    // I will replace lines 6-19 (state + onImageLoad) and lines 166-175 (slider) separately? 
+    // No, I can't do parallel.
+    // I'll do one large replacement or use `multi_replace`.
+    // Multi_replace is safer.
+
 
     const handleMouseDown = (e) => {
         setIsDragging(true)
