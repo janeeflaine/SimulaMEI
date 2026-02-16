@@ -217,6 +217,7 @@ const init = async () => {
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "dueDate" TIMESTAMP')
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "cardId" INTEGER REFERENCES credit_cards(id)')
       await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS "imageUrl" TEXT')
+      await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS business_unit_id INTEGER')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_name TEXT')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_cpf TEXT')
 

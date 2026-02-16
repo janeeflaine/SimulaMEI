@@ -80,7 +80,10 @@ router.delete('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
 router.get('/cards', authMiddleware, async (req, res) => {
     try {
         const { rows } = await db.query(
-            'SELECT * FROM credit_cards WHERE "userId" = $1 ORDER BY name ASC',
+            `SELECT c.*, b.name as "walletName", b."account_type" as "walletType"
+             FROM credit_cards c
+             LEFT JOIN business_units b ON c.business_unit_id = b.id
+             WHERE c."userId" = $1 ORDER BY c.name ASC`,
             [req.user.id]
         )
         res.json(rows)
@@ -91,11 +94,11 @@ router.get('/cards', authMiddleware, async (req, res) => {
 })
 
 router.post('/cards', authMiddleware, ouroOnly, async (req, res) => {
-    const { name, lastFour, brand, closingDay, dueDate, imageUrl } = req.body
+    const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
     try {
         const { rows: [newCard] } = await db.query(
-            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate", "imageUrl") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl]
+            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate", "imageUrl", business_unit_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id || null]
         )
         res.json(newCard)
     } catch (err) {
@@ -220,11 +223,16 @@ router.post('/transactions', authMiddleware, ouroOnly, validateWalletOwnership, 
 // Confirm payment of a pending transaction
 router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
     try {
-        // Update status to PAID and date to current timestamp
-        const { rows: [updated] } = await db.query(
-            'UPDATE finance_transactions SET status = \'PAID\', date = CURRENT_TIMESTAMP WHERE id = $1 AND "userId" = $2 RETURNING *',
-            [req.params.id, req.user.id]
-        )
+        const { business_unit_id } = req.body || {}
+        // Update status to PAID, date to current timestamp, and optionally assign wallet
+        let query = 'UPDATE finance_transactions SET status = \'PAID\', date = CURRENT_TIMESTAMP'
+        const params = [req.params.id, req.user.id]
+        if (business_unit_id) {
+            params.push(parseInt(business_unit_id))
+            query += `, business_unit_id = $${params.length}`
+        }
+        query += ' WHERE id = $1 AND "userId" = $2 RETURNING *'
+        const { rows: [updated] } = await db.query(query, params)
         if (!updated) return res.status(404).json({ message: 'Transação não encontrada' })
         res.json(updated)
     } catch (err) {

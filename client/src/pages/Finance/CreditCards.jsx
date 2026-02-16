@@ -6,6 +6,7 @@ import './CreditCards.css'
 export default function CreditCards() {
     const { user } = useAuth()
     const [cards, setCards] = useState([])
+    const [wallets, setWallets] = useState([])
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [formData, setFormData] = useState({
@@ -14,7 +15,8 @@ export default function CreditCards() {
         brand: 'Visa',
         closingDay: '',
         dueDate: '',
-        imageUrl: ''
+        imageUrl: '',
+        business_unit_id: ''
     })
 
     const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
@@ -22,6 +24,7 @@ export default function CreditCards() {
     useEffect(() => {
         if (isOuro) {
             fetchCards()
+            fetchWallets()
         }
     }, [isOuro])
 
@@ -39,6 +42,21 @@ export default function CreditCards() {
             console.error(err)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const fetchWallets = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/business-units', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setWallets(Array.isArray(data) ? data : [])
+            }
+        } catch (err) {
+            console.error(err)
         }
     }
 
@@ -67,7 +85,7 @@ export default function CreditCards() {
             })
             if (res.ok) {
                 setIsModalOpen(false)
-                setFormData({ name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '' })
+                setFormData({ name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '', business_unit_id: '' })
                 fetchCards()
             }
         } catch (err) {
@@ -89,6 +107,13 @@ export default function CreditCards() {
         } catch (err) {
             console.error(err)
         }
+    }
+
+    const getWalletBadge = (card) => {
+        if (!card.walletName) return <span className="wallet-badge unlinked">🔗 Sem carteira</span>
+        const icon = card.walletType === 'PJ' ? '🏢' : '👤'
+        const label = card.walletType === 'PJ' ? 'PJ' : 'PF'
+        return <span className={`wallet-badge ${card.walletType?.toLowerCase()}`}>{icon} {label} - {card.walletName}</span>
     }
 
     if (!isOuro) {
@@ -139,6 +164,9 @@ export default function CreditCards() {
                                     <div className="card-holder">{card.name}</div>
                                 </div>
                                 <div className="card-info">
+                                    <div className="info-row wallet-row">
+                                        {getWalletBadge(card)}
+                                    </div>
                                     <div className="info-row">
                                         <span>Fechamento:</span>
                                         <strong>Dia {card.closingDay}</strong>
@@ -169,6 +197,25 @@ export default function CreditCards() {
                                         onChange={e => setFormData({ ...formData, name: e.target.value })}
                                         placeholder="Nome para identificação"
                                     />
+                                </div>
+                                <div className="form-group">
+                                    <label>Carteira / Conta Vinculada</label>
+                                    <select
+                                        value={formData.business_unit_id}
+                                        onChange={e => setFormData({ ...formData, business_unit_id: e.target.value })}
+                                    >
+                                        <option value="">Selecione uma carteira</option>
+                                        <optgroup label="🏢 EMPRESA (PJ)">
+                                            {wallets.filter(w => w.account_type === 'PJ').map(w => (
+                                                <option key={w.id} value={w.id}>🏢 {w.name}</option>
+                                            ))}
+                                        </optgroup>
+                                        <optgroup label="👤 PESSOAL (PF)">
+                                            {wallets.filter(w => w.account_type === 'PF').map(w => (
+                                                <option key={w.id} value={w.id}>👤 {w.name}</option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
                                 </div>
                                 <div className="form-grid">
                                     <div className="form-group">
