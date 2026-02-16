@@ -132,12 +132,15 @@ export default function Dashboard() {
     const fetchTransactions = async () => {
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch('/api/finance/transactions', {
+            // Request all transactions (Dashboard needs them all for summaries/charts)
+            const res = await fetch('/api/finance/transactions?limit=9999', {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (res.ok) {
-                const data = await res.json()
-                setTransactions(data)
+                const response = await res.json()
+                // Backend returns { data: [...], totalCount, totalPages, currentPage }
+                // Extract the actual array from response.data
+                setTransactions(Array.isArray(response.data) ? response.data : Array.isArray(response) ? response : [])
             }
         } catch (error) {
             console.error('Erro ao buscar transações:', error)
@@ -290,8 +293,9 @@ export default function Dashboard() {
     }
 
     const paginate = (items, page) => {
+        const safeItems = Array.isArray(items) ? items : []
         const start = (page - 1) * rowsPerPage
-        return items.slice(start, start + rowsPerPage)
+        return safeItems.slice(start, start + rowsPerPage)
     }
 
     const PaginationControls = ({ current, total, onPageChange }) => {
