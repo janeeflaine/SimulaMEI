@@ -317,13 +317,12 @@ export default function FinancialStatement() {
                                     </tr>
                                 ) : (
                                     paginatedTransactions.map(t => (
-                                        <tr key={t.id}>
-                                            <td className="td-date">
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <Calendar size={14} />
-                                                    {formatDate(t.date)}
-                                                </div>
-                                            </td>
+                                        <tr key={t.id}><td className="td-date">
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <Calendar size={14} />
+                                                {formatDate(t.date)}
+                                            </div>
+                                        </td>
                                             {/* --- MUDANÇA 5: Exibição da Carteira na linha --- */}
                                             <td className="td-target">
                                                 {editingWalletTransactionId === t.id ? (
