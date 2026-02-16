@@ -164,15 +164,17 @@ export default function CreditCards() {
     return (
         <div className="credit-cards-page">
             <div className="container">
-                <header className="page-header">
-                    <div>
+                <div className="statement-header">
+                    <div className="header-title">
                         <h1>Seus Cartões de Crédito</h1>
-                        <p className="text-secondary">Gerencie limites e vencimentos das suas faturas</p>
+                        <p>Gerencie limites e vencimentos das suas faturas</p>
                     </div>
-                    <button className="btn btn-primary" onClick={openCreateModal}>
-                        ➕ Novo Cartão
-                    </button>
-                </header>
+                    <div className="header-actions">
+                        <button className="btn btn-primary" onClick={openCreateModal}>
+                            ➕ Novo Cartão
+                        </button>
+                    </div>
+                </div>
 
                 {loading ? (
                     <div className="text-center py-8">Carregando...</div>

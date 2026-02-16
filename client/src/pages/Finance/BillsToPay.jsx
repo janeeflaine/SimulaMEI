@@ -116,12 +116,12 @@ export default function BillsToPay() {
     return (
         <div className="finance-categories-page">
             <div className="container">
-                <header className="page-header">
-                    <div>
+                <div className="statement-header">
+                    <div className="header-title">
                         <h1>Contas a Pagar</h1>
-                        <p className="text-secondary">Boletos e compromissos aguardando confirmação</p>
+                        <p>Boletos e compromissos aguardando confirmação</p>
                     </div>
-                </header>
+                </div>
 
                 <div className="section" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
                     {loading ? (

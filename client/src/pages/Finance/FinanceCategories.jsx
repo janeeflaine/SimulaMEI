@@ -147,15 +147,17 @@ export default function FinanceCategories() {
 
     return (
         <div className="container py-8 finance-categories-page">
-            <header className="page-header">
-                <div>
+            <div className="statement-header">
+                <div className="header-title">
                     <h1>Categorias Financeiras</h1>
                     <p>Mantenha seu controle organizado e personalizado</p>
                 </div>
-                <button className="btn btn-primary" onClick={() => openAddModal()}>
-                    ➕ Nova Categoria
-                </button>
-            </header>
+                <div className="header-actions">
+                    <button className="btn btn-primary" onClick={() => openAddModal()}>
+                        ➕ Nova Categoria
+                    </button>
+                </div>
+            </div>
 
             {loading ? (
                 <div className="flex justify-center p-12"><div className="loader"></div></div>

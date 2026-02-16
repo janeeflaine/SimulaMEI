@@ -1,19 +1,4 @@
-.finance-categories-page .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 40px;
-}
-
-.finance-categories-page .page-header h1 {
-    font-size: 28px;
-    font-weight: 800;
-    margin-bottom: 4px;
-}
-
-.finance-categories-page .page-header p {
-    color: var(--color-text-secondary);
-}
+/* Page header styles are now in global main.css (.statement-header) */
 
 .categories-grid {
     display: grid;

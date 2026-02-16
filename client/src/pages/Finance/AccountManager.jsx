@@ -206,14 +206,16 @@ export default function AccountManager() {
     return (
         <div className="account-manager-page">
             <div className="account-manager-container">
-                <div className="account-manager-header">
-                    <div>
+                <div className="statement-header">
+                    <div className="header-title">
                         <h1>Gerenciar Carteiras</h1>
                         <p>Cadastre e gerencie suas entidades pessoais e empresariais.</p>
                     </div>
-                    <button className="btn btn-primary" onClick={() => handleOpenModal()}>
-                        <Plus size={20} /> Nova Conta
-                    </button>
+                    <div className="header-actions">
+                        <button className="btn btn-primary" onClick={() => handleOpenModal()}>
+                            <Plus size={20} /> Nova Conta
+                        </button>
+                    </div>
                 </div>
 
                 {isLoading ? (
