@@ -19,48 +19,12 @@ export default function ImageCropperModal({ imageSrc, onCancel, onSave }) {
 
         // Calculate scale needed to fit the image inside container
         // Using Math.min ensures the WHOLE image is visible (contain)
-        // If we wanted to cover the box, we'd use Math.max
-        // User requested "starts without zoom", implying full view.
         const fitScale = Math.min(CONTAINER_SIZE / naturalWidth, CONTAINER_SIZE / naturalHeight)
 
         // Set initial zoom to fit
         setZoom(fitScale)
         setMinZoom(fitScale)
     }
-
-    const handleMouseDown = (e) => {
-        setIsDragging(true)
-        setDragStart({
-            x: e.clientX - position.x,
-            y: e.clientY - position.y
-        })
-    }
-
-    // ... (keep middle handlers same, implicitly handled by not replacing them if range is right, but here I'm replacing a block so I need to be careful with lines)
-
-    const handleMouseMove = (e) => {
-        if (!isDragging) return
-        e.preventDefault()
-        setPosition({
-            x: e.clientX - dragStart.x,
-            y: e.clientY - dragStart.y
-        })
-    }
-
-    const handleMouseUp = () => {
-        setIsDragging(false)
-    }
-
-    // Touch support (omitted from comparison for brevity in logic check, but needed in replacement)
-    // Actually, I should use replace_file_content on specific blocks or include all. 
-    // The instructions say "replacing a single contiguous block".
-    // I need to replace from line 6 to ...
-    // Let's look at the file content again.
-    // I will replace lines 6-19 (state + onImageLoad) and lines 166-175 (slider) separately? 
-    // No, I can't do parallel.
-    // I'll do one large replacement or use `multi_replace`.
-    // Multi_replace is safer.
-
 
     const handleMouseDown = (e) => {
         setIsDragging(true)
@@ -113,27 +77,6 @@ export default function ImageCropperModal({ imageSrc, onCancel, onSave }) {
             const image = imgRef.current
             const container = containerRef.current
 
-            // Calculate scale relative to the container size (300px in css)
-            // But we want output 256x256. 
-            // So we need to map the visual representation to the actual image pixels.
-
-            // 1. Determine the displayed size of the image
-            // aspect ratio of image
-            const aspect = image.naturalWidth / image.naturalHeight
-
-            // In CSS we are likely just scaling it
-            // Let's assume the container is 300x300 for calculation simplicity in display,
-            // but we want high quality output.
-
-            // Better approach: Draw directly from the transformed geometry
-
-            // The container center is (150, 150) visually.
-            // The image center is (naturalWidth/2, naturalHeight/2)
-            // We applied a translation of (position.x, position.y) and scale (zoom)
-
-            // We want to capture the 300x300 area (visually) into a 256x256 canvas.
-
-            // To simplify, let's just make the canvas 300x300 first then resize if needed.
             const drawCanvas = document.createElement('canvas')
             drawCanvas.width = 300
             drawCanvas.height = 300
@@ -147,7 +90,7 @@ export default function ImageCropperModal({ imageSrc, onCancel, onSave }) {
             dCtx.translate(150, 150)
             dCtx.translate(position.x, position.y)
             dCtx.scale(zoom, zoom)
-            dCtx.translate(-image.naturalWidth / 2, -image.naturalHeight / 2) // Move origin to image top-left relative to center
+            dCtx.translate(-image.naturalWidth / 2, -image.naturalHeight / 2)
 
             // Draw
             dCtx.drawImage(image, 0, 0)
@@ -185,7 +128,6 @@ export default function ImageCropperModal({ imageSrc, onCancel, onSave }) {
                         onTouchMove={handleTouchMove}
                         onTouchEnd={handleMouseUp}
                     >
-                        {/* We use margin: auto to center naturally if not transformed, but we are absolute positioning */}
                         <img
                             ref={imgRef}
                             src={imageSrc}
@@ -199,8 +141,6 @@ export default function ImageCropperModal({ imageSrc, onCancel, onSave }) {
                             onLoad={onImageLoad}
                             draggable={false}
                         />
-                        {/* Visual overlay for circle crop feeling (optional) */}
-                        {/* <div className="crop-overlay square"></div> */}
                     </div>
                 </div>
 
@@ -209,9 +149,9 @@ export default function ImageCropperModal({ imageSrc, onCancel, onSave }) {
                         <ZoomOut size={20} color="var(--color-slate-500)" />
                         <input
                             type="range"
-                            min="0.5"
-                            max="3"
-                            step="0.1"
+                            min={minZoom}
+                            max={Math.max(minZoom * 5, 3)}
+                            step="0.01"
                             value={zoom}
                             onChange={(e) => setZoom(parseFloat(e.target.value))}
                             className="zoom-slider"
