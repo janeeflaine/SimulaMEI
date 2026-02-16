@@ -46,7 +46,11 @@ export default function AccountManager() {
             })
             if (res.ok) {
                 const data = await res.json()
-                setAccounts(data)
+                // Map logo_url to photo_url for frontend compatibility
+                setAccounts(data.map(acc => ({
+                    ...acc,
+                    photo_url: acc.logo_url || acc.photo_url || ''
+                })))
             }
         } catch (error) {
             console.error('Erro ao buscar contas:', error)
@@ -59,10 +63,10 @@ export default function AccountManager() {
         if (account) {
             setCurrentAccount(account)
             setFormData({
-                name: account.name,
-                type: account.account_type,
-                document: account.cnpj,
-                photo_url: account.photo_url || ''
+                name: account.name || '',
+                type: account.account_type || 'PF',
+                document: account.cnpj || '',
+                photo_url: account.logo_url || account.photo_url || ''
             })
         } else {
             setCurrentAccount(null)
