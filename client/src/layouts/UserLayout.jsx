@@ -62,6 +62,8 @@ export default function UserLayout() {
                                             <Link to="/financas/contas" className="dropdown-item">Contas a Pagar</Link>
                                             <Link to="/financas/categorias" className="dropdown-item">Categorias</Link>
                                             <Link to="/financas/cartoes" className="dropdown-item">Cartões</Link>
+                                            <div style={{ padding: '0.5rem', cursor: 'default' }}></div>
+                                            <Link to="/financas/gerenciar-contas" className="dropdown-item" style={{ color: 'var(--color-primary)', fontWeight: '500' }}>👥 Gerenciar Pessoas</Link>
                                         </div>
                                     </div>
 
