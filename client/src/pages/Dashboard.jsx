@@ -93,6 +93,9 @@ export default function Dashboard() {
     const [cashFlowYear, setCashFlowYear] = useState(new Date().getFullYear())
     const [walletBreakdown, setWalletBreakdown] = useState([])
     const [walletBreakdownType, setWalletBreakdownType] = useState('DESPESA')
+    const [showNewWalletModal, setShowNewWalletModal] = useState(false)
+    const [newWalletForm, setNewWalletForm] = useState({ name: '', account_type: 'PF', document: '', photo_url: '' })
+    const [savingWallet, setSavingWallet] = useState(false)
 
     // Pagination
     const [simPage, setSimPage] = useState(1)
@@ -281,8 +284,8 @@ export default function Dashboard() {
             console.error('Erro ao buscar breakdown por carteira:', error)
         }
     }
-
     const fetchActiveAlerts = async () => {
+
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/alerts/check', {
@@ -714,9 +717,9 @@ export default function Dashboard() {
                                     >Receitas</button>
                                 </div>
                                 {/* Adicionar Carteira */}
-                                <Link to="/financas/carteiras" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', textDecoration: 'none', cursor: 'pointer', transition: 'all 0.2s' }}>
+                                <button onClick={() => setShowNewWalletModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', cursor: 'pointer', transition: 'all 0.2s' }}>
                                     + Adicionar Carteira
-                                </Link>
+                                </button>
                             </div>
                         </div>
 
@@ -972,6 +975,151 @@ export default function Dashboard() {
                         fetchCashFlowData(cashFlowYear)
                     }}
                 />
+            )}
+
+            {/* New Wallet Modal */}
+            {showNewWalletModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(4px)' }}
+                    onClick={(e) => { if (e.target === e.currentTarget) { setShowNewWalletModal(false); setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' }); } }}
+                >
+                    <div style={{ background: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '420px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                            <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: '#1e293b' }}>Nova Conta</h2>
+                            <button onClick={() => { setShowNewWalletModal(false); setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' }); }} style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: '#94a3b8', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
+                        </div>
+
+                        <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '0 0 24px 0' }} />
+
+                        {/* Type Toggle */}
+                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>Tipo de Conta</label>
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                            <button
+                                type="button"
+                                onClick={() => setNewWalletForm(prev => ({ ...prev, account_type: 'PF', document: '' }))}
+                                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderRadius: '10px', border: `2px solid ${newWalletForm.account_type === 'PF' ? '#10b981' : '#e2e8f0'}`, background: newWalletForm.account_type === 'PF' ? '#f0fdf4' : 'white', cursor: 'pointer', transition: 'all 0.2s' }}
+                            >
+                                <span style={{ width: '18px', height: '18px', borderRadius: '50%', border: `2px solid ${newWalletForm.account_type === 'PF' ? '#10b981' : '#cbd5e1'}`, background: newWalletForm.account_type === 'PF' ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {newWalletForm.account_type === 'PF' && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'white' }} />}
+                                </span>
+                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>👤 Pessoa Física</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setNewWalletForm(prev => ({ ...prev, account_type: 'PJ', document: '' }))}
+                                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderRadius: '10px', border: `2px solid ${newWalletForm.account_type === 'PJ' ? '#10b981' : '#e2e8f0'}`, background: newWalletForm.account_type === 'PJ' ? '#f0fdf4' : 'white', cursor: 'pointer', transition: 'all 0.2s' }}
+                            >
+                                <span style={{ width: '18px', height: '18px', borderRadius: '50%', border: `2px solid ${newWalletForm.account_type === 'PJ' ? '#10b981' : '#cbd5e1'}`, background: newWalletForm.account_type === 'PJ' ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {newWalletForm.account_type === 'PJ' && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'white' }} />}
+                                </span>
+                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>🏢 Pessoa Jurídica</span>
+                            </button>
+                        </div>
+
+                        {/* Name */}
+                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                            {newWalletForm.account_type === 'PJ' ? 'Razão Social' : 'Nome da Conta'}
+                        </label>
+                        <input
+                            type="text"
+                            placeholder={newWalletForm.account_type === 'PJ' ? 'Ex: Empresa LTDA' : 'Ex: João da Silva'}
+                            value={newWalletForm.name}
+                            onChange={(e) => setNewWalletForm(prev => ({ ...prev, name: e.target.value }))}
+                            style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', marginBottom: '16px', outline: 'none', boxSizing: 'border-box' }}
+                        />
+
+                        {/* Document */}
+                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                            {newWalletForm.account_type === 'PJ' ? 'CNPJ' : 'CPF'}
+                        </label>
+                        <input
+                            type="text"
+                            placeholder={newWalletForm.account_type === 'PJ' ? '00.000.000/0000-00' : '000.000.000-00'}
+                            value={newWalletForm.document}
+                            onChange={(e) => {
+                                let v = e.target.value.replace(/\D/g, '')
+                                if (newWalletForm.account_type === 'PF') {
+                                    v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
+                                } else {
+                                    v = v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2').slice(0, 18)
+                                }
+                                setNewWalletForm(prev => ({ ...prev, document: v }))
+                            }}
+                            style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', marginBottom: '16px', outline: 'none', boxSizing: 'border-box' }}
+                        />
+
+                        {/* Photo Upload */}
+                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>Foto do Perfil</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '24px' }}>
+                            <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: '2px solid #e2e8f0', flexShrink: 0 }}>
+                                {newWalletForm.photo_url ? (
+                                    <img src={newWalletForm.photo_url} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    <span style={{ fontSize: '1.4rem', color: '#94a3b8' }}>📷</span>
+                                )}
+                            </div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#64748b', cursor: 'pointer', fontWeight: 500 }}>
+                                ⬆ Carregar Foto
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                    onChange={(e) => {
+                                        const file = e.target.files[0]
+                                        if (file) {
+                                            const reader = new FileReader()
+                                            reader.onload = () => setNewWalletForm(prev => ({ ...prev, photo_url: reader.result }))
+                                            reader.readAsDataURL(file)
+                                            e.target.value = null
+                                        }
+                                    }}
+                                />
+                            </label>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
+                            <button
+                                onClick={() => { setShowNewWalletModal(false); setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' }); }}
+                                style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: 'transparent', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}
+                            >Cancelar</button>
+                            <button
+                                disabled={savingWallet || !newWalletForm.name}
+                                onClick={async () => {
+                                    setSavingWallet(true)
+                                    try {
+                                        const token = localStorage.getItem('token')
+                                        const res = await fetch('/api/finance/business-units', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                            body: JSON.stringify({
+                                                name: newWalletForm.name,
+                                                account_type: newWalletForm.account_type,
+                                                cnpj: newWalletForm.document,
+                                                photo_url: newWalletForm.photo_url
+                                            })
+                                        })
+                                        if (res.ok) {
+                                            setShowNewWalletModal(false)
+                                            setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' })
+                                            fetchWalletBreakdown()
+                                            fetchWallets()
+                                        } else {
+                                            const err = await res.json()
+                                            alert(err.message || 'Erro ao criar carteira.')
+                                        }
+                                    } catch (err) {
+                                        console.error(err)
+                                        alert('Erro de rede ao salvar.')
+                                    } finally {
+                                        setSavingWallet(false)
+                                    }
+                                }}
+                                style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white', fontWeight: 600, fontSize: '0.9rem', cursor: savingWallet || !newWalletForm.name ? 'not-allowed' : 'pointer', opacity: savingWallet || !newWalletForm.name ? 0.6 : 1, transition: 'all 0.2s' }}
+                            >{savingWallet ? 'Salvando...' : 'Salvar Conta'}</button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     )
