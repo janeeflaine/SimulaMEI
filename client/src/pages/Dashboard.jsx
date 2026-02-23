@@ -90,6 +90,7 @@ export default function Dashboard() {
     const [activeAlerts, setActiveAlerts] = useState([])
     const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false)
     const [cashFlowData, setCashFlowData] = useState([])
+    const [cashFlowYear, setCashFlowYear] = useState(new Date().getFullYear())
 
     // Pagination
     const [simPage, setSimPage] = useState(1)
@@ -153,7 +154,7 @@ export default function Dashboard() {
                 fetchWallets()
                 fetchTransactions()
                 fetchDueTodayBills()
-                fetchCashFlowData()
+                fetchCashFlowData(new Date().getFullYear())
             }
             if (!userPlan.features?.historico) setLoading(false)
         }
@@ -163,9 +164,15 @@ export default function Dashboard() {
     useEffect(() => {
         if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
             fetchTransactions()
-            fetchCashFlowData()
         }
     }, [startDate, endDate, walletId])
+
+    // Re-fetch cash flow when year changes (independent filter)
+    useEffect(() => {
+        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
+            fetchCashFlowData(cashFlowYear)
+        }
+    }, [cashFlowYear])
 
     const fetchUserPlan = async () => {
         try {
@@ -230,14 +237,11 @@ export default function Dashboard() {
         }
     }
 
-    const fetchCashFlowData = async () => {
+    const fetchCashFlowData = async (year) => {
         try {
             const token = localStorage.getItem('token')
-            const params = new URLSearchParams()
-            if (startDate) params.append('startDate', startDate)
-            if (endDate) params.append('endDate', endDate)
-            if (walletId) params.append('walletId', walletId)
-            const res = await fetch(`/api/finance/stats/cash-flow?${params}`, {
+            const targetYear = year || cashFlowYear || new Date().getFullYear()
+            const res = await fetch(`/api/finance/stats/cash-flow?year=${targetYear}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (res.ok) {
@@ -334,7 +338,7 @@ export default function Dashboard() {
     const memoizedCashFlowData = useMemo(() => {
         if (Array.isArray(cashFlowData) && cashFlowData.length > 0) return cashFlowData
 
-        // Fallback placeholder while loading or if no data exists
+        // Fallback placeholder: full year (12 months)
         return [
             { name: 'Jan', entrada: 0, saida: 0 },
             { name: 'Fev', entrada: 0, saida: 0 },
@@ -342,6 +346,12 @@ export default function Dashboard() {
             { name: 'Abr', entrada: 0, saida: 0 },
             { name: 'Mai', entrada: 0, saida: 0 },
             { name: 'Jun', entrada: 0, saida: 0 },
+            { name: 'Jul', entrada: 0, saida: 0 },
+            { name: 'Ago', entrada: 0, saida: 0 },
+            { name: 'Set', entrada: 0, saida: 0 },
+            { name: 'Out', entrada: 0, saida: 0 },
+            { name: 'Nov', entrada: 0, saida: 0 },
+            { name: 'Dez', entrada: 0, saida: 0 },
         ]
     }, [cashFlowData])
 
@@ -657,8 +667,21 @@ export default function Dashboard() {
                     <div className="charts-grid">
                         <div className="chart-container">
                             <div className="chart-header">
-                                <h3>Fluxo de Caixa Mensal</h3>
-                                <Clock size={18} color="var(--color-slate-400)" />
+                                <h3>Fluxo de Caixa Anual</h3>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <button
+                                        onClick={() => setCashFlowYear(prev => prev - 1)}
+                                        style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '2px 8px', cursor: 'pointer', color: '#64748b', fontSize: '14px', lineHeight: '1.5' }}
+                                        title="Ano anterior"
+                                    >◀</button>
+                                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#334155', minWidth: '44px', textAlign: 'center' }}>{cashFlowYear}</span>
+                                    <button
+                                        onClick={() => setCashFlowYear(prev => prev + 1)}
+                                        disabled={cashFlowYear >= new Date().getFullYear()}
+                                        style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '2px 8px', cursor: cashFlowYear >= new Date().getFullYear() ? 'not-allowed' : 'pointer', color: cashFlowYear >= new Date().getFullYear() ? '#cbd5e1' : '#64748b', fontSize: '14px', lineHeight: '1.5' }}
+                                        title="Próximo ano"
+                                    >▶</button>
+                                </div>
                             </div>
                             <div style={{ width: '100%', height: 300 }}>
                                 <ResponsiveContainer>
@@ -848,7 +871,7 @@ export default function Dashboard() {
                         fetchTransactions()
                         fetchStats()
                         fetchDueTodayBills()
-                        fetchCashFlowData()
+                        fetchCashFlowData(cashFlowYear)
                     }}
                 />
             )}

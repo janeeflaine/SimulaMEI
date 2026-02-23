@@ -354,45 +354,27 @@ router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) =>
 // Get monthly cash flow stats for charts (last 6 months)
 router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
     try {
-        const { startDate, endDate, walletId } = req.query;
-        let dateFilter = '';
-        let walletFilter = '';
-        const params = [req.user.id];
-
-        // Build date range for monthly buckets
-        let dateRangeStart = `date_trunc('month', CURRENT_DATE) - INTERVAL '5 months'`;
-        let dateRangeEnd = `date_trunc('month', CURRENT_DATE)`;
-
-        if (startDate) {
-            params.push(startDate);
-            dateRangeStart = `date_trunc('month', $${params.length}::date)`;
-        }
-        if (endDate) {
-            params.push(endDate);
-            dateRangeEnd = `date_trunc('month', $${params.length}::date)`;
-        }
-        if (walletId) {
-            params.push(parseInt(walletId));
-            walletFilter = ` AND t.business_unit_id = $${params.length}`;
-        }
+        const { year } = req.query;
+        const targetYear = year ? parseInt(year) : new Date().getFullYear();
+        const params = [req.user.id, targetYear];
 
         const query = `
-            WITH RECURSIVE date_range AS (
-                SELECT ${dateRangeStart} as month_date
-                UNION ALL
-                SELECT month_date + INTERVAL '1 month'
-                FROM date_range
-                WHERE month_date < ${dateRangeEnd}
+            WITH months AS (
+                SELECT generate_series(
+                    make_date($2, 1, 1),
+                    make_date($2, 12, 1),
+                    '1 month'::interval
+                )::date as month_date
             )
             SELECT 
                 TO_CHAR(m.month_date, 'Mon') as name,
                 COALESCE(SUM(CASE WHEN t.type = 'RECEITA' THEN t.amount ELSE 0 END), 0) as entrada,
                 COALESCE(SUM(CASE WHEN t.type = 'DESPESA' THEN t.amount ELSE 0 END), 0) as saida
-            FROM date_range m
+            FROM months m
             LEFT JOIN finance_transactions t ON 
                 date_trunc('month', t.date) = m.month_date AND 
                 t."userId" = $1 AND 
-                t.status = 'PAID'${walletFilter}
+                t.status = 'PAID'
             GROUP BY m.month_date
             ORDER BY m.month_date ASC
         `;
