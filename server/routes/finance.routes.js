@@ -449,6 +449,7 @@ router.get('/stats/wallet-breakdown', authMiddleware, async (req, res) => {
                 b.id,
                 b.name,
                 b.account_type,
+                b.logo_url,
                 COALESCE(SUM(t.amount), 0) as total
             FROM business_units b
             LEFT JOIN finance_transactions t ON 
@@ -457,7 +458,7 @@ router.get('/stats/wallet-breakdown', authMiddleware, async (req, res) => {
                 t.type = $2 AND 
                 t.status = 'PAID'${dateFilter}
             WHERE b."ownerId" = $1
-            GROUP BY b.id, b.name, b.account_type
+            GROUP BY b.id, b.name, b.account_type, b.logo_url
             ORDER BY total DESC
         `;
         const { rows } = await db.query(query, params);

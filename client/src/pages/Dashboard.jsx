@@ -723,21 +723,26 @@ export default function Dashboard() {
                         {walletBreakdown.length > 0 ? (
                             <div style={{ display: 'flex', gap: '24px', overflowX: 'auto', paddingBottom: '8px' }}>
                                 {walletBreakdown.map(w => (
-                                    <div key={w.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '90px', gap: '8px' }}>
+                                    <div key={w.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '100px', gap: '8px' }}>
                                         {/* Circle Avatar */}
                                         <div style={{
-                                            width: '64px', height: '64px', borderRadius: '50%',
-                                            background: walletBreakdownType === 'DESPESA'
+                                            width: '80px', height: '80px', borderRadius: '50%',
+                                            background: w.logo_url ? 'transparent' : (walletBreakdownType === 'DESPESA'
                                                 ? 'linear-gradient(135deg, #f97316, #ef4444)'
-                                                : 'linear-gradient(135deg, #10b981, #3b82f6)',
+                                                : 'linear-gradient(135deg, #10b981, #3b82f6)'),
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '1.6rem', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                                            border: `3px solid ${walletBreakdownType === 'DESPESA' ? '#fecaca' : '#bbf7d0'}`
+                                            fontSize: '2rem', boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
+                                            border: `3px solid ${walletBreakdownType === 'DESPESA' ? '#fecaca' : '#bbf7d0'}`,
+                                            overflow: 'hidden', flexShrink: 0
                                         }}>
-                                            {w.account_type === 'PJ' ? '🏢' : '👤'}
+                                            {w.logo_url ? (
+                                                <img src={w.logo_url} alt={w.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                w.account_type === 'PJ' ? '🏢' : '👤'
+                                            )}
                                         </div>
                                         {/* Name */}
-                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155', textAlign: 'center', maxWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155', textAlign: 'center', maxWidth: '100px', lineHeight: '1.3', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                             {w.name}
                                         </span>
                                         {/* Value */}
