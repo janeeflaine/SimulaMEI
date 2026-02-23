@@ -149,9 +149,10 @@ export default function BillsToPay() {
                                 <tbody>
                                     {bills.map((bill) => (
                                         <tr key={bill.id}>
-                                            <td style={{ fontWeight: 'bold', color: bill.dueDate < todayString ? '#ef4444' : 'inherit' }}>
+                                            <td style={{ fontWeight: 'bold', color: bill.dueDate < todayString ? '#ef4444' : bill.dueDate === todayString ? '#d97706' : 'inherit' }}>
                                                 {formatDate(bill.dueDate)}
-                                                {bill.dueDate < todayString && <span style={{ fontSize: '10px', display: 'block', color: '#ef4444' }}>VENCIDO</span>}
+                                                {bill.dueDate < todayString && <span style={{ fontSize: '10px', display: 'block', color: '#ef4444', fontWeight: 700 }}>🚨 VENCIDO</span>}
+                                                {bill.dueDate === todayString && <span style={{ fontSize: '10px', display: 'block', color: '#d97706', fontWeight: 700 }}>📅 VENCE HOJE</span>}
                                             </td>
                                             <td>{bill.description || 'S/ Descrição'}</td>
                                             <td>
