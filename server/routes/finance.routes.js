@@ -427,6 +427,47 @@ router.post('/transfers', authMiddleware, ouroOnly, validateWalletOwnership, asy
     }
 });
 
+// Get spending/revenue breakdown by wallet
+router.get('/stats/wallet-breakdown', authMiddleware, async (req, res) => {
+    try {
+        const { type, startDate, endDate } = req.query;
+        const txType = type === 'RECEITA' ? 'RECEITA' : 'DESPESA';
+        const params = [req.user.id, txType];
+
+        let dateFilter = '';
+        if (startDate) {
+            params.push(startDate);
+            dateFilter += ` AND t.date >= $${params.length}::date`;
+        }
+        if (endDate) {
+            params.push(endDate);
+            dateFilter += ` AND t.date <= $${params.length}::date`;
+        }
+
+        const query = `
+            SELECT 
+                b.id,
+                b.name,
+                b.account_type,
+                COALESCE(SUM(t.amount), 0) as total
+            FROM business_units b
+            LEFT JOIN finance_transactions t ON 
+                t.business_unit_id = b.id AND 
+                t."userId" = $1 AND 
+                t.type = $2 AND 
+                t.status = 'PAID'${dateFilter}
+            WHERE b."ownerId" = $1
+            GROUP BY b.id, b.name, b.account_type
+            ORDER BY total DESC
+        `;
+        const { rows } = await db.query(query, params);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao buscar breakdown por carteira:', err);
+        res.status(500).json({ message: 'Erro ao buscar dados por carteira' });
+    }
+});
+
 // --- BUSINESS UNITS (Wallets) ---
 
 router.get('/business-units', authMiddleware, async (req, res) => {

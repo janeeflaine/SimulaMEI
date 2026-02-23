@@ -91,6 +91,8 @@ export default function Dashboard() {
     const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false)
     const [cashFlowData, setCashFlowData] = useState([])
     const [cashFlowYear, setCashFlowYear] = useState(new Date().getFullYear())
+    const [walletBreakdown, setWalletBreakdown] = useState([])
+    const [walletBreakdownType, setWalletBreakdownType] = useState('DESPESA')
 
     // Pagination
     const [simPage, setSimPage] = useState(1)
@@ -155,6 +157,7 @@ export default function Dashboard() {
                 fetchTransactions()
                 fetchDueTodayBills()
                 fetchCashFlowData(new Date().getFullYear())
+                fetchWalletBreakdown()
             }
             if (!userPlan.features?.historico) setLoading(false)
         }
@@ -164,6 +167,7 @@ export default function Dashboard() {
     useEffect(() => {
         if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
             fetchTransactions()
+            fetchWalletBreakdown()
         }
     }, [startDate, endDate, walletId])
 
@@ -173,6 +177,13 @@ export default function Dashboard() {
             fetchCashFlowData(cashFlowYear)
         }
     }, [cashFlowYear])
+
+    // Re-fetch wallet breakdown when type toggle changes
+    useEffect(() => {
+        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
+            fetchWalletBreakdown()
+        }
+    }, [walletBreakdownType])
 
     const fetchUserPlan = async () => {
         try {
@@ -250,6 +261,24 @@ export default function Dashboard() {
             }
         } catch (error) {
             console.error('Erro ao buscar fluxo de caixa:', error)
+        }
+    }
+
+    const fetchWalletBreakdown = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const params = new URLSearchParams({ type: walletBreakdownType })
+            if (startDate) params.append('startDate', startDate)
+            if (endDate) params.append('endDate', endDate)
+            const res = await fetch(`/api/finance/stats/wallet-breakdown?${params}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setWalletBreakdown(Array.isArray(data) ? data : [])
+            }
+        } catch (error) {
+            console.error('Erro ao buscar breakdown por carteira:', error)
         }
     }
 
@@ -659,6 +688,70 @@ export default function Dashboard() {
                                 </span>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* Wallet Breakdown Section */}
+                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
+                    <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9', marginBottom: '24px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '1.5rem' }}>👥</span>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>
+                                    {walletBreakdownType === 'DESPESA' ? 'Gastos' : 'Receitas'} por Carteira
+                                </h3>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {/* Toggle Despesas / Receitas */}
+                                <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                                    <button
+                                        onClick={() => { setWalletBreakdownType('DESPESA'); }}
+                                        style={{ padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer', background: walletBreakdownType === 'DESPESA' ? '#ef4444' : '#f8fafc', color: walletBreakdownType === 'DESPESA' ? 'white' : '#64748b', transition: 'all 0.2s' }}
+                                    >Despesas</button>
+                                    <button
+                                        onClick={() => { setWalletBreakdownType('RECEITA'); }}
+                                        style={{ padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer', background: walletBreakdownType === 'RECEITA' ? '#10b981' : '#f8fafc', color: walletBreakdownType === 'RECEITA' ? 'white' : '#64748b', transition: 'all 0.2s' }}
+                                    >Receitas</button>
+                                </div>
+                                {/* Adicionar Carteira */}
+                                <Link to="/financas/carteiras" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', textDecoration: 'none', cursor: 'pointer', transition: 'all 0.2s' }}>
+                                    + Adicionar Carteira
+                                </Link>
+                            </div>
+                        </div>
+
+                        {walletBreakdown.length > 0 ? (
+                            <div style={{ display: 'flex', gap: '24px', overflowX: 'auto', paddingBottom: '8px' }}>
+                                {walletBreakdown.map(w => (
+                                    <div key={w.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '90px', gap: '8px' }}>
+                                        {/* Circle Avatar */}
+                                        <div style={{
+                                            width: '64px', height: '64px', borderRadius: '50%',
+                                            background: walletBreakdownType === 'DESPESA'
+                                                ? 'linear-gradient(135deg, #f97316, #ef4444)'
+                                                : 'linear-gradient(135deg, #10b981, #3b82f6)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: '1.6rem', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                            border: `3px solid ${walletBreakdownType === 'DESPESA' ? '#fecaca' : '#bbf7d0'}`
+                                        }}>
+                                            {w.account_type === 'PJ' ? '🏢' : '👤'}
+                                        </div>
+                                        {/* Name */}
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155', textAlign: 'center', maxWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {w.name}
+                                        </span>
+                                        {/* Value */}
+                                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: walletBreakdownType === 'DESPESA' ? '#ef4444' : '#10b981' }}>
+                                            {formatCurrency(w.total)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '0.9rem' }}>
+                                Nenhuma carteira cadastrada. Crie uma carteira para visualizar o breakdown.
+                            </div>
+                        )}
                     </div>
                 )}
 
