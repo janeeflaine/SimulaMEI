@@ -265,23 +265,27 @@ router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, 
     }
 })
 
-// Get bills due today (for alerts)
+// Get bills due today AND overdue (for alerts)
 router.get('/transactions/due-today', authMiddleware, async (req, res) => {
     try {
         const { rows } = await db.query(
-            `SELECT t.*, c.name as "categoryName" 
+            `SELECT t.*, c.name as "categoryName",
+                    CASE 
+                        WHEN DATE(t."dueDate") < CURRENT_DATE THEN 'OVERDUE'
+                        ELSE 'DUE_TODAY'
+                    END as "alertType"
              FROM finance_transactions t 
              LEFT JOIN finance_categories c ON t."categoryId" = c.id 
              WHERE t."userId" = $1 
              AND t.status = 'PENDING' 
-             AND DATE(t."dueDate") = CURRENT_DATE 
+             AND DATE(t."dueDate") <= CURRENT_DATE 
              ORDER BY t."dueDate" ASC`,
             [req.user.id]
         )
         res.json(rows)
     } catch (err) {
         console.error(err)
-        res.status(500).json({ message: 'Erro ao buscar contas do dia' })
+        res.status(500).json({ message: 'Erro ao buscar contas pendentes' })
     }
 })
 

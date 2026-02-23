@@ -541,23 +541,53 @@ export default function Dashboard() {
                 )}
 
                 {/* Critical Notifications */}
-                {showDueTodayAlert && dueTodayBills.length > 0 && (
-                    <div className="due-alert-banner">
-                        <div className="alert-icon-ring">
-                            <Calendar size={20} />
+                {showDueTodayAlert && dueTodayBills.length > 0 && (() => {
+                    const overdue = dueTodayBills.filter(b => b.alertType === 'OVERDUE')
+                    const today = dueTodayBills.filter(b => b.alertType === 'DUE_TODAY')
+                    const hasOverdue = overdue.length > 0
+                    const hasToday = today.length > 0
+
+                    // Red tone for overdue, amber for today-only
+                    const bannerBg = hasOverdue ? '#fef2f2' : '#fffbeb'
+                    const bannerBorder = hasOverdue ? '#fecaca' : '#fde68a'
+                    const titleColor = hasOverdue ? '#991b1b' : '#92400e'
+                    const subtitleColor = hasOverdue ? '#b91c1c' : '#b45309'
+                    const btnBg = hasOverdue ? '#dc2626' : '#b45309'
+                    const iconRingBg = hasOverdue ? '#fee2e2' : '#fef3c7'
+                    const iconRingColor = hasOverdue ? '#dc2626' : '#f59e0b'
+
+                    let title = ''
+                    let subtitle = ''
+
+                    if (hasOverdue && hasToday) {
+                        title = '⚠️ Pagamentos vencidos e vencendo hoje'
+                        subtitle = `Você possui ${overdue.length} conta(s) vencida(s) e ${today.length} vencendo hoje.`
+                    } else if (hasOverdue) {
+                        title = '🚨 Pagamentos vencidos'
+                        subtitle = `Você possui ${overdue.length} conta(s) vencida(s) aguardando pagamento.`
+                    } else {
+                        title = 'Pagamentos vencendo hoje'
+                        subtitle = `Você possui ${today.length} conta(s) pendente(s) para hoje.`
+                    }
+
+                    return (
+                        <div className="due-alert-banner" style={{ background: bannerBg, borderColor: bannerBorder }}>
+                            <div className="alert-icon-ring" style={{ background: iconRingBg, color: iconRingColor }}>
+                                <Calendar size={20} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <strong style={{ display: 'block', color: titleColor }}>{title}</strong>
+                                <span style={{ fontSize: '0.875rem', color: subtitleColor }}>
+                                    {subtitle}
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={handleSnooze} className="btn-snooze">Adiar 1h</button>
+                                <Link to="/financas/contas" className="btn btn-primary btn-sm" style={{ background: btnBg, boxShadow: 'none' }}>Ver Contas</Link>
+                            </div>
                         </div>
-                        <div style={{ flex: 1 }}>
-                            <strong style={{ display: 'block', color: '#92400e' }}>Pagamentos vencendo hoje</strong>
-                            <span style={{ fontSize: '0.875rem', color: '#b45309' }}>
-                                Você possui {dueTodayBills.length} conta(s) pendente(s) para hoje.
-                            </span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={handleSnooze} className="btn-snooze">Adiar 1h</button>
-                            <Link to="/financas/contas" className="btn btn-primary btn-sm" style={{ background: '#b45309', boxShadow: 'none' }}>Ver Contas</Link>
-                        </div>
-                    </div>
-                )}
+                    )
+                })()}
 
                 {/* Master Financial Summary */}
                 {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) ? (
