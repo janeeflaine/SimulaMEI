@@ -7,14 +7,18 @@
     },
     "scripts": {
         "install-all": "npm install && cd client && npm install --include=dev && cd ../server && npm install",
-        "postinstall": "cd client && npm install --include=dev && cd ../server && npm install",
-        "build": "cd client && npm install --include=dev && npm run build && cd ../server && npm install",
+        "build": "cd client && npm run build",
         "start": "cd server && npm start",
         "dev": "concurrently \"cd server && npm run dev\" \"cd client && npm run dev\""
     },
     "dependencies": {
+        "bcryptjs": "^3.0.3",
         "concurrently": "^8.0.0",
+        "cors": "^2.8.5",
         "dotenv": "^17.2.3",
+        "express": "^5.2.1",
+        "jsonwebtoken": "^9.0.3",
+        "mercadopago": "^2.11.0",
         "pg": "^8.17.1"
     }
 }
