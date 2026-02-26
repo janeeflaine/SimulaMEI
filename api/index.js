@@ -39,4 +39,15 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// Error handler
+app.use((err, req, res, next) => {
+    console.error('Express Error:', err.stack)
+    res.status(500).json({ message: 'Erro interno do servidor na Vercel', error: err.message })
+})
+
+// Startup diagnostic log
+console.log('Serverless Function Booting...')
+console.log('DATABASE_URL present:', !!process.env.DATABASE_URL)
+console.log('NODE_ENV:', process.env.NODE_ENV)
+
 module.exports = app

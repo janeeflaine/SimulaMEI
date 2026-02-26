@@ -24,8 +24,9 @@ export function AuthProvider({ children }) {
         })
 
         if (!res.ok) {
-            const error = await res.json()
-            throw new Error(error.message || 'Erro ao fazer login')
+            const isJson = res.headers.get('content-type')?.includes('application/json')
+            const error = isJson ? await res.json().catch(() => ({})) : {}
+            throw new Error(error.message || `Erro do servidor (Status ${res.status})`)
         }
 
         const data = await res.json()
