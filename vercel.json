@@ -4,15 +4,11 @@
     "buildCommand": "cd client && npm run build",
     "outputDirectory": "client/dist",
     "functions": {
-        "api/index.js": {
+        "api/[...path].js": {
             "includeFiles": "server/**"
         }
     },
     "rewrites": [
-        {
-            "source": "/api/(.*)",
-            "destination": "/api"
-        },
         {
             "source": "/(.*)",
             "destination": "/index.html"
