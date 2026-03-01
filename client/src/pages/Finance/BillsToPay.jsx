@@ -29,7 +29,10 @@ export default function BillsToPay() {
                 const response = await res.json()
                 // Backend returns { data: [...], totalCount, ... } — extract the array
                 const data = Array.isArray(response.data) ? response.data : Array.isArray(response) ? response : []
-                setBills(data.filter(t => t.status === 'PENDING'))
+                const pendingBills = data.filter(t => t.status === 'PENDING')
+                // Ordenar por data de vencimento (as mais próximas primeiro -> crescente)
+                pendingBills.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+                setBills(pendingBills)
             }
         } catch (err) {
             console.error(err)
