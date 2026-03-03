@@ -467,10 +467,10 @@ router.post('/upload', authMiddleware, ouroOnly, (req, res, next) => {
             return res.status(404).json({ message: 'Cartão não encontrado' })
         }
 
-        // Get user categories for prompt context
+        // Get user categories for prompt context (PF only since card is personal)
         const { rows: userCategories } = await client.query(
-            'SELECT name FROM finance_categories WHERE "userId" = $1',
-            [req.user.id]
+            'SELECT name FROM finance_categories WHERE "userId" = $1 AND type = $2',
+            [req.user.id, 'PF']
         )
         const categoryNames = userCategories.map(c => c.name)
 

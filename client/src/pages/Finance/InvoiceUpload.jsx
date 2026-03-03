@@ -50,6 +50,10 @@ export default function InvoiceUpload() {
     const [selectedItems, setSelectedItems] = useState(new Set())
     const [categories, setCategories] = useState([])
     const [confirming, setConfirming] = useState(false)
+    const [showNewCatModal, setShowNewCatModal] = useState(false)
+    const [newCatName, setNewCatName] = useState('')
+    const [creatingCat, setCreatingCat] = useState(false)
+    const [updatedCategories, setUpdatedCategories] = useState({}) // item.id -> new category name
 
     // Fetch user categories for the select dropdown
     const fetchCategories = useCallback(async () => {
@@ -59,8 +63,9 @@ export default function InvoiceUpload() {
             })
             if (res.ok) {
                 const data = await res.json()
-                // Deduplicate by name using Set
-                const uniqueNames = [...new Set(data.map(c => c.name))]
+                // Filter to only PF categories for credit cards, then deduplicate
+                const pfCategories = data.filter(c => c.type === 'PF')
+                const uniqueNames = [...new Set(pfCategories.map(c => c.name))]
                 setCategories(uniqueNames)
             }
         } catch { /* use defaults */ }
@@ -185,13 +190,19 @@ export default function InvoiceUpload() {
         try {
             // Confirm selected items
             for (const itemId of selectedItems) {
+                const item = result.items.find(i => i.id === itemId)
+                const finalCategory = updatedCategories[itemId] || item.aiCategory || 'Outros'
+
                 await fetch(`${API}/api/finance/invoices/items/${itemId}`, {
                     method: 'PATCH',
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ isConfirmed: true })
+                    body: JSON.stringify({
+                        isConfirmed: true,
+                        categoryName: finalCategory
+                    })
                 })
             }
 
@@ -211,6 +222,48 @@ export default function InvoiceUpload() {
         setError(null)
         setProgress(0)
         setSelectedItems(new Set())
+        setUpdatedCategories({})
+    }
+
+    const handleCategoryChange = (itemId, newCat) => {
+        if (newCat === 'NEW_CATEGORY') {
+            setShowNewCatModal(true)
+            // Revert select back to previous value to prevent it showing "NEW_CATEGORY"
+            const select = document.getElementById(`cat-select-${itemId}`)
+            if (select) select.value = updatedCategories[itemId] || result.items.find(i => i.id === itemId)?.aiCategory || 'Outros'
+        } else {
+            setUpdatedCategories(prev => ({ ...prev, [itemId]: newCat }))
+        }
+    }
+
+    const handleCreateCategory = async () => {
+        if (!newCatName.trim()) return
+
+        setCreatingCat(true)
+        try {
+            const res = await fetch(`${API}/api/finance/categories`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: newCatName.trim(), type: 'PF' })
+            })
+
+            if (res.ok) {
+                const newCat = await res.json()
+                setCategories(prev => [...prev, newCat.name])
+                setShowNewCatModal(false)
+                setNewCatName('')
+            } else {
+                const data = await res.json()
+                alert(data.message || 'Erro ao criar categoria')
+            }
+        } catch (err) {
+            alert('Erro de conexão ao criar categoria')
+        } finally {
+            setCreatingCat(false)
+        }
     }
 
     const getFileIcon = (f) => {
@@ -339,12 +392,16 @@ export default function InvoiceUpload() {
                                                 </td>
                                                 <td>
                                                     <select
+                                                        id={`cat-select-${item.id}`}
                                                         className="review-category-select"
-                                                        defaultValue={item.aiCategory || 'Outros'}
+                                                        value={updatedCategories[item.id] || item.aiCategory || 'Outros'}
+                                                        onChange={(e) => handleCategoryChange(item.id, e.target.value)}
                                                     >
                                                         {allCats.map((cat, idx) => (
                                                             <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
                                                         ))}
+                                                        <option disabled>──────</option>
+                                                        <option value="NEW_CATEGORY">+ Nova Categoria...</option>
                                                     </select>
                                                 </td>
                                                 <td>
@@ -376,6 +433,40 @@ export default function InvoiceUpload() {
                             {confirming ? '⏳ Confirmando...' : `✅ Confirmar ${selectedItems.size} itens`}
                         </button>
                     </div>
+
+                    {/* New Category Modal */}
+                    {showNewCatModal && (
+                        <div className="modal-overlay" onClick={() => setShowNewCatModal(false)}>
+                            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                <h3>Nova Categoria</h3>
+                                <div className="form-group" style={{ marginTop: '1rem' }}>
+                                    <label>Nome da Categoria</label>
+                                    <input
+                                        type="text"
+                                        value={newCatName}
+                                        onChange={e => setNewCatName(e.target.value)}
+                                        placeholder="Ex: Assinaturas"
+                                        autoFocus
+                                    />
+                                    <small className="form-help">
+                                        Será criada automaticamente como categoria Pessoal (PF).
+                                    </small>
+                                </div>
+                                <div className="modal-actions">
+                                    <button className="btn-cancel" onClick={() => setShowNewCatModal(false)}>
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        className="btn-save"
+                                        onClick={handleCreateCategory}
+                                        disabled={creatingCat || !newCatName.trim()}
+                                    >
+                                        {creatingCat ? 'Criando...' : 'Criar Categoria'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         )
