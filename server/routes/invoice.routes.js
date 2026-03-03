@@ -497,7 +497,7 @@ router.post('/upload', authMiddleware, ouroOnly, (req, res, next) => {
             )
             client.release()
             return res.status(503).json({
-                message: 'Erro ao processar fatura via IA',
+                message: `Erro ao processar fatura via IA: ${aiErr.message}`,
                 error: aiErr.message,
                 uploadId: uploadRecord.id
             })

@@ -329,7 +329,7 @@ export default function CardDashboard() {
                                 <h3>📈 Histórico de Faturas</h3>
                                 <span className="chart-badge">{year}</span>
                             </div>
-                            <ResponsiveContainer width="100%" height={300}>
+                            <ResponsiveContainer width="100%" height={300} minHeight={300}>
                                 <BarChart data={monthlyData} barCategoryGap="20%">
                                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                     <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
@@ -358,7 +358,7 @@ export default function CardDashboard() {
                             </div>
                             {categoryData.length > 0 ? (
                                 <>
-                                    <ResponsiveContainer width="100%" height={220}>
+                                    <ResponsiveContainer width="100%" height={220} minHeight={220}>
                                         <PieChart>
                                             <Pie
                                                 data={categoryData}
@@ -430,13 +430,7 @@ export default function CardDashboard() {
                         <div style={{ overflowX: 'auto' }}>
                             <table className="cd-items-table">
                                 <thead>
-                                    <tr>
-                                        <th>Descrição</th>
-                                        <th>Data</th>
-                                        <th>Categoria</th>
-                                        <th style={{ textAlign: 'right' }}>Valor</th>
-                                        <th>Confiança IA</th>
-                                    </tr>
+                                    <tr><th>Descrição</th><th>Data</th><th>Categoria</th><th style={{ textAlign: 'right' }}>Valor</th><th>Confiança IA</th></tr>
                                 </thead>
                                 <tbody>
                                     {items.map(item => {
