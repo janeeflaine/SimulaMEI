@@ -164,6 +164,14 @@ export default function InvoiceUpload() {
         if (selected) handleUpload(selected)
     }
 
+    // Safe number parser (handles R$, spaces, commas and dots)
+    const parseAmount = (val) => {
+        if (typeof val === 'number') return val
+        if (!val) return 0
+        const clean = String(val).replace(/[R$\s]/g, '').replace(/,/g, '.')
+        return parseFloat(clean) || 0
+    }
+
     // Review actions
     const toggleItem = (itemId) => {
         setSelectedItems(prev => {
@@ -334,7 +342,7 @@ export default function InvoiceUpload() {
                             <div className="review-stat-value" style={{ color: 'var(--color-danger)' }}>
                                 {formatBRL(
                                     result?.items
-                                        ? result.items.filter(item => selectedItems.has(item.id)).reduce((sum, item) => sum + parseFloat(item.amount || 0), 0)
+                                        ? result.items.filter(item => selectedItems.has(item.id)).reduce((sum, item) => sum + parseAmount(item.amount), 0)
                                         : 0
                                 )}
                             </div>
