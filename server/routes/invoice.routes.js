@@ -570,6 +570,13 @@ router.post('/upload', authMiddleware, ouroOnly, (req, res, next) => {
             if (dupCheck.rows.length > 0) {
                 // Use existing invoice
                 invoiceId = dupCheck.rows[0].id
+
+                // CRITICAL FIX: Delete any previous unconfirmed items for this invoice
+                // so we don't duplicate items if user uploads the same invoice again
+                await client.query(
+                    'DELETE FROM invoice_items WHERE "invoiceId" = $1 AND "isConfirmed" = FALSE',
+                    [invoiceId]
+                )
             } else {
                 // Create new invoice
                 const { rows: [newInv] } = await client.query(
