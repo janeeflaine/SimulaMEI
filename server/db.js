@@ -305,6 +305,26 @@ const init = async () => {
       console.log('Date migration note:', dateMigErr.message)
     }
 
+    // Security: Enable Row Level Security (RLS) on all tables to prevent public Supabase API access
+    try {
+      console.log('🔒 Applying Row Level Security (RLS) lockdown...')
+      const tablesToLock = [
+        'users', 'plans', 'simulations', 'calculation_rules', 'mei_limits',
+        'admin_logs', 'payments', 'system_settings', 'user_alerts',
+        'business_units', 'invoice_uploads', 'credit_cards',
+        'finance_categories', 'card_invoices', 'invoice_items',
+        'finance_transactions', 'bills_to_pay'
+      ]
+
+      for (const table of tablesToLock) {
+        // Create table first if it doesn't exist to prevent errors, though they should exist by now
+        await pool.query(`ALTER TABLE IF EXISTS ${table} ENABLE ROW LEVEL SECURITY;`)
+      }
+      console.log('✅ RLS Security lockdown applied to all tables')
+    } catch (rlsErr) {
+      console.log('RLS lock failed (this is normal if not using Supabase or connected as non-superuser):', rlsErr.message)
+    }
+
     console.log('✅ Database Schema Synced')
 
     // Seed Defaults - Ensure plans and basic rules exist
