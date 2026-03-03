@@ -137,9 +137,11 @@ export default function CardDashboard() {
         setEditForm({ description: '', amount: '', categoryName: '' })
     }
 
-    const handleCategoryChange = (val) => {
+    const handleCategoryChange = (val, originalCategory) => {
         if (val === 'NEW_CATEGORY') {
             setShowNewCatModal(true)
+            // Revert select back to previous value to prevent it showing "NEW_CATEGORY"
+            setEditForm(prev => ({ ...prev, categoryName: originalCategory || 'Outros' }))
         } else {
             setEditForm(prev => ({ ...prev, categoryName: val }))
         }
@@ -595,11 +597,15 @@ export default function CardDashboard() {
                                                         <select
                                                             className="cd-edit-select"
                                                             value={editForm.categoryName}
-                                                            onChange={e => handleCategoryChange(e.target.value)}
+                                                            onChange={e => handleCategoryChange(e.target.value, item.categoryName || item.aiCategory)}
                                                         >
-                                                            {categories.map((cat, idx) => (
-                                                                <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
-                                                            ))}
+                                                            {categories.length > 0 ? (
+                                                                categories.map((cat, idx) => (
+                                                                    <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
+                                                                ))
+                                                            ) : (
+                                                                <option value="Outros">Outros</option>
+                                                            )}
                                                             <option disabled>──────</option>
                                                             <option value="NEW_CATEGORY">+ Nova Categoria...</option>
                                                         </select>
