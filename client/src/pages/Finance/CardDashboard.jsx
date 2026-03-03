@@ -367,11 +367,11 @@ export default function CardDashboard() {
                             </div>
                             <div className="hero-meta-item">
                                 <span className="meta-label">Vencimento</span>
-                                <span className="meta-value">Dia {card.dueDate || '—'}</span>
+                                <span className="meta-value">Dia {card.dueDay || '—'}</span>
                             </div>
                             <div className="hero-meta-item">
                                 <span className="meta-label">Fechamento</span>
-                                <span className="meta-value">Dia {card.closingDate || '—'}</span>
+                                <span className="meta-value">Dia {card.closingDay || '—'}</span>
                             </div>
                             {creditLimit > 0 && (
                                 <div className="hero-meta-item">
