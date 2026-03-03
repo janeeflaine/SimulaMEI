@@ -470,7 +470,7 @@ router.post('/upload', authMiddleware, ouroOnly, (req, res, next) => {
         // Get user categories for prompt context (PF only since card is personal)
         const { rows: userCategories } = await client.query(
             'SELECT name FROM finance_categories WHERE "userId" = $1 AND type = $2',
-            [req.user.id, 'PF']
+            [req.user.id, 'DESPESA_PESSOAL']
         )
         const categoryNames = userCategories.map(c => c.name)
 

@@ -64,7 +64,7 @@ export default function InvoiceUpload() {
             if (res.ok) {
                 const data = await res.json()
                 // Filter to only PF categories for credit cards, then deduplicate
-                const pfCategories = data.filter(c => c.type === 'PF')
+                const pfCategories = data.filter(c => c.type === 'DESPESA_PESSOAL')
                 const uniqueNames = [...new Set(pfCategories.map(c => c.name))]
                 setCategories(uniqueNames)
             }
@@ -247,7 +247,7 @@ export default function InvoiceUpload() {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ name: newCatName.trim(), type: 'PF' })
+                body: JSON.stringify({ name: newCatName.trim(), type: 'DESPESA_PESSOAL' })
             })
 
             if (res.ok) {
