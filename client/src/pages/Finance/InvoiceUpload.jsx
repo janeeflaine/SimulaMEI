@@ -232,7 +232,34 @@ export default function InvoiceUpload() {
         }
     }
 
-    const handleDiscard = () => {
+    const [discarding, setDiscarding] = useState(false)
+
+    const handleDiscard = async () => {
+        if (!result || !result.items || result.items.length === 0) {
+            resetUploadState()
+            return
+        }
+
+        setDiscarding(true)
+        try {
+            const invoiceId = result.items[0].invoiceId
+
+            // Call API to delete the pending invoice and all its items
+            await fetch(`${API}/api/finance/invoices/${invoiceId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+
+            resetUploadState()
+        } catch (err) {
+            console.error('Erro ao descartar fatura:', err)
+            setError('Erro ao descartar fatura. Tente novamente.')
+        } finally {
+            setDiscarding(false)
+        }
+    }
+
+    const resetUploadState = () => {
         setPhase('upload')
         setFile(null)
         setResult(null)
@@ -442,8 +469,8 @@ export default function InvoiceUpload() {
                     {/* Actions */}
                     <div className="review-actions">
                         <div className="left-actions">
-                            <button className="btn-discard" onClick={handleDiscard}>
-                                Descartar e Refazer
+                            <button className="btn-discard" onClick={handleDiscard} disabled={discarding || confirming}>
+                                {discarding ? '⏳ Descartando...' : 'Descartar e Refazer'}
                             </button>
                         </div>
                         <button

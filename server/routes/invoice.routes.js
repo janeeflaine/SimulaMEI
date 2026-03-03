@@ -135,6 +135,30 @@ router.get('/:id/items', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
+// DELETE /api/finance/invoices/:id — Delete an entire invoice (and cascade items)
+router.delete('/:id', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        const { id } = req.params
+
+        // Check invoice belongs to user
+        const invoiceResult = await db.query(
+            'SELECT id FROM card_invoices WHERE id = $1 AND "userId" = $2',
+            [id, req.user.id]
+        )
+        if (invoiceResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Fatura não encontrada' })
+        }
+
+        // Delete invoice (items will cascade if foreign key is setup with ON DELETE CASCADE, which is true in db.js)
+        await db.query('DELETE FROM card_invoices WHERE id = $1', [id])
+
+        res.json({ message: 'Fatura excluída com sucesso' })
+    } catch (err) {
+        console.error('Erro ao excluir fatura:', err)
+        res.status(500).json({ message: 'Erro ao excluir fatura' })
+    }
+})
+
 // PATCH /api/finance/invoices/:id/confirm — Confirm/pay an invoice
 router.patch('/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
     try {
