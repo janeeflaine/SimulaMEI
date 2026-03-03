@@ -59,7 +59,9 @@ export default function InvoiceUpload() {
             })
             if (res.ok) {
                 const data = await res.json()
-                setCategories(data.map(c => c.name))
+                // Deduplicate by name using Set
+                const uniqueNames = [...new Set(data.map(c => c.name))]
+                setCategories(uniqueNames)
             }
         } catch { /* use defaults */ }
     }, [API, token])
@@ -340,8 +342,8 @@ export default function InvoiceUpload() {
                                                         className="review-category-select"
                                                         defaultValue={item.aiCategory || 'Outros'}
                                                     >
-                                                        {allCats.map(cat => (
-                                                            <option key={cat} value={cat}>{cat}</option>
+                                                        {allCats.map((cat, idx) => (
+                                                            <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
                                                         ))}
                                                     </select>
                                                 </td>
