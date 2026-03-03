@@ -367,7 +367,7 @@ export default function CardDashboard() {
                             </div>
                             <div className="hero-meta-item">
                                 <span className="meta-label">Vencimento</span>
-                                <span className="meta-value">Dia {card.dueDay || '—'}</span>
+                                <span className="meta-value">Dia {card.dueDate || '—'}</span>
                             </div>
                             <div className="hero-meta-item">
                                 <span className="meta-label">Fechamento</span>
