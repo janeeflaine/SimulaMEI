@@ -206,6 +206,15 @@ export default function InvoiceUpload() {
                 })
             }
 
+            // Delete unselected items
+            const unselectedItems = result.items.filter(i => !selectedItems.has(i.id))
+            for (const item of unselectedItems) {
+                await fetch(`${API}/api/finance/invoices/items/${item.id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+            }
+
             // Navigate to the card dashboard
             navigate(`/financas/cartoes/${cardId}`)
         } catch (err) {
@@ -323,7 +332,11 @@ export default function InvoiceUpload() {
                         </div>
                         <div className="review-stat">
                             <div className="review-stat-value" style={{ color: 'var(--color-danger)' }}>
-                                {formatBRL(result.totalAmount)}
+                                {formatBRL(
+                                    result?.items
+                                        ? result.items.filter(item => selectedItems.has(item.id)).reduce((sum, item) => sum + parseFloat(item.amount || 0), 0)
+                                        : 0
+                                )}
                             </div>
                             <div className="review-stat-label">Total da Fatura</div>
                         </div>
