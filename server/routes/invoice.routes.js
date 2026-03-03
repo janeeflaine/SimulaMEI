@@ -278,7 +278,7 @@ router.post('/:id/items', authMiddleware, ouroOnly, async (req, res) => {
 router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
     try {
         const { itemId } = req.params
-        const { categoryId, isConfirmed, description, amount } = req.body
+        const { categoryId, categoryName, isConfirmed, description, amount } = req.body
 
         // Check item exists and belongs to user
         const itemResult = await db.query(
@@ -289,14 +289,39 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
             return res.status(404).json({ message: 'Item não encontrado' })
         }
 
+        // Resolve categoryName to categoryId
+        let finalCategoryId = categoryId
+        let finalAiCategory = undefined
+
+        if (categoryName !== undefined) {
+            if (categoryName) {
+                const catRes = await db.query(
+                    'SELECT id FROM finance_categories WHERE name = $1 AND "userId" = $2 AND type = $3',
+                    [categoryName, req.user.id, 'DESPESA_PESSOAL']
+                )
+                if (catRes.rows.length > 0) {
+                    finalCategoryId = catRes.rows[0].id
+                } else {
+                    finalCategoryId = null
+                    finalAiCategory = categoryName // Fallback to storing as text if not mapped
+                }
+            } else {
+                finalCategoryId = null
+            }
+        }
+
         // Build dynamic update
         const updates = []
         const values = []
         let paramIdx = 1
 
-        if (categoryId !== undefined) {
+        if (finalCategoryId !== undefined) {
             updates.push(`"categoryId" = $${paramIdx++}`)
-            values.push(categoryId)
+            values.push(finalCategoryId)
+        }
+        if (finalAiCategory !== undefined) {
+            updates.push(`"aiCategory" = $${paramIdx++}`)
+            values.push(finalAiCategory)
         }
         if (isConfirmed !== undefined) {
             updates.push(`"isConfirmed" = $${paramIdx++}`)
