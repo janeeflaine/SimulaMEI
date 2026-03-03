@@ -33,10 +33,11 @@ const formatBytes = (b) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toF
 export default function InvoiceUpload() {
     const { id: cardId } = useParams()
     const navigate = useNavigate()
-    const { token, user } = useAuth()
+    const { user } = useAuth()
     const fileInputRef = useRef(null)
 
     const API = import.meta.env.VITE_API_URL || ''
+    const token = localStorage.getItem('token')
     const isOuro = user?.plan === 'Ouro' || user?.isInTrial
 
     // States

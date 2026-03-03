@@ -19,7 +19,7 @@ const formatBRL = (value) => {
 export default function CardDashboard() {
     const { id: cardId } = useParams()
     const navigate = useNavigate()
-    const { token, user } = useAuth()
+    const { user } = useAuth()
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState(null)
     const [year, setYear] = useState(new Date().getFullYear())
@@ -28,6 +28,7 @@ export default function CardDashboard() {
     const [itemsLoading, setItemsLoading] = useState(false)
 
     const API = import.meta.env.VITE_API_URL || ''
+    const token = localStorage.getItem('token')
     const isOuro = user?.plan === 'Ouro' || user?.isInTrial
 
     // Fetch card dashboard data
