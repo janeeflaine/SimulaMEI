@@ -27,6 +27,15 @@ export default function CardDashboard() {
     const [items, setItems] = useState([])
     const [itemsLoading, setItemsLoading] = useState(false)
 
+    // Edit and Category States
+    const [categories, setCategories] = useState([])
+    const [editingItemId, setEditingItemId] = useState(null)
+    const [editForm, setEditForm] = useState({ description: '', amount: '', categoryName: '' })
+    const [actionLoading, setActionLoading] = useState(null)
+    const [showNewCatModal, setShowNewCatModal] = useState(false)
+    const [newCatName, setNewCatName] = useState('')
+    const [creatingCat, setCreatingCat] = useState(false)
+
     const API = import.meta.env.VITE_API_URL || ''
     const token = localStorage.getItem('token')
     const isOuro = user?.plan === 'Ouro' || user?.isInTrial
@@ -95,8 +104,126 @@ export default function CardDashboard() {
         }
     }, [selectedMonth, data, cardId, year, token, API])
 
-    useEffect(() => { fetchDashboard() }, [fetchDashboard])
+    // Fetch user PF categories
+    const fetchCategories = useCallback(async () => {
+        try {
+            const res = await fetch(`${API}/api/finance/categories`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                const pfCategories = data.filter(c => c.type === 'PF')
+                const uniqueNames = [...new Set(pfCategories.map(c => c.name))]
+                setCategories(uniqueNames)
+            }
+        } catch { /* ignore */ }
+    }, [API, token])
+
+    useEffect(() => { fetchDashboard(); fetchCategories() }, [fetchDashboard, fetchCategories])
     useEffect(() => { fetchItems() }, [fetchItems])
+
+    // Table Actions
+    const handleEditClick = (item) => {
+        setEditingItemId(item.id)
+        setEditForm({
+            description: item.description,
+            amount: item.amount,
+            categoryName: item.categoryName || item.aiCategory || 'Outros'
+        })
+    }
+
+    const handleCancelEdit = () => {
+        setEditingItemId(null)
+        setEditForm({ description: '', amount: '', categoryName: '' })
+    }
+
+    const handleCategoryChange = (val) => {
+        if (val === 'NEW_CATEGORY') {
+            setShowNewCatModal(true)
+        } else {
+            setEditForm(prev => ({ ...prev, categoryName: val }))
+        }
+    }
+
+    const handleCreateCategory = async () => {
+        if (!newCatName.trim()) return
+        setCreatingCat(true)
+        try {
+            const res = await fetch(`${API}/api/finance/categories`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: newCatName.trim(), type: 'PF' })
+            })
+            if (res.ok) {
+                const newCat = await res.json()
+                setCategories(prev => [...prev, newCat.name])
+                setEditForm(prev => ({ ...prev, categoryName: newCat.name }))
+                setShowNewCatModal(false)
+                setNewCatName('')
+            } else {
+                alert('Erro ao criar categoria')
+            }
+        } catch (err) {
+            alert('Erro de conexão ao criar categoria')
+        } finally {
+            setCreatingCat(false)
+        }
+    }
+
+    const handleSaveEdit = async () => {
+        if (!editForm.description || !editForm.amount) return
+        setActionLoading(editingItemId)
+        try {
+            const res = await fetch(`${API}/api/finance/invoices/items/${editingItemId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    description: editForm.description,
+                    amount: parseFloat(editForm.amount),
+                    categoryName: editForm.categoryName
+                })
+            })
+
+            if (res.ok) {
+                await fetchItems() // refresh items
+                await fetchDashboard() // refresh dashboard totals
+                handleCancelEdit()
+            } else {
+                alert('Erro ao atualizar item')
+            }
+        } catch (err) {
+            alert('Erro de conexão')
+        } finally {
+            setActionLoading(null)
+        }
+    }
+
+    const handleDelete = async (itemId) => {
+        if (!window.confirm('Tem certeza que deseja excluir este item?')) return
+        setActionLoading(itemId)
+        try {
+            const res = await fetch(`${API}/api/finance/invoices/items/${itemId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                await fetchItems()
+                await fetchDashboard()
+            } else {
+                alert('Erro ao excluir item')
+            }
+        } catch (err) {
+            alert('Erro de conexão')
+        } finally {
+            setActionLoading(null)
+        }
+    }
 
     if (!isOuro) {
         return (
@@ -430,32 +557,131 @@ export default function CardDashboard() {
                         <div style={{ overflowX: 'auto' }}>
                             <table className="cd-items-table">
                                 <thead>
-                                    <tr><th>Descrição</th><th>Data</th><th>Categoria</th><th style={{ textAlign: 'right' }}>Valor</th><th>Confiança IA</th></tr>
+                                    <tr>
+                                        <th>Descrição</th>
+                                        <th>Data</th>
+                                        <th>Categoria</th>
+                                        <th style={{ textAlign: 'right' }}>Valor</th>
+                                        <th>Confiança IA</th>
+                                        <th style={{ textAlign: 'center' }}>Ações</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     {items.map(item => {
                                         const conf = parseFloat(item.aiConfidence) || 0
                                         const confClass = conf >= 0.8 ? 'confidence-high' : conf >= 0.5 ? 'confidence-medium' : 'confidence-low'
+                                        const isEditing = editingItemId === item.id
+                                        const isDeleting = actionLoading === item.id
+
                                         return (
-                                            <tr key={item.id}>
-                                                <td className="td-item-desc">{item.description}</td>
+                                            <tr key={item.id} className={isEditing ? 'editing-row' : ''}>
+                                                <td className="td-item-desc">
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            className="cd-edit-input"
+                                                            value={editForm.description}
+                                                            onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                                                        />
+                                                    ) : (
+                                                        item.description
+                                                    )}
+                                                </td>
                                                 <td className="td-item-date">
                                                     {item.transactionDate ? new Date(item.transactionDate).toLocaleDateString('pt-BR') : '—'}
                                                 </td>
                                                 <td>
-                                                    <span className="td-item-category">
-                                                        {item.categoryName || item.aiCategory || 'Sem categoria'}
-                                                    </span>
+                                                    {isEditing ? (
+                                                        <select
+                                                            className="cd-edit-select"
+                                                            value={editForm.categoryName}
+                                                            onChange={e => handleCategoryChange(e.target.value)}
+                                                        >
+                                                            {categories.map((cat, idx) => (
+                                                                <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
+                                                            ))}
+                                                            <option disabled>──────</option>
+                                                            <option value="NEW_CATEGORY">+ Nova Categoria...</option>
+                                                        </select>
+                                                    ) : (
+                                                        <span className="td-item-category">
+                                                            {item.categoryName || item.aiCategory || 'Sem categoria'}
+                                                        </span>
+                                                    )}
                                                 </td>
-                                                <td className="td-item-amount">{formatBRL(item.amount)}</td>
+                                                <td className="td-item-amount" style={{ textAlign: 'right' }}>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            className="cd-edit-input amount-input"
+                                                            value={editForm.amount}
+                                                            onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
+                                                        />
+                                                    ) : (
+                                                        formatBRL(item.amount)
+                                                    )}
+                                                </td>
                                                 <td className={`td-item-confidence ${confClass}`}>
                                                     {conf > 0 ? `${(conf * 100).toFixed(0)}%` : '—'}
+                                                </td>
+                                                <td className="td-item-actions">
+                                                    {isEditing ? (
+                                                        <div className="cd-action-group">
+                                                            <button className="btn-icon save-icon" onClick={handleSaveEdit} title="Salvar" disabled={actionLoading === item.id}>
+                                                                {actionLoading === item.id ? '⏳' : '✅'}
+                                                            </button>
+                                                            <button className="btn-icon cancel-icon" onClick={handleCancelEdit} title="Cancelar">❌</button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="cd-action-group">
+                                                            <button className="btn-icon edit-icon" onClick={() => handleEditClick(item)} title="Editar" disabled={!!editingItemId || isDeleting}>
+                                                                ✏️
+                                                            </button>
+                                                            <button className="btn-icon delete-icon" onClick={() => handleDelete(item.id)} title="Excluir" disabled={!!editingItemId || isDeleting}>
+                                                                {isDeleting ? '⏳' : '🗑️'}
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         )
                                     })}
                                 </tbody>
                             </table>
+                            {/* New Category Modal (copied styles logic from InvoiceUpload) */}
+                            {showNewCatModal && (
+                                <div className="modal-overlay" onClick={() => setShowNewCatModal(false)}>
+                                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                        <h3>Nova Categoria</h3>
+                                        <div className="form-group" style={{ marginTop: '1rem' }}>
+                                            <label>Nome da Categoria</label>
+                                            <input
+                                                type="text"
+                                                value={newCatName}
+                                                onChange={e => setNewCatName(e.target.value)}
+                                                placeholder="Ex: Assinaturas"
+                                                autoFocus
+                                            />
+                                            <small className="form-help">
+                                                Será criada automaticamente como categoria Pessoal (PF).
+                                            </small>
+                                        </div>
+                                        <div className="modal-actions">
+                                            <button className="btn-cancel" onClick={() => setShowNewCatModal(false)}>
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                className="btn-save"
+                                                onClick={handleCreateCategory}
+                                                disabled={creatingCat || !newCatName.trim()}
+                                            >
+                                                {creatingCat ? 'Criando...' : 'Criar Categoria'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="cd-empty">
