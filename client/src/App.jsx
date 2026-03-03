@@ -14,6 +14,8 @@ import Plans from './pages/Plans'
 import Alerts from './pages/Alerts'
 import BillsToPay from './pages/Finance/BillsToPay'
 import CreditCards from './pages/Finance/CreditCards'
+import CardDashboard from './pages/Finance/CardDashboard'
+import InvoiceUpload from './pages/Finance/InvoiceUpload'
 import FinanceCategories from './pages/Finance/FinanceCategories'
 import FinancialStatement from './pages/Finance/FinancialStatement'
 import PixPaymentForm from './pages/Finance/PixPaymentForm'
@@ -60,6 +62,8 @@ function App() {
                             <Route path="/alertas" element={<Alerts />} />
                             <Route path="/financas/contas" element={<BillsToPay />} />
                             <Route path="/financas/cartoes" element={<CreditCards />} />
+                            <Route path="/financas/cartoes/:id" element={<CardDashboard />} />
+                            <Route path="/financas/cartoes/:id/upload" element={<InvoiceUpload />} />
                             <Route path="/financas/categorias" element={<FinanceCategories />} />
                             <Route path="/financas/extrato" element={<FinancialStatement />} />
                             <Route path="/financas/pix" element={<PixPaymentForm />} />

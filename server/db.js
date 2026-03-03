@@ -173,6 +173,61 @@ const init = async () => {
       );
     `)
 
+    // Card Invoices (Faturas)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS card_invoices (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        "cardId" INTEGER NOT NULL REFERENCES credit_cards(id) ON DELETE CASCADE,
+        "referenceMonth" INTEGER NOT NULL,
+        "referenceYear" INTEGER NOT NULL,
+        "totalAmount" REAL DEFAULT 0,
+        "dueDate" DATE,
+        "closingDate" DATE,
+        status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PAID', 'OVERDUE', 'PARTIAL')),
+        "paidAmount" REAL DEFAULT 0,
+        "paidAt" TIMESTAMP,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("cardId", "referenceMonth", "referenceYear")
+      );
+    `)
+
+    // Invoice Items (Itens da Fatura)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS invoice_items (
+        id SERIAL PRIMARY KEY,
+        "invoiceId" INTEGER NOT NULL REFERENCES card_invoices(id) ON DELETE CASCADE,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        "transactionDate" DATE,
+        "categoryId" INTEGER REFERENCES finance_categories(id),
+        "aiCategory" TEXT,
+        "aiConfidence" REAL DEFAULT 0,
+        "isConfirmed" BOOLEAN DEFAULT FALSE,
+        installment TEXT,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    // Invoice Uploads (Controle de Uploads de Faturas)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS invoice_uploads (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        "cardId" INTEGER NOT NULL REFERENCES credit_cards(id),
+        "invoiceId" INTEGER REFERENCES card_invoices(id),
+        "fileType" TEXT NOT NULL CHECK ("fileType" IN ('PDF', 'IMAGE')),
+        "fileSize" INTEGER,
+        "originalName" TEXT,
+        status TEXT DEFAULT 'PROCESSING' CHECK (status IN ('PROCESSING', 'COMPLETED', 'FAILED', 'REVIEW')),
+        "aiRawResponse" TEXT,
+        "errorMessage" TEXT,
+        "processedAt" TIMESTAMP,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
 
 
     // Finance Transactions
@@ -218,6 +273,7 @@ const init = async () => {
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "cardId" INTEGER REFERENCES credit_cards(id)')
       await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS "imageUrl" TEXT')
       await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS business_unit_id INTEGER')
+      await pool.query('ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS "creditLimit" REAL DEFAULT 0')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_name TEXT')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_cpf TEXT')
 

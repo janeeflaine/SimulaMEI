@@ -15,6 +15,7 @@ const paymentRoutes = require('../server/routes/payments.routes')
 const settingsRoutes = require('../server/routes/settings.routes')
 const alertRoutes = require('../server/routes/alert.routes')
 const financeRoutes = require('../server/routes/finance.routes')
+const invoiceRoutes = require('../server/routes/invoice.routes')
 
 const app = express()
 
@@ -33,6 +34,7 @@ app.use('/api/plans', planRoutes)
 app.use('/api/payments', paymentRoutes)
 app.use('/api/alerts', alertRoutes)
 app.use('/api/finance', financeRoutes)
+app.use('/api/finance/invoices', invoiceRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {

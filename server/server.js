@@ -15,6 +15,7 @@ const paymentRoutes = require('./routes/payments.routes')
 const settingsRoutes = require('./routes/settings.routes')
 const alertRoutes = require('./routes/alert.routes')
 const financeRoutes = require('./routes/finance.routes')
+const invoiceRoutes = require('./routes/invoice.routes')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -34,6 +35,7 @@ app.use('/api/plans', planRoutes)
 app.use('/api/payments', paymentRoutes)
 app.use('/api/alerts', alertRoutes)
 app.use('/api/finance', financeRoutes)
+app.use('/api/finance/invoices', invoiceRoutes)
 
 
 // Health check

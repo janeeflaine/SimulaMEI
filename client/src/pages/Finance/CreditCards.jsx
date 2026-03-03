@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import FeatureLock from '../../components/FeatureLock'
 import './CreditCards.css'
 
 export default function CreditCards() {
+    const navigate = useNavigate()
     const { user } = useAuth()
     const [cards, setCards] = useState([])
     const [wallets, setWallets] = useState([])
@@ -191,8 +193,9 @@ export default function CreditCards() {
                             <div key={card.id} className="card-item">
                                 <div className="card-visual" style={{
                                     backgroundImage: card.imageUrl ? `url(${card.imageUrl})` : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-                                    backgroundColor: '#1e293b'
-                                }}>
+                                    backgroundColor: '#1e293b',
+                                    cursor: 'pointer'
+                                }} onClick={() => navigate(`/financas/cartoes/${card.id}`)}>
                                     <div className="card-brand">{card.brand}</div>
                                     <div className="card-number">**** **** **** {card.lastFour || '0000'}</div>
                                     <div className="card-holder">{card.name}</div>
@@ -210,6 +213,7 @@ export default function CreditCards() {
                                         <strong>Dia {card.dueDate}</strong>
                                     </div>
                                     <div className="card-actions">
+                                        <button className="btn-dashboard" onClick={() => navigate(`/financas/cartoes/${card.id}`)}>📊 Dashboard</button>
                                         <button className="btn-edit" onClick={() => openEditModal(card)}>✏️ Editar</button>
                                         <button className="btn-delete" onClick={() => handleDelete(card.id)}>🗑️ Excluir</button>
                                     </div>

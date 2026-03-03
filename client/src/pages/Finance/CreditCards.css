@@ -74,6 +74,24 @@
     margin-top: 10px;
 }
 
+.btn-dashboard {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #a7f3d0;
+    background: #ecfdf5;
+    color: #059669;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.btn-dashboard:hover {
+    background: #059669;
+    color: white;
+}
+
 .btn-edit {
     flex: 1;
     padding: 8px;
