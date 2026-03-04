@@ -96,6 +96,7 @@ export default function Dashboard() {
     const [showNewWalletModal, setShowNewWalletModal] = useState(false)
     const [newWalletForm, setNewWalletForm] = useState({ name: '', account_type: 'PF', document: '', photo_url: '' })
     const [savingWallet, setSavingWallet] = useState(false)
+    const [cardSummary, setCardSummary] = useState(null)
 
     // Pagination
     const [simPage, setSimPage] = useState(1)
@@ -161,6 +162,7 @@ export default function Dashboard() {
                 fetchDueTodayBills()
                 fetchCashFlowData(new Date().getFullYear())
                 fetchWalletBreakdown()
+                fetchCardSummary()
             }
             if (!userPlan.features?.historico) setLoading(false)
         }
@@ -284,6 +286,22 @@ export default function Dashboard() {
             console.error('Erro ao buscar breakdown por carteira:', error)
         }
     }
+
+    const fetchCardSummary = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/invoices/dashboard-summary', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setCardSummary(data)
+            }
+        } catch (error) {
+            console.error('Erro ao buscar resumo de cartões:', error)
+        }
+    }
+
     const fetchActiveAlerts = async () => {
 
         try {
@@ -837,6 +855,68 @@ export default function Dashboard() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Credit Cards Summary (Ouro) */}
+                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && cardSummary?.cards?.length > 0 && (
+                    <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9', marginBottom: '24px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <CreditCard size={24} color="#6366f1" />
+                                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>
+                                    Resumo de Cartões
+                                </h3>
+                            </div>
+                            <Link to="/financas/cartoes" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#6366f1', textDecoration: 'none', background: '#e0e7ff', padding: '6px 12px', borderRadius: '8px' }}>Gerenciar Cartões &rarr;</Link>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'thin' }}>
+                            {cardSummary.cards.map(card => (
+                                <Link to={`/financas/cartoes/${card.id}`} key={card.id} style={{
+                                    textDecoration: 'none',
+                                    minWidth: '260px',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '12px',
+                                    padding: '16px',
+                                    background: 'linear-gradient(to bottom right, #ffffff, #f8fafc)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px',
+                                    transition: 'all 0.2s',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>{card.name}</div>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Final {card.lastFour || '****'}</div>
+                                        </div>
+                                        <div style={{ background: '#e0e7ff', color: '#4f46e5', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}>{card.brand || 'CARTÃO'}</div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                            <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Fatura Atual</span>
+                                            <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#e11d48' }}>{formatCurrency(card.currentMonthTotal)}</span>
+                                            <span style={{ fontSize: '0.7rem', color: card.currentMonthStatus === 'PAID' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                                                {card.currentMonthStatus === 'PAID' ? 'Paga' : 'Aberta/Pendente'}
+                                            </span>
+                                        </div>
+                                        <div style={{ background: '#f1f5f9', padding: '8px 12px', borderRadius: '8px', textAlign: 'center' }}>
+                                            <span style={{ display: 'block', fontSize: '0.65rem', color: '#64748b', fontWeight: 700 }}>VENCE DIA</span>
+                                            <span style={{ display: 'block', fontSize: '0.95rem', color: '#334155', fontWeight: 800 }}>{card.dueDate || '--'}</span>
+                                        </div>
+                                    </div>
+
+                                    {card.nextMonthTotal > 0 && (
+                                        <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '8px', marginTop: '4px', fontSize: '0.75rem', color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>Próximo mês:</span>
+                                            <span style={{ fontWeight: 700, color: '#475569' }}>{formatCurrency(card.nextMonthTotal)}</span>
+                                        </div>
+                                    )}
+                                </Link>
+                            ))}
                         </div>
                     </div>
                 )}

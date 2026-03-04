@@ -248,6 +248,7 @@ const init = async () => {
         status TEXT DEFAULT 'PAID',
         "dueDate" TIMESTAMP,
         "business_unit_id" INTEGER,
+        "invoice_item_id" INTEGER REFERENCES invoice_items(id) ON DELETE CASCADE,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `)

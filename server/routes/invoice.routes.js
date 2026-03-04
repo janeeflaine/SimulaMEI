@@ -368,6 +368,42 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
         const query = `UPDATE invoice_items SET ${updates.join(', ')} WHERE id = $${paramIdx++} AND "userId" = $${paramIdx} RETURNING *`
 
         const { rows: [updated] } = await db.query(query, values)
+
+        // --- SYNCHRONIZATION WITH FINANCE_TRANSACTIONS ---
+        if (updated.isConfirmed) {
+            const { rows: [cardInfo] } = await db.query(
+                `SELECT c.id as "cardId", c.business_unit_id, b.account_type 
+                 FROM invoice_items ii
+                 JOIN card_invoices ci ON ci.id = ii."invoiceId"
+                 JOIN credit_cards c ON c.id = ci."cardId"
+                 LEFT JOIN business_units b ON b.id = c.business_unit_id
+                 WHERE ii.id = $1`, [itemId]
+            )
+
+            if (cardInfo && cardInfo.business_unit_id) {
+                const targetType = cardInfo.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL'
+                const transactionDate = updated.transactionDate || new Date()
+
+                const existCheck = await db.query('SELECT id FROM finance_transactions WHERE invoice_item_id = $1', [itemId])
+
+                if (existCheck.rows.length > 0) {
+                    await db.query(`
+                        UPDATE finance_transactions 
+                        SET amount = $1, date = $2, "categoryId" = $3, description = $4, "business_unit_id" = $5, target = $6
+                        WHERE invoice_item_id = $7
+                     `, [updated.amount, transactionDate, updated.categoryId, updated.description, cardInfo.business_unit_id, targetType, itemId])
+                } else {
+                    await db.query(`
+                        INSERT INTO finance_transactions 
+                        ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, status, "business_unit_id", "invoice_item_id")
+                        VALUES ($1, 'DESPESA', $2, $3, $4, $5, 'Cartão de Crédito', $6, $7, 'PAID', $8, $9)
+                    `, [req.user.id, targetType, updated.amount, transactionDate, updated.categoryId, cardInfo.cardId, updated.description, cardInfo.business_unit_id, itemId])
+                }
+            }
+        } else {
+            await db.query('DELETE FROM finance_transactions WHERE invoice_item_id = $1', [itemId])
+        }
+
         res.json(updated)
     } catch (err) {
         console.error('Erro ao atualizar item:', err)
@@ -641,6 +677,53 @@ router.post('/upload', authMiddleware, ouroOnly, (req, res, next) => {
         res.status(500).json({ message: 'Erro interno ao processar upload' })
     } finally {
         client.release()
+    }
+})
+
+// GET /api/finance/invoices/dashboard-summary — Consolidated cards summary for main dashboard
+router.get('/dashboard-summary', authMiddleware, ouroOnly, async (req, res) => {
+    try {
+        const currentDate = new Date()
+        const currentMonth = currentDate.getMonth() + 1
+        const currentYear = currentDate.getFullYear()
+
+        let nextMonth = currentMonth + 1
+        let nextYear = currentYear
+        if (nextMonth > 12) {
+            nextMonth = 1
+            nextYear = currentYear + 1
+        }
+
+        const query = `
+            SELECT 
+                c.id, 
+                c.name, 
+                c."lastFour", 
+                c.brand, 
+                c."closingDay", 
+                c."dueDate", 
+                c."imageUrl",
+                b.account_type as "walletType",
+                (SELECT COALESCE(SUM("totalAmount"), 0) FROM card_invoices WHERE "cardId" = c.id AND "referenceMonth" = $1 AND "referenceYear" = $2 AND status != 'CANCELLED') as "currentMonthTotal",
+                (SELECT status FROM card_invoices WHERE "cardId" = c.id AND "referenceMonth" = $1 AND "referenceYear" = $2 LIMIT 1) as "currentMonthStatus",
+                (SELECT COALESCE(SUM("totalAmount"), 0) FROM card_invoices WHERE "cardId" = c.id AND "referenceMonth" = $3 AND "referenceYear" = $4 AND status != 'CANCELLED') as "nextMonthTotal"
+            FROM credit_cards c
+            LEFT JOIN business_units b ON c.business_unit_id = b.id
+            WHERE c."userId" = $5
+            ORDER BY c.name ASC
+        `
+        const { rows } = await db.query(query, [currentMonth, currentYear, nextMonth, nextYear, req.user.id])
+
+        const summary = {
+            totalCurrentMonth: rows.reduce((acc, card) => acc + parseFloat(card.currentMonthTotal), 0),
+            totalNextMonth: rows.reduce((acc, card) => acc + parseFloat(card.nextMonthTotal), 0),
+            cards: rows
+        }
+
+        res.json(summary)
+    } catch (err) {
+        console.error('Erro ao buscar resumo de cartões para dashboard:', err)
+        res.status(500).json({ message: 'Erro ao buscar resumo de cartões' })
     }
 })
 
