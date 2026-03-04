@@ -371,7 +371,7 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
 
         // --- SYNCHRONIZATION WITH FINANCE_TRANSACTIONS ---
         if (updated.isConfirmed) {
-            const { rows: [cardInfo] } = await db.query(
+            const cardInfoRes = await db.query(
                 `SELECT c.id as "cardId", c.business_unit_id, b.account_type 
                  FROM invoice_items ii
                  JOIN card_invoices ci ON ci.id = ii."invoiceId"
@@ -379,6 +379,8 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
                  LEFT JOIN business_units b ON b.id = c.business_unit_id
                  WHERE ii.id = $1`, [itemId]
             )
+
+            const cardInfo = cardInfoRes?.rows?.[0]
 
             if (cardInfo && cardInfo.business_unit_id) {
                 const targetType = cardInfo.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL'
@@ -704,15 +706,35 @@ router.get('/dashboard-summary', authMiddleware, ouroOnly, async (req, res) => {
                 c."dueDate", 
                 c."imageUrl",
                 b.account_type as "walletType",
-                (SELECT COALESCE(SUM("totalAmount"), 0) FROM card_invoices WHERE "cardId" = c.id AND "referenceMonth" = $1 AND "referenceYear" = $2 AND status != 'CANCELLED') as "currentMonthTotal",
-                (SELECT status FROM card_invoices WHERE "cardId" = c.id AND "referenceMonth" = $1 AND "referenceYear" = $2 LIMIT 1) as "currentMonthStatus",
-                (SELECT COALESCE(SUM("totalAmount"), 0) FROM card_invoices WHERE "cardId" = c.id AND "referenceMonth" = $3 AND "referenceYear" = $4 AND status != 'CANCELLED') as "nextMonthTotal"
+                COALESCE(act."totalAmount", 0) as "currentMonthTotal",
+                COALESCE(act.status, 'PAID') as "currentMonthStatus",
+                COALESCE(nx."totalAmount", 0) as "nextMonthTotal"
             FROM credit_cards c
             LEFT JOIN business_units b ON c.business_unit_id = b.id
-            WHERE c."userId" = $5
+            LEFT JOIN LATERAL (
+                SELECT "totalAmount", status, "referenceMonth", "referenceYear"
+                FROM card_invoices
+                WHERE "cardId" = c.id AND status != 'CANCELLED'
+                ORDER BY 
+                    CASE WHEN status = 'PENDING' THEN 0 ELSE 1 END ASC,
+                    CASE WHEN status = 'PENDING' THEN "referenceYear" END ASC, 
+                    CASE WHEN status = 'PENDING' THEN "referenceMonth" END ASC,
+                    "referenceYear" DESC,
+                    "referenceMonth" DESC
+                LIMIT 1
+            ) act ON true
+            LEFT JOIN LATERAL (
+                SELECT "totalAmount"
+                FROM card_invoices
+                WHERE "cardId" = c.id AND status != 'CANCELLED'
+                  AND ("referenceYear" > act."referenceYear" OR ("referenceYear" = act."referenceYear" AND "referenceMonth" > act."referenceMonth"))
+                ORDER BY "referenceYear" ASC, "referenceMonth" ASC
+                LIMIT 1
+            ) nx ON true
+            WHERE c."userId" = $1
             ORDER BY c.name ASC
         `
-        const { rows } = await db.query(query, [currentMonth, currentYear, nextMonth, nextYear, req.user.id])
+        const { rows } = await db.query(query, [req.user.id])
 
         const summary = {
             totalCurrentMonth: rows.reduce((acc, card) => acc + parseFloat(card.currentMonthTotal), 0),
