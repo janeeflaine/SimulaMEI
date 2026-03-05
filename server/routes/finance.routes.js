@@ -3,6 +3,7 @@ const router = express.Router()
 const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { validateWalletOwnership } = require('../middleware/walletSecurity')
+const { calculateBillingDate } = require('../utils/billingDate')
 
 // Utility to ensure only Ouro plan users can change data
 const ouroOnly = (req, res, next) => {
@@ -184,12 +185,12 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 
         if (startDate) {
             params.push(startDate)
-            query += ` AND t.date >= $${params.length}`
+            query += ` AND t."billing_date" >= $${params.length}`
         }
 
         if (endDate) {
             params.push(endDate)
-            query += ` AND t.date <= $${params.length}`
+            query += ` AND t."billing_date" <= $${params.length}`
         }
 
         // Count Total (for pagination metadata)
@@ -200,7 +201,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
         const totalCount = parseInt(countRes.rows[0].count)
 
         // Pagination
-        query += ` ORDER BY t.date DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+        query += ` ORDER BY t."billing_date" DESC, t.date DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
         params.push(limit, offset)
 
         const { rows } = await db.query(query, params)
@@ -231,11 +232,25 @@ router.post('/transactions', authMiddleware, ouroOnly, validateWalletOwnership, 
     const status = paymentMethod === 'Boleto' ? 'PENDING' : 'PAID'
 
     try {
+        // Calculate billing_date based on payment method
+        let billingDate = date // Default: same as purchase date
+
+        if (paymentMethod === 'Cartão de Crédito' && finalCardId) {
+            // Fetch card's closing and due day to calculate billing_date
+            const { rows: cardRows } = await db.query(
+                'SELECT "closingDay", "dueDate" FROM credit_cards WHERE id = $1',
+                [finalCardId]
+            )
+            if (cardRows.length > 0 && cardRows[0].closingDay && cardRows[0].dueDate) {
+                billingDate = calculateBillingDate(date, cardRows[0].closingDay, cardRows[0].dueDate)
+            }
+        }
+
         const { rows: [newTransaction] } = await db.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate", "business_unit_id") 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
-            [req.user.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate, finalBusinessUnitId]
+            ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, "isRecurring", "isSubscription", status, "dueDate", "business_unit_id", "billing_date") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+            [req.user.id, type, target, amount, date, finalCategoryId, paymentMethod, finalCardId, description, isRecurring, isSubscription, status, finalDueDate, finalBusinessUnitId, billingDate]
         )
         res.json(newTransaction)
     } catch (err) {
@@ -248,8 +263,8 @@ router.post('/transactions', authMiddleware, ouroOnly, validateWalletOwnership, 
 router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
     try {
         const { business_unit_id } = req.body || {}
-        // Update status to PAID, date to current timestamp, and optionally assign wallet
-        let query = 'UPDATE finance_transactions SET status = \'PAID\', date = CURRENT_TIMESTAMP'
+        // Update status to PAID, date to current timestamp, billing_date to current date, and optionally assign wallet
+        let query = 'UPDATE finance_transactions SET status = \'PAID\', date = CURRENT_TIMESTAMP, "billing_date" = CURRENT_DATE'
         const params = [req.params.id, req.user.id]
         if (business_unit_id) {
             params.push(parseInt(business_unit_id))
@@ -329,6 +344,33 @@ router.patch('/transactions/:id', authMiddleware, ouroOnly, validateWalletOwners
         const { rows: [updated] } = await db.query(query, values);
 
         if (!updated) return res.status(404).json({ message: 'Transação não encontrada' });
+
+        // Recalculate billing_date if date, paymentMethod, or cardId changed
+        const needsBillingRecalc = keys.includes('date') || keys.includes('paymentMethod') || keys.includes('cardId');
+        if (needsBillingRecalc) {
+            const txDate = updated.date;
+            const txPaymentMethod = updated.paymentMethod;
+            const txCardId = updated.cardId;
+
+            let newBillingDate = txDate; // Default: same as transaction date
+
+            if (txPaymentMethod === 'Cartão de Crédito' && txCardId) {
+                const { rows: cardRows } = await db.query(
+                    'SELECT "closingDay", "dueDate" FROM credit_cards WHERE id = $1',
+                    [txCardId]
+                );
+                if (cardRows.length > 0 && cardRows[0].closingDay && cardRows[0].dueDate) {
+                    newBillingDate = calculateBillingDate(txDate, cardRows[0].closingDay, cardRows[0].dueDate);
+                }
+            }
+
+            await db.query(
+                'UPDATE finance_transactions SET "billing_date" = $1 WHERE id = $2',
+                [newBillingDate, id]
+            );
+            updated.billing_date = newBillingDate;
+        }
+
         res.json(updated);
     } catch (err) {
         console.error('Erro ao atualizar transação:', err);
@@ -348,6 +390,24 @@ router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) =>
     } catch (err) {
         console.error(err)
         res.status(500).json({ message: 'Erro ao excluir transação' })
+    }
+})
+
+// Bulk delete transactions
+router.post('/transactions/bulk-delete', authMiddleware, ouroOnly, async (req, res) => {
+    const { ids } = req.body
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: 'Nenhuma transação selecionada.' })
+    }
+    try {
+        const { rowCount } = await db.query(
+            'DELETE FROM finance_transactions WHERE id = ANY($1::int[]) AND "userId" = $2',
+            [ids, req.user.id]
+        )
+        res.json({ message: `${rowCount} transação(ões) excluída(s) com sucesso.`, deletedCount: rowCount })
+    } catch (err) {
+        console.error('Erro ao excluir transações em lote:', err)
+        res.status(500).json({ message: 'Erro ao excluir transações.' })
     }
 })
 
@@ -372,7 +432,7 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
                 COALESCE(SUM(CASE WHEN t.type = 'DESPESA' THEN t.amount ELSE 0 END), 0) as saida
             FROM months m
             LEFT JOIN finance_transactions t ON 
-                date_trunc('month', t.date) = m.month_date AND 
+                date_trunc('month', t."billing_date") = m.month_date AND 
                 t."userId" = $1 AND 
                 t.status = 'PAID'
             GROUP BY m.month_date
@@ -403,16 +463,16 @@ router.post('/transfers', authMiddleware, ouroOnly, validateWalletOwnership, asy
         // 1. Create Expense in Source Wallet
         await client.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status) 
-            VALUES ($1, 'DESPESA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID')`,
+            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date") 
+            VALUES ($1, 'DESPESA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
             [req.user.id, amount, date, sourceWalletId, `Transferência para carteira #${targetWalletId} - ${description || ''}`]
         );
 
         // 2. Create Income in Target Wallet
         await client.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status) 
-            VALUES ($1, 'RECEITA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID')`,
+            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date") 
+            VALUES ($1, 'RECEITA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
             [req.user.id, amount, date, targetWalletId, `Transferência de carteira #${sourceWalletId} - ${description || ''}`]
         );
 
@@ -437,11 +497,11 @@ router.get('/stats/wallet-breakdown', authMiddleware, async (req, res) => {
         let dateFilter = '';
         if (startDate) {
             params.push(startDate);
-            dateFilter += ` AND t.date >= $${params.length}::date`;
+            dateFilter += ` AND t."billing_date" >= $${params.length}::date`;
         }
         if (endDate) {
             params.push(endDate);
-            dateFilter += ` AND t.date <= $${params.length}::date`;
+            dateFilter += ` AND t."billing_date" <= $${params.length}::date`;
         }
 
         const query = `

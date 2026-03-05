@@ -16,7 +16,8 @@ import {
     Briefcase,
     User,
     CreditCard,
-    Wallet // Ícone novo para Carteira
+    Wallet,
+    CheckSquare
 } from 'lucide-react'
 import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import TransferModal from '../../components/TransferModal'
@@ -32,6 +33,8 @@ export default function FinancialStatement() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
     const [editingTransaction, setEditingTransaction] = useState(null)
+    const [selectedIds, setSelectedIds] = useState(new Set())
+    const [bulkDeleting, setBulkDeleting] = useState(false)
 
     const [filters, setFilters] = useState({
         search: '',
@@ -199,6 +202,55 @@ export default function FinancialStatement() {
         }
     }
 
+    // --- BULK DELETE ---
+    const toggleSelectId = (id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === transactions.length) {
+            setSelectedIds(new Set())
+        } else {
+            setSelectedIds(new Set(transactions.map(t => t.id)))
+        }
+    }
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return
+        if (!window.confirm(`Tem certeza que deseja excluir ${selectedIds.size} transação(ões)? Esta ação não pode ser desfeita.`)) return
+        setBulkDeleting(true)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/transactions/bulk-delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ ids: Array.from(selectedIds) })
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setTransactions(prev => prev.filter(t => !selectedIds.has(t.id)))
+                setSelectedIds(new Set())
+                alert(data.message)
+            } else {
+                const data = await res.json()
+                alert(data.message || 'Erro ao excluir transações')
+            }
+        } catch (err) {
+            console.error(err)
+            alert('Erro de conexão ao excluir transações.')
+        } finally {
+            setBulkDeleting(false)
+        }
+    }
+
 
 
     // Infinite Scroll Observer
@@ -341,8 +393,17 @@ export default function FinancialStatement() {
                         <table className="statement-table">
                             <thead>
                                 <tr>
+                                    <th style={{ width: '40px', textAlign: 'center' }}>
+                                        <input
+                                            type="checkbox"
+                                            className="bulk-checkbox"
+                                            checked={transactions.length > 0 && selectedIds.size === transactions.length}
+                                            onChange={toggleSelectAll}
+                                            title="Selecionar todos"
+                                        />
+                                    </th>
                                     <th>Data</th>
-                                    <th>Carteira</th> {/* Nova Coluna */}
+                                    <th>Carteira</th>
                                     <th>Categoria</th>
                                     <th>Descrição</th>
                                     <th>Método</th>
@@ -352,10 +413,10 @@ export default function FinancialStatement() {
                             </thead>
                             <tbody>
                                 {loading ? (
-                                    <tr><td colSpan="7" style={{ textAlign: 'center', padding: '3rem' }}>Carregando transações...</td></tr>
+                                    <tr><td colSpan="8" style={{ textAlign: 'center', padding: '3rem' }}>Carregando transações...</td></tr>
                                 ) : transactions.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7">
+                                        <td colSpan="8">
                                             <div className="statement-empty">
                                                 <FileText size={48} color="var(--color-slate-200)" />
                                                 <p>Nenhuma transação encontrada nesta carteira.</p>
@@ -364,7 +425,15 @@ export default function FinancialStatement() {
                                     </tr>
                                 ) : (
                                     transactions.map(t => (
-                                        <tr key={t.id}>
+                                        <tr key={t.id} className={selectedIds.has(t.id) ? 'row-selected' : ''}>
+                                            <td style={{ textAlign: 'center', width: '40px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="bulk-checkbox"
+                                                    checked={selectedIds.has(t.id)}
+                                                    onChange={() => toggleSelectId(t.id)}
+                                                />
+                                            </td>
                                             <td className="td-date">
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     <Calendar size={14} />
@@ -491,6 +560,29 @@ export default function FinancialStatement() {
                         </span>
                     </div>
                 </div>
+
+                {/* FLOATING BULK ACTION BAR */}
+                {selectedIds.size > 0 && (
+                    <div className="bulk-action-bar">
+                        <div className="bulk-info">
+                            <CheckSquare size={18} />
+                            <span><strong>{selectedIds.size}</strong> transação(ões) selecionada(s)</span>
+                        </div>
+                        <div className="bulk-actions">
+                            <button className="btn btn-outline btn-sm" onClick={() => setSelectedIds(new Set())}>
+                                Cancelar
+                            </button>
+                            <button
+                                className="btn btn-danger btn-sm"
+                                onClick={handleBulkDelete}
+                                disabled={bulkDeleting}
+                            >
+                                <Trash2 size={16} />
+                                {bulkDeleting ? 'Excluindo...' : `Excluir ${selectedIds.size}`}
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {

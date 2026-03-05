@@ -9,6 +9,7 @@ const router = express.Router()
 const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { ouroOnly } = require('../middleware/ouroGuard')
+const { calculateBillingDate } = require('../utils/billingDate')
 const multer = require('multer')
 const { parseInvoice, validateFile, SUPPORTED_MIME_TYPES, MAX_FILE_SIZE } = require('../utils/geminiService')
 
@@ -372,7 +373,8 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
         // --- SYNCHRONIZATION WITH FINANCE_TRANSACTIONS ---
         if (updated.isConfirmed) {
             const cardInfoRes = await db.query(
-                `SELECT c.id as "cardId", c.business_unit_id, b.account_type 
+                `SELECT c.id as "cardId", c.business_unit_id, b.account_type,
+                        c."closingDay", c."dueDate" as "dueDateDay"
                  FROM invoice_items ii
                  JOIN card_invoices ci ON ci.id = ii."invoiceId"
                  JOIN credit_cards c ON c.id = ci."cardId"
@@ -386,20 +388,27 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
                 const targetType = cardInfo.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL'
                 const transactionDate = updated.transactionDate || new Date()
 
+                // Calculate billing_date for credit card transactions
+                let billingDate = transactionDate
+                if (cardInfo.closingDay && cardInfo.dueDateDay) {
+                    const dateStr = typeof transactionDate === 'string' ? transactionDate : transactionDate.toISOString().substring(0, 10)
+                    billingDate = calculateBillingDate(dateStr, cardInfo.closingDay, cardInfo.dueDateDay)
+                }
+
                 const existCheck = await db.query('SELECT id FROM finance_transactions WHERE invoice_item_id = $1', [itemId])
 
                 if (existCheck.rows.length > 0) {
                     await db.query(`
                         UPDATE finance_transactions 
-                        SET amount = $1, date = $2, "categoryId" = $3, description = $4, "business_unit_id" = $5, target = $6
-                        WHERE invoice_item_id = $7
-                     `, [updated.amount, transactionDate, updated.categoryId, updated.description, cardInfo.business_unit_id, targetType, itemId])
+                        SET amount = $1, date = $2, "categoryId" = $3, description = $4, "business_unit_id" = $5, target = $6, "billing_date" = $7
+                        WHERE invoice_item_id = $8
+                     `, [updated.amount, transactionDate, updated.categoryId, updated.description, cardInfo.business_unit_id, targetType, billingDate, itemId])
                 } else {
                     await db.query(`
                         INSERT INTO finance_transactions 
-                        ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, status, "business_unit_id", "invoice_item_id")
-                        VALUES ($1, 'DESPESA', $2, $3, $4, $5, 'Cartão de Crédito', $6, $7, 'PAID', $8, $9)
-                    `, [req.user.id, targetType, updated.amount, transactionDate, updated.categoryId, cardInfo.cardId, updated.description, cardInfo.business_unit_id, itemId])
+                        ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, status, "business_unit_id", "invoice_item_id", "billing_date")
+                        VALUES ($1, 'DESPESA', $2, $3, $4, $5, 'Cartão de Crédito', $6, $7, 'PAID', $8, $9, $10)
+                    `, [req.user.id, targetType, updated.amount, transactionDate, updated.categoryId, cardInfo.cardId, updated.description, cardInfo.business_unit_id, itemId, billingDate])
                 }
             }
         } else {
