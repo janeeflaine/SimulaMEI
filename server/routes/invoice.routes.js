@@ -458,6 +458,50 @@ router.delete('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
+// POST /api/finance/invoices/items/bulk-delete — Bulk delete invoice items
+router.post('/items/bulk-delete', authMiddleware, ouroOnly, async (req, res) => {
+    const { ids } = req.body
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: 'Nenhum item selecionado.' })
+    }
+    try {
+        // Get invoiceIds for recalculation (before deleting)
+        const { rows: affectedItems } = await db.query(
+            'SELECT DISTINCT "invoiceId" FROM invoice_items WHERE id = ANY($1::int[]) AND "userId" = $2',
+            [ids, req.user.id]
+        )
+
+        // Delete linked finance_transactions
+        await db.query(
+            'DELETE FROM finance_transactions WHERE invoice_item_id = ANY($1::int[]) AND "userId" = $2',
+            [ids, req.user.id]
+        )
+
+        // Delete invoice items
+        const { rowCount } = await db.query(
+            'DELETE FROM invoice_items WHERE id = ANY($1::int[]) AND "userId" = $2',
+            [ids, req.user.id]
+        )
+
+        // Recalculate totals for affected invoices
+        for (const row of affectedItems) {
+            const { rows: [totals] } = await db.query(
+                'SELECT COALESCE(SUM(amount), 0) as "totalAmount" FROM invoice_items WHERE "invoiceId" = $1',
+                [row.invoiceId]
+            )
+            await db.query(
+                'UPDATE card_invoices SET "totalAmount" = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2',
+                [totals.totalAmount, row.invoiceId]
+            )
+        }
+
+        res.json({ message: `${rowCount} item(ns) excluído(s) com sucesso.`, deletedCount: rowCount })
+    } catch (err) {
+        console.error('Erro ao excluir itens em lote:', err)
+        res.status(500).json({ message: 'Erro ao excluir itens.' })
+    }
+})
+
 // =============================================
 // === CARD DASHBOARD DATA =====================
 // =============================================

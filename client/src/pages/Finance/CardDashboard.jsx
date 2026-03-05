@@ -35,6 +35,8 @@ export default function CardDashboard() {
     const [showNewCatModal, setShowNewCatModal] = useState(false)
     const [newCatName, setNewCatName] = useState('')
     const [creatingCat, setCreatingCat] = useState(false)
+    const [selectedItemIds, setSelectedItemIds] = useState(new Set())
+    const [bulkDeleting, setBulkDeleting] = useState(false)
 
     const API = import.meta.env.VITE_API_URL || ''
     const token = localStorage.getItem('token')
@@ -224,6 +226,55 @@ export default function CardDashboard() {
             alert('Erro de conexão')
         } finally {
             setActionLoading(null)
+        }
+    }
+
+    // --- BULK SELECT & DELETE ---
+    const toggleSelectItem = (id) => {
+        setSelectedItemIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    const toggleSelectAllItems = () => {
+        if (selectedItemIds.size === items.length) {
+            setSelectedItemIds(new Set())
+        } else {
+            setSelectedItemIds(new Set(items.map(i => i.id)))
+        }
+    }
+
+    const handleBulkDelete = async () => {
+        if (selectedItemIds.size === 0) return
+        if (!window.confirm(`Tem certeza que deseja excluir ${selectedItemIds.size} item(ns)? Esta ação não pode ser desfeita.`)) return
+        setBulkDeleting(true)
+        try {
+            const res = await fetch(`${API}/api/finance/invoices/items/bulk-delete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ ids: Array.from(selectedItemIds) })
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setSelectedItemIds(new Set())
+                await fetchItems()
+                await fetchDashboard()
+                alert(data.message)
+            } else {
+                const data = await res.json()
+                alert(data.message || 'Erro ao excluir itens')
+            }
+        } catch (err) {
+            console.error(err)
+            alert('Erro de conexão ao excluir itens.')
+        } finally {
+            setBulkDeleting(false)
         }
     }
 
@@ -542,7 +593,10 @@ export default function CardDashboard() {
                                     <button
                                         key={m.referenceMonth}
                                         className={`cd-month-btn ${selectedMonth === m.referenceMonth ? 'active' : ''}`}
-                                        onClick={() => setSelectedMonth(m.referenceMonth)}
+                                        onClick={() => {
+                                            setSelectedMonth(m.referenceMonth)
+                                            setSelectedItemIds(new Set()) // Clear selection on month change
+                                        }}
                                     >
                                         {MONTH_NAMES[m.referenceMonth]}
                                     </button>
@@ -556,140 +610,180 @@ export default function CardDashboard() {
                             <div className="loader"></div>
                         </div>
                     ) : items.length > 0 ? (
-                        <div style={{ overflowX: 'auto' }}>
-                            <table className="cd-items-table">
-                                <thead>
-                                    <tr>
-                                        <th>Descrição</th>
-                                        <th>Data</th>
-                                        <th>Categoria</th>
-                                        <th style={{ textAlign: 'right' }}>Valor</th>
-                                        <th>Confiança IA</th>
-                                        <th style={{ textAlign: 'center' }}>Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {items.map(item => {
-                                        const conf = parseFloat(item.aiConfidence) || 0
-                                        const confClass = conf >= 0.8 ? 'confidence-high' : conf >= 0.5 ? 'confidence-medium' : 'confidence-low'
-                                        const isEditing = editingItemId === item.id
-                                        const isDeleting = actionLoading === item.id
+                        <>
+                            <div style={{ overflowX: 'auto' }}>
+                                <table className="cd-items-table">
+                                    <thead>
+                                        <tr>
+                                            <th style={{ width: '40px', textAlign: 'center' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="bulk-checkbox"
+                                                    checked={items.length > 0 && selectedItemIds.size === items.length}
+                                                    onChange={toggleSelectAllItems}
+                                                    title="Selecionar todos"
+                                                />
+                                            </th>
+                                            <th>Descrição</th>
+                                            <th>Data</th>
+                                            <th>Categoria</th>
+                                            <th style={{ textAlign: 'right' }}>Valor</th>
+                                            <th>Confiança IA</th>
+                                            <th style={{ textAlign: 'center' }}>Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {items.map(item => {
+                                            const conf = parseFloat(item.aiConfidence) || 0
+                                            const confClass = conf >= 0.8 ? 'confidence-high' : conf >= 0.5 ? 'confidence-medium' : 'confidence-low'
+                                            const isEditing = editingItemId === item.id
+                                            const isDeleting = actionLoading === item.id
 
-                                        return (
-                                            <tr key={item.id} className={isEditing ? 'editing-row' : ''}>
-                                                <td className="td-item-desc">
-                                                    {isEditing ? (
+                                            return (
+                                                <tr key={item.id} className={`${isEditing ? 'editing-row' : ''} ${selectedItemIds.has(item.id) ? 'row-selected' : ''}`}>
+                                                    <td style={{ textAlign: 'center', width: '40px' }}>
                                                         <input
-                                                            type="text"
-                                                            className="cd-edit-input"
-                                                            value={editForm.description}
-                                                            onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                                                            type="checkbox"
+                                                            className="bulk-checkbox"
+                                                            checked={selectedItemIds.has(item.id)}
+                                                            onChange={() => toggleSelectItem(item.id)}
                                                         />
-                                                    ) : (
-                                                        item.description
-                                                    )}
-                                                </td>
-                                                <td className="td-item-date">
-                                                    {item.transactionDate ? new Date(item.transactionDate).toLocaleDateString('pt-BR') : '—'}
-                                                </td>
-                                                <td>
-                                                    {isEditing ? (
-                                                        <select
-                                                            className="cd-edit-select"
-                                                            value={editForm.categoryName}
-                                                            onChange={e => handleCategoryChange(e.target.value, item.categoryName || item.aiCategory)}
-                                                        >
-                                                            {categories.length > 0 ? (
-                                                                categories.map((cat, idx) => (
-                                                                    <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
-                                                                ))
-                                                            ) : (
-                                                                <option value="Outros">Outros</option>
-                                                            )}
-                                                            <option disabled>──────</option>
-                                                            <option value="NEW_CATEGORY">+ Nova Categoria...</option>
-                                                        </select>
-                                                    ) : (
-                                                        <span className="td-item-category">
-                                                            {item.categoryName || item.aiCategory || 'Sem categoria'}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="td-item-amount" style={{ textAlign: 'right' }}>
-                                                    {isEditing ? (
-                                                        <input
-                                                            type="number"
-                                                            step="0.01"
-                                                            className="cd-edit-input amount-input"
-                                                            value={editForm.amount}
-                                                            onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
-                                                        />
-                                                    ) : (
-                                                        formatBRL(item.amount)
-                                                    )}
-                                                </td>
-                                                <td className={`td-item-confidence ${confClass}`}>
-                                                    {conf > 0 ? `${(conf * 100).toFixed(0)}%` : '—'}
-                                                </td>
-                                                <td className="td-item-actions">
-                                                    {isEditing ? (
-                                                        <div className="cd-action-group">
-                                                            <button className="btn-icon save-icon" onClick={handleSaveEdit} title="Salvar" disabled={actionLoading === item.id}>
-                                                                {actionLoading === item.id ? '⏳' : '✅'}
-                                                            </button>
-                                                            <button className="btn-icon cancel-icon" onClick={handleCancelEdit} title="Cancelar">❌</button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="cd-action-group">
-                                                            <button className="btn-icon edit-icon" onClick={() => handleEditClick(item)} title="Editar" disabled={!!editingItemId || isDeleting}>
-                                                                ✏️
-                                                            </button>
-                                                            <button className="btn-icon delete-icon" onClick={() => handleDelete(item.id)} title="Excluir" disabled={!!editingItemId || isDeleting}>
-                                                                {isDeleting ? '⏳' : '🗑️'}
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        )
-                                    })}
-                                </tbody>
-                            </table>
-                            {/* New Category Modal (copied styles logic from InvoiceUpload) */}
-                            {showNewCatModal && (
-                                <div className="modal-overlay" onClick={() => setShowNewCatModal(false)}>
-                                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                                        <h3>Nova Categoria</h3>
-                                        <div className="form-group" style={{ marginTop: '1rem' }}>
-                                            <label>Nome da Categoria</label>
-                                            <input
-                                                type="text"
-                                                value={newCatName}
-                                                onChange={e => setNewCatName(e.target.value)}
-                                                placeholder="Ex: Assinaturas"
-                                                autoFocus
-                                            />
-                                            <small className="form-help">
-                                                Será criada automaticamente como categoria Pessoal (PF).
-                                            </small>
+                                                    </td>
+                                                    <td className="td-item-desc">
+                                                        {isEditing ? (
+                                                            <input
+                                                                type="text"
+                                                                className="cd-edit-input"
+                                                                value={editForm.description}
+                                                                onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                                                            />
+                                                        ) : (
+                                                            item.description
+                                                        )}
+                                                    </td>
+                                                    <td className="td-item-date">
+                                                        {item.transactionDate ? new Date(item.transactionDate).toLocaleDateString('pt-BR') : '—'}
+                                                    </td>
+                                                    <td>
+                                                        {isEditing ? (
+                                                            <select
+                                                                className="cd-edit-select"
+                                                                value={editForm.categoryName}
+                                                                onChange={e => handleCategoryChange(e.target.value, item.categoryName || item.aiCategory)}
+                                                            >
+                                                                {categories.length > 0 ? (
+                                                                    categories.map((cat, idx) => (
+                                                                        <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
+                                                                    ))
+                                                                ) : (
+                                                                    <option value="Outros">Outros</option>
+                                                                )}
+                                                                <option disabled>──────</option>
+                                                                <option value="NEW_CATEGORY">+ Nova Categoria...</option>
+                                                            </select>
+                                                        ) : (
+                                                            <span className="td-item-category">
+                                                                {item.categoryName || item.aiCategory || 'Sem categoria'}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="td-item-amount" style={{ textAlign: 'right' }}>
+                                                        {isEditing ? (
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                className="cd-edit-input amount-input"
+                                                                value={editForm.amount}
+                                                                onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
+                                                            />
+                                                        ) : (
+                                                            formatBRL(item.amount)
+                                                        )}
+                                                    </td>
+                                                    <td className={`td-item-confidence ${confClass}`}>
+                                                        {conf > 0 ? `${(conf * 100).toFixed(0)}%` : '—'}
+                                                    </td>
+                                                    <td className="td-item-actions">
+                                                        {isEditing ? (
+                                                            <div className="cd-action-group">
+                                                                <button className="btn-icon save-icon" onClick={handleSaveEdit} title="Salvar" disabled={actionLoading === item.id}>
+                                                                    {actionLoading === item.id ? '⏳' : '✅'}
+                                                                </button>
+                                                                <button className="btn-icon cancel-icon" onClick={handleCancelEdit} title="Cancelar">❌</button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="cd-action-group">
+                                                                <button className="btn-icon edit-icon" onClick={() => handleEditClick(item)} title="Editar" disabled={!!editingItemId || isDeleting}>
+                                                                    ✏️
+                                                                </button>
+                                                                <button className="btn-icon delete-icon" onClick={() => handleDelete(item.id)} title="Excluir" disabled={!!editingItemId || isDeleting}>
+                                                                    {isDeleting ? '⏳' : '🗑️'}
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                                {/* New Category Modal (copied styles logic from InvoiceUpload) */}
+                                {showNewCatModal && (
+                                    <div className="modal-overlay" onClick={() => setShowNewCatModal(false)}>
+                                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                            <h3>Nova Categoria</h3>
+                                            <div className="form-group" style={{ marginTop: '1rem' }}>
+                                                <label>Nome da Categoria</label>
+                                                <input
+                                                    type="text"
+                                                    value={newCatName}
+                                                    onChange={e => setNewCatName(e.target.value)}
+                                                    placeholder="Ex: Assinaturas"
+                                                    autoFocus
+                                                />
+                                                <small className="form-help">
+                                                    Será criada automaticamente como categoria Pessoal (PF).
+                                                </small>
+                                            </div>
+                                            <div className="modal-actions">
+                                                <button className="btn-cancel" onClick={() => setShowNewCatModal(false)}>
+                                                    Cancelar
+                                                </button>
+                                                <button
+                                                    className="btn-save"
+                                                    onClick={handleCreateCategory}
+                                                    disabled={creatingCat || !newCatName.trim()}
+                                                >
+                                                    {creatingCat ? 'Criando...' : 'Criar Categoria'}
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="modal-actions">
-                                            <button className="btn-cancel" onClick={() => setShowNewCatModal(false)}>
-                                                Cancelar
-                                            </button>
-                                            <button
-                                                className="btn-save"
-                                                onClick={handleCreateCategory}
-                                                disabled={creatingCat || !newCatName.trim()}
-                                            >
-                                                {creatingCat ? 'Criando...' : 'Criar Categoria'}
-                                            </button>
-                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* FLOATING BULK ACTION BAR */}
+                            {selectedItemIds.size > 0 && (
+                                <div className="cd-bulk-action-bar">
+                                    <div className="cd-bulk-info">
+                                        <span>☑️</span>
+                                        <span><strong>{selectedItemIds.size}</strong> item(ns) selecionado(s)</span>
+                                    </div>
+                                    <div className="cd-bulk-actions">
+                                        <button className="cd-bulk-btn cancel" onClick={() => setSelectedItemIds(new Set())}>
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            className="cd-bulk-btn danger"
+                                            onClick={handleBulkDelete}
+                                            disabled={bulkDeleting}
+                                        >
+                                            {bulkDeleting ? '⏳ Excluindo...' : `🗑️ Excluir ${selectedItemIds.size}`}
+                                        </button>
                                     </div>
                                 </div>
                             )}
-                        </div>
-                    ) : (
+                        </>) : (
                         <div className="cd-empty">
                             <span className="empty-icon">🧾</span>
                             <h3>Nenhum item nesta fatura</h3>
@@ -699,6 +793,6 @@ export default function CardDashboard() {
                 </div>
 
             </div>
-        </div>
+        </div >
     )
 }
