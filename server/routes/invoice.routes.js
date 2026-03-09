@@ -374,7 +374,8 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
         if (updated.isConfirmed) {
             const cardInfoRes = await db.query(
                 `SELECT c.id as "cardId", c.business_unit_id, b.account_type,
-                        c."closingDay", c."dueDate" as "dueDateDay"
+                        c."closingDay", c."dueDate" as "dueDateDay",
+                        ci."referenceMonth", ci."referenceYear"
                  FROM invoice_items ii
                  JOIN card_invoices ci ON ci.id = ii."invoiceId"
                  JOIN credit_cards c ON c.id = ci."cardId"
@@ -388,11 +389,18 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
                 const targetType = cardInfo.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL'
                 const transactionDate = updated.transactionDate || new Date()
 
-                // Calculate billing_date for credit card transactions
+                // For invoice items, billing_date = dueDay/referenceMonth/referenceYear of the invoice
+                // NOT calculated from the purchase date, because installments belong to different invoices
                 let billingDate = transactionDate
-                if (cardInfo.closingDay && cardInfo.dueDateDay) {
-                    const dateStr = typeof transactionDate === 'string' ? transactionDate : transactionDate.toISOString().substring(0, 10)
-                    billingDate = calculateBillingDate(dateStr, cardInfo.closingDay, cardInfo.dueDateDay)
+                if (cardInfo.dueDateDay && cardInfo.referenceMonth && cardInfo.referenceYear) {
+                    const refMonth = parseInt(cardInfo.referenceMonth, 10)
+                    const refYear = parseInt(cardInfo.referenceYear, 10)
+                    const dueDay = parseInt(cardInfo.dueDateDay, 10)
+                    const maxDay = new Date(refYear, refMonth, 0).getDate() // last day of referenceMonth
+                    const finalDay = Math.min(dueDay, maxDay)
+                    const mm = String(refMonth).padStart(2, '0')
+                    const dd = String(finalDay).padStart(2, '0')
+                    billingDate = `${refYear}-${mm}-${dd}`
                 }
 
                 const existCheck = await db.query('SELECT id FROM finance_transactions WHERE invoice_item_id = $1', [itemId])
