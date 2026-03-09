@@ -374,8 +374,7 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
         if (updated.isConfirmed) {
             const cardInfoRes = await db.query(
                 `SELECT c.id as "cardId", c.business_unit_id, b.account_type,
-                        c."closingDay", c."dueDate" as "dueDateDay",
-                        ci."referenceMonth", ci."referenceYear"
+                        ci."dueDate" as "invoiceDueDate"
                  FROM invoice_items ii
                  JOIN card_invoices ci ON ci.id = ii."invoiceId"
                  JOIN credit_cards c ON c.id = ci."cardId"
@@ -389,19 +388,10 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
                 const targetType = cardInfo.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL'
                 const transactionDate = updated.transactionDate || new Date()
 
-                // For invoice items, billing_date = dueDay/referenceMonth/referenceYear of the invoice
-                // NOT calculated from the purchase date, because installments belong to different invoices
-                let billingDate = transactionDate
-                if (cardInfo.dueDateDay && cardInfo.referenceMonth && cardInfo.referenceYear) {
-                    const refMonth = parseInt(cardInfo.referenceMonth, 10)
-                    const refYear = parseInt(cardInfo.referenceYear, 10)
-                    const dueDay = parseInt(cardInfo.dueDateDay, 10)
-                    const maxDay = new Date(refYear, refMonth, 0).getDate() // last day of referenceMonth
-                    const finalDay = Math.min(dueDay, maxDay)
-                    const mm = String(refMonth).padStart(2, '0')
-                    const dd = String(finalDay).padStart(2, '0')
-                    billingDate = `${refYear}-${mm}-${dd}`
-                }
+                // For invoice items, billing_date = the invoice's actual due date.
+                // This is the simplest and most reliable approach — the invoice already
+                // stores the exact due date extracted from the PDF by the AI.
+                const billingDate = cardInfo.invoiceDueDate || transactionDate
 
                 const existCheck = await db.query('SELECT id FROM finance_transactions WHERE invoice_item_id = $1', [itemId])
 

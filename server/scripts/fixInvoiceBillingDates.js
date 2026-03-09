@@ -1,9 +1,8 @@
 /**
  * Fix billing_date for all finance_transactions linked to invoice_items.
  * 
- * Problem: billing_date was calculated from the purchase date using calculateBillingDate(),
- * which gives the same date for all installments of the same purchase.
- * Fix: billing_date should be dueDay/referenceMonth/referenceYear from the linked invoice.
+ * The simplest fix: use the invoice's actual dueDate field directly as billing_date.
+ * The card_invoices table already stores the exact due date (extracted by AI from PDF).
  * 
  * Usage: node server/scripts/fixInvoiceBillingDates.js
  */
@@ -23,15 +22,12 @@ async function fixInvoiceBillingDates() {
     console.log('🔄 Fixing billing_date for invoice-linked transactions...')
 
     try {
-        // Get all finance_transactions linked to invoice items, with invoice + card info
         const { rows: transactions } = await pool.query(`
-            SELECT ft.id, ft.invoice_item_id, ft."billing_date" as current_billing,
-                   ci."referenceMonth", ci."referenceYear",
-                   c."dueDate" as "dueDateDay"
+            SELECT ft.id, ft."billing_date" as current_billing, ft.description,
+                   ci."dueDate" as invoice_due_date
             FROM finance_transactions ft
             JOIN invoice_items ii ON ii.id = ft.invoice_item_id
             JOIN card_invoices ci ON ci.id = ii."invoiceId"
-            JOIN credit_cards c ON c.id = ci."cardId"
             WHERE ft.invoice_item_id IS NOT NULL
         `)
 
@@ -40,25 +36,17 @@ async function fixInvoiceBillingDates() {
         let fixedCount = 0
 
         for (const tx of transactions) {
-            const refMonth = parseInt(tx.referenceMonth, 10)
-            const refYear = parseInt(tx.referenceYear, 10)
-            const dueDay = parseInt(tx.dueDateDay, 10)
-
-            if (!refMonth || !refYear || !dueDay) {
-                console.log(`  ⚠️ Skipping tx #${tx.id} — missing referenceMonth/Year or dueDay`)
+            if (!tx.invoice_due_date) {
+                console.log(`  ⚠️ Skipping tx #${tx.id} — invoice has no dueDate`)
                 continue
             }
 
-            // Calculate correct billing_date
-            const maxDay = new Date(refYear, refMonth, 0).getDate()
-            const finalDay = Math.min(dueDay, maxDay)
-            const mm = String(refMonth).padStart(2, '0')
-            const dd = String(finalDay).padStart(2, '0')
-            const correctBillingDate = `${refYear}-${mm}-${dd}`
+            const correctBillingDate = typeof tx.invoice_due_date === 'string'
+                ? tx.invoice_due_date.substring(0, 10)
+                : tx.invoice_due_date.toISOString().substring(0, 10)
 
-            // Compare with current billing_date
             const currentStr = tx.current_billing
-                ? (typeof tx.current_billing === 'string' ? tx.current_billing.substring(0, 10) : new Date(tx.current_billing).toISOString().substring(0, 10))
+                ? (typeof tx.current_billing === 'string' ? tx.current_billing.substring(0, 10) : tx.current_billing.toISOString().substring(0, 10))
                 : null
 
             if (currentStr !== correctBillingDate) {
@@ -67,7 +55,7 @@ async function fixInvoiceBillingDates() {
                     [correctBillingDate, tx.id]
                 )
                 fixedCount++
-                console.log(`  ✅ tx #${tx.id}: ${currentStr} → ${correctBillingDate}`)
+                console.log(`  ✅ tx #${tx.id}: ${currentStr} → ${correctBillingDate} (${(tx.description || '').substring(0, 30)})`)
             }
         }
 

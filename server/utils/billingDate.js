@@ -37,10 +37,11 @@ function calculateBillingDate(purchaseDate, closingDay, dueDay) {
     }
     // Se purchaseDayOfMonth <= closingDay, fica no mês atual
 
-    // Passo 2: Se o dia de vencimento é menor que o dia de fechamento,
+    // Passo 2: Se o dia de vencimento é menor OU IGUAL ao dia de fechamento,
     // o vencimento real ocorre no mês SEGUINTE ao do fechamento.
     // Ex: fecha dia 25, vence dia 5 → vencimento é no mês seguinte.
-    if (dueDay < closingDay) {
+    // Ex: fecha dia 10, vence dia 10 → vencimento é no mês seguinte.
+    if (dueDay <= closingDay) {
         billingMonth += 1
         if (billingMonth > 11) {
             billingMonth = 0
