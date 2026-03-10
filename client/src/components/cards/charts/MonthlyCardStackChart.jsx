@@ -29,11 +29,11 @@ export default function MonthlyCardStackChart({ data, cardNames }) {
             <h3 className="csp-section-title">📊 Distribuição Mensal por Cartão</h3>
             <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} />
-                    <YAxis tickFormatter={v => `${(v / 1000).toFixed(0)}k`} tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                    <XAxis dataKey="label" tick={{ fill: '#475569', fontSize: 12 }} axisLine={false} />
+                    <YAxis tickFormatter={v => `${(v / 1000).toFixed(0)}k`} tick={{ fill: '#475569', fontSize: 12 }} axisLine={false} />
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                    <Legend wrapperStyle={{ fontSize: 12, color: '#475569' }} />
                     {cardNames.map((name, i) => (
                         <Bar key={name} dataKey={name} stackId="cards" fill={STACK_COLORS[i % STACK_COLORS.length]} radius={i === cardNames.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
                     ))}

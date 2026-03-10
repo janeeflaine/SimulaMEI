@@ -42,7 +42,7 @@ export default function CardShareDonutChart({ data }) {
                         ))}
                     </Pie>
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                    <Legend wrapperStyle={{ fontSize: 12, color: '#475569' }} />
                 </PieChart>
             </ResponsiveContainer>
         </div>
