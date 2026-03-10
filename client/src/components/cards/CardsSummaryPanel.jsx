@@ -8,8 +8,6 @@ import CardsAnalyticsTable from './CardsAnalyticsTable'
 import MonthlyTrendChart from './charts/MonthlyTrendChart'
 import SpendingByCardChart from './charts/SpendingByCardChart'
 import SpendingByCategoryChart from './charts/SpendingByCategoryChart'
-import MonthlyCardStackChart from './charts/MonthlyCardStackChart'
-import CardShareDonutChart from './charts/CardShareDonutChart'
 import './CardsSummaryPanel.css'
 
 /**
@@ -23,8 +21,7 @@ export default function CardsSummaryPanel() {
     const {
         loading, error, cards, kpis,
         cardBreakdown, categoryBreakdown,
-        monthlyTrend, monthlyCardStack,
-        cardShare, insights, refetch
+        monthlyTrend, insights, refetch
     } = useCardsDashboardSummary(year)
 
     if (loading) return <DashboardSkeleton />
@@ -65,10 +62,6 @@ export default function CardsSummaryPanel() {
                         </div>
                         <SpendingByCardChart data={cardBreakdown} />
                         <SpendingByCategoryChart data={categoryBreakdown} />
-                        <div className="csp-chart-full">
-                            <MonthlyCardStackChart data={monthlyCardStack.data} cardNames={monthlyCardStack.cardNames} />
-                        </div>
-                        <CardShareDonutChart data={cardShare} />
                     </div>
 
                     <CardsAnalyticsTable cardBreakdown={cardBreakdown} monthlyTrend={monthlyTrend} />

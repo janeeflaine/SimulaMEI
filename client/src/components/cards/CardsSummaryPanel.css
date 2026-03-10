@@ -223,8 +223,22 @@
 }
 
 .csp-kpi-highlight {
-    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%) !important;
-    border-color: #a7f3d0 !important;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    border-color: #047857 !important;
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 10px 25px rgba(16, 185, 129, 0.2) !important;
+}
+
+.csp-kpi-highlight .csp-kpi-icon {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.csp-kpi-highlight .csp-kpi-label,
+.csp-kpi-highlight .csp-kpi-value,
+.csp-kpi-highlight .csp-kpi-sub {
+    color: white;
 }
 
 .csp-kpi-icon {
