@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import FeatureLock from '../../components/FeatureLock'
+import CardsSummaryPanel from '../../components/cards/CardsSummaryPanel'
 import './CreditCards.css'
 
 export default function CreditCards() {
@@ -177,6 +178,8 @@ export default function CreditCards() {
                         </button>
                     </div>
                 </div>
+
+                <CardsSummaryPanel />
 
                 {loading ? (
                     <div className="text-center py-8">Carregando...</div>

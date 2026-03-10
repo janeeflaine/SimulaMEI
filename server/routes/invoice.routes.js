@@ -793,6 +793,84 @@ router.get('/dashboard-summary', authMiddleware, ouroOnly, async (req, res) => {
             cards: rows
         }
 
+        // === CONSOLIDATED DATA (additive, only when requested) ===
+        if (req.query.consolidated === 'true') {
+            const targetYear = parseInt(req.query.year) || currentYear
+
+            // 1. Monthly totals per card (stacked data)
+            const { rows: monthlyRows } = await db.query(
+                `SELECT ci."referenceMonth" as month,
+                        COALESCE(SUM(ci."totalAmount"), 0) as total,
+                        c.name as "cardName",
+                        COALESCE(SUM(ci."totalAmount"), 0) as "cardTotal"
+                 FROM card_invoices ci
+                 JOIN credit_cards c ON c.id = ci."cardId"
+                 WHERE ci."userId" = $1 AND ci."referenceYear" = $2
+                 GROUP BY ci."referenceMonth", c.name
+                 ORDER BY ci."referenceMonth" ASC`,
+                [req.user.id, targetYear]
+            )
+
+            // Build monthlyTotals with byCard breakdown
+            const monthlyMap = new Map()
+            for (const r of monthlyRows) {
+                const month = parseInt(r.month)
+                if (!monthlyMap.has(month)) {
+                    monthlyMap.set(month, { month, total: 0, byCard: {} })
+                }
+                const entry = monthlyMap.get(month)
+                const cardTotal = parseFloat(r.cardTotal) || 0
+                entry.byCard[r.cardName] = cardTotal
+                entry.total += cardTotal
+            }
+            const monthlyTotals = Array.from(monthlyMap.values()).sort((a, b) => a.month - b.month)
+
+            // 2. Category breakdown across ALL cards
+            const { rows: categoryRows } = await db.query(
+                `SELECT 
+                    COALESCE(fc.name, ii."aiCategory", 'Sem Categoria') as category,
+                    SUM(ii.amount) as total,
+                    COUNT(ii.id) as count
+                 FROM invoice_items ii
+                 JOIN card_invoices ci ON ci.id = ii."invoiceId"
+                 LEFT JOIN finance_categories fc ON fc.id = ii."categoryId"
+                 WHERE ii."userId" = $1 AND ci."referenceYear" = $2
+                 GROUP BY COALESCE(fc.name, ii."aiCategory", 'Sem Categoria')
+                 ORDER BY total DESC`,
+                [req.user.id, targetYear]
+            )
+
+            // 3. Card breakdown (total per card for the year)
+            const { rows: cardRows } = await db.query(
+                `SELECT c.id as "cardId", c.name,
+                        COALESCE(SUM(ci."totalAmount"), 0) as total
+                 FROM credit_cards c
+                 LEFT JOIN card_invoices ci ON ci."cardId" = c.id AND ci."referenceYear" = $2
+                 WHERE c."userId" = $1
+                 GROUP BY c.id, c.name
+                 ORDER BY total DESC`,
+                [req.user.id, targetYear]
+            )
+
+            const totalSpent = cardRows.reduce((sum, c) => sum + (parseFloat(c.total) || 0), 0)
+
+            summary.consolidated = {
+                year: targetYear,
+                totalSpent,
+                monthlyTotals,
+                categoryBreakdown: categoryRows.map(r => ({
+                    category: r.category,
+                    total: parseFloat(r.total) || 0,
+                    count: parseInt(r.count) || 0
+                })),
+                cardBreakdown: cardRows.map(r => ({
+                    cardId: parseInt(r.cardId),
+                    name: r.name,
+                    total: parseFloat(r.total) || 0
+                }))
+            }
+        }
+
         res.json(summary)
     } catch (err) {
         console.error('Erro ao buscar resumo de cartões para dashboard:', err)
