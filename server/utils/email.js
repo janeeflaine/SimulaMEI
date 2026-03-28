@@ -19,7 +19,7 @@ const createTransporter = () => {
 }
 
 const sendPasswordResetEmail = async (to, token) => {
-    const isProduction = process.env.NODE_ENV === 'production'
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
     // Fallback to localhost for dev environment
     const baseUrl = process.env.FRONTEND_URL || (isProduction ? 'https://simula-mei.vercel.app' : 'http://localhost:5173')
     const resetUrl = `${baseUrl}/redefinir-senha?token=${token}`
