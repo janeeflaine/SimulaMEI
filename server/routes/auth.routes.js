@@ -152,6 +152,15 @@ router.post('/login', async (req, res) => {
 // Forgot Password
 router.post('/forgot-password', async (req, res) => {
     try {
+        // Auto-heal DB schema for Serverless environments (Vercel)
+        // Ensures columns exist even if init() hasn't finished migrating them
+        try {
+            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
+            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
+        } catch (migErr) {
+            console.log('Ignored auto-heal error:', migErr.message)
+        }
+
         const { email } = req.body
 
         if (!email) {
@@ -192,6 +201,12 @@ router.post('/forgot-password', async (req, res) => {
 // Reset Password
 router.post('/reset-password', async (req, res) => {
     try {
+        // Auto-heal schema
+        try {
+            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
+            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
+        } catch (migErr) { }
+
         const { token, newPassword } = req.body
 
         if (!token || !newPassword) {
