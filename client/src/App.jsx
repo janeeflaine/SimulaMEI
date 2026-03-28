@@ -7,6 +7,8 @@ import Simulator from './pages/Simulator'
 import Results from './pages/Results'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Comparison from './pages/Comparison'
 import Account from './pages/Account'
@@ -53,6 +55,8 @@ function App() {
                         <Route path="/planos" element={<Plans />} />
                         <Route path="/login" element={<Login />} />
                         <Route path="/cadastro" element={<Register />} />
+                        <Route path="/esqueci-senha" element={<ForgotPassword />} />
+                        <Route path="/redefinir-senha" element={<ResetPassword />} />
 
                         {/* Protected User Routes */}
                         <Route element={<ProtectedRoute />}>

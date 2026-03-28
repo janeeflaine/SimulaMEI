@@ -1,7 +1,9 @@
 const express = require('express')
 const bcrypt = require('bcryptjs')
+const crypto = require('crypto')
 const { db } = require('../db')
 const { generateToken } = require('../middleware/auth')
+const { sendPasswordResetEmail } = require('../utils/email')
 
 const router = express.Router()
 
@@ -144,6 +146,85 @@ router.post('/login', async (req, res) => {
     } catch (error) {
         console.error('Login error:', error)
         res.status(500).json({ message: 'Erro ao fazer login', error: error.message })
+    }
+})
+
+// Forgot Password
+router.post('/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body
+
+        if (!email) {
+            return res.status(400).json({ message: 'Email é obrigatório' })
+        }
+
+        const result = await db.query('SELECT id, name FROM users WHERE email = $1 AND "deletedAt" IS NULL', [email])
+        const user = result.rows[0]
+
+        // Security: Constant response to prevent email enumeration
+        if (!user) {
+            await new Promise(resolve => setTimeout(resolve, 500)) // delay simulation
+            return res.status(200).json({ message: 'Se o e-mail estiver cadastrado, você receberá um link de recuperação em breve.' })
+        }
+
+        // Generate token
+        const resetToken = crypto.randomBytes(32).toString('hex')
+        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex')
+
+        // Set Expiration (1 hour)
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+        await db.query(`
+            UPDATE users 
+            SET "resetPasswordToken" = $1, "resetPasswordExpires" = $2 
+            WHERE id = $3
+        `, [hashedToken, expiresAt, user.id])
+
+        await sendPasswordResetEmail(email, resetToken)
+
+        res.status(200).json({ message: 'Se o e-mail estiver cadastrado, você receberá um link de recuperação em breve.' })
+    } catch (error) {
+        console.error('Forgot password error:', error)
+        res.status(500).json({ message: 'Erro ao processar solicitação', error: error.message })
+    }
+})
+
+// Reset Password
+router.post('/reset-password', async (req, res) => {
+    try {
+        const { token, newPassword } = req.body
+
+        if (!token || !newPassword) {
+            return res.status(400).json({ message: 'Token e nova senha são obrigatórios' })
+        }
+
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex')
+
+        const result = await db.query(`
+            SELECT id FROM users 
+            WHERE "resetPasswordToken" = $1 
+              AND "resetPasswordExpires" > NOW() 
+              AND "deletedAt" IS NULL
+        `, [hashedToken])
+
+        const user = result.rows[0]
+
+        if (!user) {
+            return res.status(400).json({ message: 'Token de recuperação inválido ou expirado. Solicite novamente.' })
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10)
+
+        await db.query(`
+            UPDATE users 
+            SET password = $1, "resetPasswordToken" = NULL, "resetPasswordExpires" = NULL 
+            WHERE id = $2
+        `, [hashedPassword, user.id])
+
+        res.status(200).json({ message: 'Senha redefinida com sucesso. Faça login com a nova senha.' })
+    } catch (error) {
+        console.error('Reset password error:', error)
+        res.status(500).json({ message: 'Erro ao redefinir a senha', error: error.message })
     }
 })
 

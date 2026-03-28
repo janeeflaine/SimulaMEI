@@ -292,6 +292,11 @@ const init = async () => {
           END IF;
         END $$;
       `)
+
+      // Add columns for Password Recovery
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
+
     } catch (migErr) {
       console.log('Migration note (finance):', migErr.message)
     }

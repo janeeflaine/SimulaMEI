@@ -28,6 +28,7 @@
     "jsonwebtoken": "^9.0.3",
     "mercadopago": "^2.11.0",
     "multer": "^2.1.0",
+    "nodemailer": "^8.0.4",
     "pg": "^8.16.3"
   },
   "devDependencies": {

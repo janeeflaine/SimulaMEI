@@ -66,7 +66,10 @@ export default function Login() {
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">Senha</label>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <label className="form-label" style={{ marginBottom: 0 }}>Senha</label>
+                                <Link to="/esqueci-senha" style={{ fontSize: '13px', color: 'var(--color-primary)', textDecoration: 'none', fontWeight: '500' }}>Esqueceu a senha?</Link>
+                            </div>
                             <input
                                 type="password"
                                 name="password"
