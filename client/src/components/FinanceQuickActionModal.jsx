@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { showToast } from '../../utils/toast'
 import './FinanceQuickActionModal.css'
 
 export default function FinanceQuickActionModal({ onClose, onSuccess, initialData }) {
@@ -101,11 +102,11 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                 setIsAddingCard(false)
                 setNewCardName('')
             } else {
-                alert('Erro ao criar cartão')
+                showToast('Erro ao criar cartão', 'error')
             }
         } catch (err) {
             console.error(err)
-            alert('Erro de conexão')
+            showToast('Erro de conexão', 'error')
         }
     }
 
@@ -137,11 +138,11 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                 setIsAddingCategory(false)
                 setNewCategoryName('')
             } else {
-                alert('Erro ao criar categoria')
+                showToast('Erro ao criar categoria', 'error')
             }
         } catch (err) {
             console.error(err)
-            alert('Erro de conexão')
+            showToast('Erro de conexão', 'error')
         }
     }
 
@@ -170,15 +171,15 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
             })
 
             if (res.ok) {
-                alert(initialData?.id ? 'Lançamento atualizado!' : 'Lançamento salvo!')
+                showToast(initialData?.id ? 'Lançamento atualizado!' : 'Lançamento salvo!', 'success')
                 onSuccess()
             } else {
                 const data = await res.json()
-                alert(`Erro: ${data.message || 'Falha ao processar'}`)
+                showToast(`Erro: ${data.message || 'Falha ao processar'}`, 'error')
             }
         } catch (err) {
             console.error(err)
-            alert('Erro de conexão ao processar transação.')
+            showToast('Erro de conexão ao processar transação.', 'error')
         } finally {
             setLoading(false)
         }
