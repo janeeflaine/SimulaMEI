@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { showToast } from '../../utils/toast'
+import { showToast } from '../utils/toast'
 import './FinanceQuickActionModal.css'
 
 export default function FinanceQuickActionModal({ onClose, onSuccess, initialData }) {
