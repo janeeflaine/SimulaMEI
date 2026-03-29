@@ -293,7 +293,11 @@ const init = async () => {
         END $$;
       `)
 
-      // Add columns for Password Recovery
+      // Add columns for users table hardening/logic
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "isBlocked" INTEGER DEFAULT 0')
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP')
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "planExpiresAt" TIMESTAMP')
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "subscriptionStatus" TEXT DEFAULT \'active\'')
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
 
