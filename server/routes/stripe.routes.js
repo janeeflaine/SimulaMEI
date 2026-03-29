@@ -68,13 +68,27 @@ const webhookHandler = async (req, res) => {
     const sig = req.headers['stripe-signature']
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET
 
+    console.log('--- STRIPE WEBHOOK RECEBIDO ---')
+    console.log('Signature presente:', !!sig)
+    console.log('Secret presente:', !!endpointSecret)
+    console.log('Tipo do req.body:', Buffer.isBuffer(req.body) ? 'Buffer' : typeof req.body)
+
     let event
 
     try {
         // req.body is a Buffer here because we will use express.raw() in index.js
+        // If Vercel auto-parsed it, this might crash
         event = stripeEnv.webhooks.constructEvent(req.body, sig, endpointSecret)
+        console.log('Assinatura Stripe verificada com sucesso! Evento:', event.type)
     } catch (err) {
-        console.error('Webhook signature verification failed.', err.message)
+        console.error('🚨 FALHA NA VERIFICAÇÃO DO WEBHOOK STRIPE 🚨')
+        console.error('Erro:', err.message)
+
+        // Se o body não for Buffer, significa que a Vercel engoliu a formatação RAW
+        if (!Buffer.isBuffer(req.body)) {
+            console.error('Motivo provável: A Vercel converteu o raw body em Objeto JSON de forma não autorizada, quebrando a criptografia da assinatura.')
+        }
+
         return res.status(400).send(`Webhook Error: ${err.message}`)
     }
 
