@@ -19,8 +19,16 @@ const stripeRoutes = require('../server/routes/stripe.routes')
 
 const app = express()
 
+// FIX-7: Security Headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
+const helmet = require('helmet')
+app.use(helmet())
+
 // Middleware
-app.use(cors())
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'https://simula-mei.vercel.app',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+}))
 
 // STRIPE WEBHOOK: Must be placed BEFORE express.json() to preserve the raw body for signature verification!
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeRoutes.webhookHandler)

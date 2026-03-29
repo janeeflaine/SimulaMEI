@@ -1,19 +1,34 @@
 const express = require('express')
 const bcrypt = require('bcryptjs')
 const crypto = require('crypto')
+const rateLimit = require('express-rate-limit')
 const { db } = require('../db')
 const { generateToken } = require('../middleware/auth')
 const { sendPasswordResetEmail } = require('../utils/email')
 
 const router = express.Router()
 
+// FIX-4: Rate limiting for auth endpoints (anti brute-force)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // max 10 attempts per window
+    message: { message: 'Muitas tentativas. Tente novamente em 15 minutos.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+})
+
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
     try {
         const { name, email, password } = req.body
 
         if (!name || !email || !password) {
             return res.status(400).json({ message: 'Nome, email e senha são obrigatórios' })
+        }
+
+        // FIX-6: Password policy
+        if (password.length < 8) {
+            return res.status(400).json({ message: 'A senha deve ter pelo menos 8 caracteres.' })
         }
 
         // Check if user exists
@@ -73,12 +88,12 @@ router.post('/register', async (req, res) => {
         })
     } catch (error) {
         console.error('Register error:', error)
-        res.status(500).json({ message: 'Erro ao criar conta', error: error.message })
+        res.status(500).json({ message: 'Erro interno. Tente novamente.' })
     }
 })
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body
 
@@ -157,12 +172,12 @@ router.post('/login', async (req, res) => {
         })
     } catch (error) {
         console.error('Login error:', error)
-        res.status(500).json({ message: 'Erro ao fazer login', error: error.message })
+        res.status(500).json({ message: 'Erro interno. Tente novamente.' })
     }
 })
 
 // Forgot Password
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', authLimiter, async (req, res) => {
     try {
         // Auto-heal DB schema for Serverless environments (Vercel)
         // Ensures columns exist even if init() hasn't finished migrating them
@@ -206,7 +221,7 @@ router.post('/forgot-password', async (req, res) => {
         res.status(200).json({ message: 'Se o e-mail estiver cadastrado, você receberá um link de recuperação em breve.' })
     } catch (error) {
         console.error('Forgot password error:', error)
-        res.status(500).json({ message: 'Erro ao processar solicitação', error: error.message })
+        res.status(500).json({ message: 'Erro interno. Tente novamente.' })
     }
 })
 
@@ -251,7 +266,7 @@ router.post('/reset-password', async (req, res) => {
         res.status(200).json({ message: 'Senha redefinida com sucesso. Faça login com a nova senha.' })
     } catch (error) {
         console.error('Reset password error:', error)
-        res.status(500).json({ message: 'Erro ao redefinir a senha', error: error.message })
+        res.status(500).json({ message: 'Erro interno. Tente novamente.' })
     }
 })
 

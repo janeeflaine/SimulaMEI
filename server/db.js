@@ -391,12 +391,18 @@ const seedDefaults = async () => {
     const adminCount = await pool.query("SELECT COUNT(*) FROM users WHERE role = 'ADMIN'")
     if (parseInt(adminCount.rows[0].count) === 0) {
       const bcrypt = require('bcryptjs')
-      const hashedPassword = await bcrypt.hash('admin123', 10)
+      const crypto = require('crypto')
+      const adminPass = process.env.ADMIN_DEFAULT_PASSWORD || crypto.randomBytes(12).toString('base64url')
+      const hashedPassword = await bcrypt.hash(adminPass, 12)
       await pool.query(`
                 INSERT INTO users(name, email, password, role)
 VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
   `, [hashedPassword])
       console.log('✅ Admin user seeded')
+      if (!process.env.ADMIN_DEFAULT_PASSWORD) {
+        console.log('⚠️ SENHA ADMIN GERADA AUTOMATICAMENTE:', adminPass)
+        console.log('⚠️ ANOTE ESTA SENHA! Ela não será exibida novamente.')
+      }
     }
 
     // Default Alerts for Ouro users (optional seeding for existing users if any, 

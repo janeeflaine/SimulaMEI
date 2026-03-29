@@ -103,6 +103,11 @@ router.put('/users/:id', async (req, res) => {
         }
 
         if (role !== undefined) {
+            // FIX-9: Validate role to prevent arbitrary privilege escalation
+            const allowedRoles = ['USER', 'ADMIN']
+            if (!allowedRoles.includes(role)) {
+                return res.status(400).json({ message: 'Role inválida. Valores permitidos: USER, ADMIN' })
+            }
             updates.push(`role = $${paramIndex++}`)
             params.push(role)
         }

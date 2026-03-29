@@ -80,6 +80,13 @@ const webhookHandler = async (req, res) => {
         // If Vercel auto-parsed it, this might crash
         event = stripeEnv.webhooks.constructEvent(req.body, sig, endpointSecret)
         console.log('Assinatura Stripe verificada com sucesso! Evento:', event.type)
+
+        // FIX-8: Replay protection — reject events older than 5 minutes
+        const eventAge = Math.floor(Date.now() / 1000) - event.created
+        if (eventAge > 300) {
+            console.warn(`⚠️ Webhook rejeitado: evento com ${eventAge}s de idade (limite: 300s)`)
+            return res.status(400).send('Webhook rejected: event too old (possible replay)')
+        }
     } catch (err) {
         console.error('🚨 FALHA NA VERIFICAÇÃO DO WEBHOOK STRIPE 🚨')
         console.error('Erro:', err.message)

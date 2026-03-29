@@ -1,7 +1,11 @@
 const { db } = require('../db')
 const jwt = require('jsonwebtoken')
 
-const JWT_SECRET = process.env.JWT_SECRET || 'simulamei-secret-key-change-in-production'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) {
+    console.error('🚨 FATAL: JWT_SECRET não está configurado nas variáveis de ambiente!')
+    // In serverless (Vercel), we can't crash the process, but we make operations fail securely
+}
 
 const authMiddleware = async (req, res, next) => {
     try {
