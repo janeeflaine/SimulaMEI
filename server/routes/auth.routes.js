@@ -25,29 +25,38 @@ router.post('/register', async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10)
 
-        // Get free plan
-        const planResult = await db.query("SELECT id FROM plans WHERE price = 0 LIMIT 1")
-        const freePlanId = planResult.rows[0]?.id || null
+        // Find Plan 'Ouro' for the Trial, or fallback to any Free plan
+        const goldPlanResult = await db.query("SELECT id FROM plans WHERE name ILIKE '%Ouro%' OR price > 0 ORDER BY price DESC LIMIT 1")
+        const freePlanResult = await db.query("SELECT id FROM plans WHERE price = 0 LIMIT 1")
+
+        const goldPlanId = goldPlanResult.rows[0]?.id || 3
+        const freePlanId = freePlanResult.rows[0]?.id || 1
+
+        const trialEnabledRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_enabled'")
+        const trialEnabled = trialEnabledRes.rows[0]?.value !== 'false' // Enable by default unless explicitly false
+
+        const initialPlanId = trialEnabled ? goldPlanId : freePlanId
+        // Add 30 days expiration if trial enabled
+        const planExpiresAt = trialEnabled ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null
 
         // Create user
         const insertResult = await db.query(`
-            INSERT INTO users (name, email, password, "planId")
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO users (name, email, password, "planId", "planExpiresAt", "subscriptionStatus")
+            VALUES ($1, $2, $3, $4, $5, 'trialing')
             RETURNING id
-        `, [name, email, hashedPassword, freePlanId])
+        `, [name, email, hashedPassword, initialPlanId, planExpiresAt])
 
         const userId = insertResult.rows[0].id
 
-        const userResult = await db.query('SELECT id, name, email, role, "planId" FROM users WHERE id = $1', [userId])
+        const userResult = await db.query(`
+            SELECT u.id, u.name, u.email, u.role, u."planId", p.name as "planName", u."planExpiresAt" 
+            FROM users u
+            LEFT JOIN plans p ON u."planId" = p.id 
+            WHERE u.id = $1
+        `, [userId])
+
         const user = userResult.rows[0]
-
         const token = generateToken(user)
-
-        // Trial Logic for New Registration
-        const trialEnabledRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_enabled'")
-        const trialEnabled = trialEnabledRes.rows[0]?.value === 'true'
-        const finalPlan = trialEnabled ? 'Ouro' : 'Gratuito'
-        const finalPlanId = trialEnabled ? 3 : freePlanId
 
         res.status(201).json({
             token,
@@ -56,9 +65,10 @@ router.post('/register', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                plan: finalPlan,
-                planId: finalPlanId,
-                isInTrial: trialEnabled
+                plan: user.planName || (trialEnabled ? 'Ouro' : 'Gratuito'),
+                planId: user.planId,
+                isInTrial: trialEnabled,
+                planExpiresAt: user.planExpiresAt
             }
         })
     } catch (error) {
@@ -102,30 +112,30 @@ router.post('/login', async (req, res) => {
 
         const token = generateToken(user)
 
-        // Trial Logic
+        // Auto-Downgrade if expired
         let finalPlan = user.planName || 'Gratuito'
-        let isInTrial = false
+        let finalPlanId = user.planId ? Number(user.planId) : null
+        let isInTrial = user.subscriptionStatus === 'trialing'
         let trialExpired = false
 
-        if (finalPlan === 'Gratuito') {
-            const trialEnabledRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_enabled'")
-            const trialDaysRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_days'")
+        if (user.planExpiresAt && new Date(user.planExpiresAt) < new Date() && user.subscriptionStatus !== 'active') {
+            const freePlanResult = await db.query('SELECT id, name FROM plans WHERE price = 0 LIMIT 1')
+            const freePlan = freePlanResult.rows[0]
 
-            const trialEnabled = trialEnabledRes.rows[0]?.value === 'true'
-            const trialDays = parseInt(trialDaysRes.rows[0]?.value || '0')
+            if (freePlan && user.planId !== freePlan.id) {
+                await db.query(`
+                    UPDATE users 
+                    SET "planId" = $1, "subscriptionStatus" = 'expired', "planExpiresAt" = NULL, "updatedAt" = CURRENT_TIMESTAMP 
+                    WHERE id = $2
+                `, [freePlan.id, user.id])
 
-            if (trialEnabled && trialDays > 0) {
-                const createdAt = new Date(user.createdAt)
-                const now = new Date()
-                const diffTime = Math.abs(now - createdAt)
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                finalPlan = freePlan.name
+                finalPlanId = freePlan.id
+                user.subscriptionStatus = 'expired'
 
-                if (diffDays <= trialDays) {
-                    finalPlan = 'Ouro'
-                    isInTrial = true
-                } else if (diffDays > trialDays && diffDays <= trialDays + 1) {
-                    // Just expired, can be used for a one-time notification
+                if (isInTrial) {
                     trialExpired = true
+                    isInTrial = false
                 }
             }
         }
@@ -138,9 +148,11 @@ router.post('/login', async (req, res) => {
                 email: user.email,
                 role: user.role,
                 plan: finalPlan,
-                planId: isInTrial ? 3 : user.planId, // 3 is Ouro
+                planId: finalPlanId,
                 isInTrial,
-                trialExpired
+                trialExpired,
+                planExpiresAt: user.planExpiresAt,
+                subscriptionStatus: user.subscriptionStatus
             }
         })
     } catch (error) {

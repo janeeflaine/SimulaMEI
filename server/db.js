@@ -297,6 +297,11 @@ const init = async () => {
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
 
+      // Add columns for Stripe Subscriptions
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "stripeCustomerId" TEXT')
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "stripeSubscriptionId" TEXT')
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "stripePriceId" TEXT')
+
     } catch (migErr) {
       console.log('Migration note (finance):', migErr.message)
     }

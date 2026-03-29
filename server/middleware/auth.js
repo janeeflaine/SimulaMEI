@@ -27,9 +27,14 @@ const authMiddleware = async (req, res, next) => {
             return res.status(401).json({ message: 'Usuário não encontrado' })
         }
 
-        // Auto-Downgrade if expired
-        if (user.planExpiresAt && new Date(user.planExpiresAt) < new Date()) {
-            const freePlanResult = await db.query('SELECT id FROM plans WHERE price = 0 LIMIT 1')
+        // Auto-Downgrade if expired and not actively subscribed
+        let finalPlan = user.planName || 'Gratuito'
+        let finalPlanId = user.planId ? Number(user.planId) : null
+        let isInTrial = user.subscriptionStatus === 'trialing'
+        let trialExpired = false
+
+        if (user.planExpiresAt && new Date(user.planExpiresAt) < new Date() && user.subscriptionStatus !== 'active') {
+            const freePlanResult = await db.query('SELECT id, name FROM plans WHERE price = 0 LIMIT 1')
             const freePlan = freePlanResult.rows[0]
 
             if (freePlan && user.planId !== freePlan.id) {
@@ -39,37 +44,13 @@ const authMiddleware = async (req, res, next) => {
                     WHERE id = $2
                 `, [freePlan.id, user.id])
 
-                user.planId = freePlan.id
-                console.log(`User ${user.id} auto-downgraded due to expiry`)
-            }
-        }
+                finalPlan = freePlan.name
+                finalPlanId = freePlan.id
+                user.subscriptionStatus = 'expired'
 
-        // Fetch trial settings
-        const settingsResult = await db.query("SELECT key, value FROM system_settings WHERE key IN ('trial_enabled', 'trial_days')")
-        const settings = {}
-        settingsResult.rows.forEach(s => settings[s.key] = s.value)
-
-        // Trial Logic
-        let finalPlan = user.planName || 'Gratuito'
-        let finalPlanId = user.planId ? Number(user.planId) : null
-        let isInTrial = false
-        let trialExpired = false
-
-        if (finalPlan === 'Gratuito' && settings['trial_enabled'] === 'true') {
-            const trialDays = parseInt(settings['trial_days'] || '0')
-            if (trialDays > 0) {
-                const createdAt = new Date(user.createdAt)
-                const now = new Date()
-                const diffTime = Math.abs(now - createdAt)
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-                if (diffDays <= trialDays) {
-                    finalPlan = 'Ouro'
-                    finalPlanId = 3 // Ouro ID
-                    isInTrial = true
-                } else if (diffDays > trialDays && diffDays <= trialDays + 2) {
-                    // Just expired (within last 48h)
+                if (isInTrial) {
                     trialExpired = true
+                    isInTrial = false
                 }
             }
         }

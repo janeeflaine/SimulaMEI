@@ -9,9 +9,25 @@ export default function Plans() {
     const [plans, setPlans] = useState([])
     const [loading, setLoading] = useState(true)
     const [selectedPlan, setSelectedPlan] = useState(null)
+    const [checkoutLoading, setCheckoutLoading] = useState(false)
 
     useEffect(() => {
         fetchPlans()
+        // Check for Stripe Checkout success/cancel
+        const query = new URLSearchParams(window.location.search)
+        if (query.get('success')) {
+            alert('Assinatura ativada com sucesso! Bem-vindo(a)!')
+            // Clean URL
+            window.history.replaceState(null, '', window.location.pathname)
+            refreshUser()
+            setTimeout(() => {
+                window.location.href = '/dashboard'
+            }, 1500)
+        }
+        if (query.get('canceled')) {
+            alert('A assinatura foi cancelada. Você não foi cobrado.')
+            window.history.replaceState(null, '', window.location.pathname)
+        }
     }, [])
 
     const fetchPlans = async () => {
@@ -45,6 +61,33 @@ export default function Plans() {
         } catch (error) {
             console.error(error)
             alert('Erro ao processar solicitação.')
+        }
+    }
+
+    const handleCheckout = async (plan) => {
+        setCheckoutLoading(true)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/stripe/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ planId: plan.id })
+            })
+            const body = await res.json()
+
+            if (res.ok && body.url) {
+                window.location.href = body.url // Redirect to Stripe
+            } else {
+                alert(body.message || 'Erro ao iniciar o checkout seguro.')
+                setCheckoutLoading(false)
+            }
+        } catch (error) {
+            console.error('Checkout error:', error)
+            alert('Erro de comunicação. Tente novamente mais tarde.')
+            setCheckoutLoading(false)
         }
     }
 
@@ -138,9 +181,10 @@ export default function Plans() {
                                         ) : (
                                             <button
                                                 className="btn btn-primary btn-lg"
-                                                onClick={() => isDowngrade ? handleDowngrade() : setSelectedPlan(plan)}
+                                                onClick={() => isDowngrade ? handleDowngrade() : handleCheckout(plan)}
+                                                disabled={checkoutLoading}
                                             >
-                                                {isDowngrade ? 'Cancelar Assinatura' : 'Fazer Upgrade'}
+                                                {checkoutLoading ? 'Redirecionando...' : (isDowngrade ? 'Cancelar Assinatura' : 'Fazer Upgrade')}
                                             </button>
                                         )
                                     ) : (
@@ -201,18 +245,6 @@ export default function Plans() {
                 </div>
             </div>
 
-            {selectedPlan && (
-                <PaymentModal
-                    plan={selectedPlan}
-                    onClose={() => setSelectedPlan(null)}
-                    onSuccess={async () => {
-                        await refreshUser()
-                        alert('Parabéns! Seu plano foi atualizado.')
-                        setSelectedPlan(null)
-                        window.location.href = '/dashboard'
-                    }}
-                />
-            )}
         </div>
     )
 }
