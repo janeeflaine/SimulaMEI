@@ -1,41 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import FeatureLock from '../components/FeatureLock'
 import './Comparison.css'
 
 export default function Comparison() {
     const { user } = useAuth()
     const [comparison, setComparison] = useState(null)
     const [loading, setLoading] = useState(true)
-    const [userPlan, setUserPlan] = useState(null)
-    const [hasAccess, setHasAccess] = useState(false)
 
     useEffect(() => {
-        checkAccess()
+        fetchComparison()
     }, [])
-
-    const checkAccess = async () => {
-        try {
-            const res = await fetch('/api/plans')
-            const plans = await res.json()
-            const currentPlan = plans.find(p => p.id === user?.planId) || plans.find(p => p.price === 0)
-            setUserPlan(currentPlan)
-
-            // Check if user has comparativo feature
-            const canAccess = currentPlan?.features?.comparativo === true
-            setHasAccess(canAccess)
-
-            if (canAccess) {
-                fetchComparison()
-            } else {
-                setLoading(false)
-            }
-        } catch (error) {
-            console.error('Erro ao verificar acesso:', error)
-            setLoading(false)
-        }
-    }
 
     const fetchComparison = async () => {
         try {
@@ -73,51 +48,6 @@ export default function Comparison() {
         return (
             <div className="flex items-center justify-center" style={{ minHeight: '50vh' }}>
                 <div className="loader"></div>
-            </div>
-        )
-    }
-
-    // Feature locked - show upgrade prompt
-    if (!hasAccess) {
-        return (
-            <div className="comparison-page">
-                <div className="container">
-                    <div className="comparison-header">
-                        <h1>Comparativo MEI x ME</h1>
-                        <p className="text-secondary">
-                            Descubra qual regime tributário é melhor para seu negócio
-                        </p>
-                    </div>
-
-                    <FeatureLock
-                        featureName="Comparativo MEI x ME"
-                        requiredPlan="Ouro"
-                        description="Compare detalhadamente os custos e benefícios entre MEI e Microempresa. Descubra o momento ideal para migrar."
-                        icon="⚖️"
-                    />
-
-                    <div className="comparison-preview">
-                        <h3>O que você terá acesso:</h3>
-                        <div className="preview-grid">
-                            <div className="preview-item">
-                                <span className="preview-icon">📊</span>
-                                <span>Comparação lado a lado</span>
-                            </div>
-                            <div className="preview-item">
-                                <span className="preview-icon">💰</span>
-                                <span>Custos detalhados</span>
-                            </div>
-                            <div className="preview-item">
-                                <span className="preview-icon">✅</span>
-                                <span>Recomendação personalizada</span>
-                            </div>
-                            <div className="preview-item">
-                                <span className="preview-icon">📈</span>
-                                <span>Análise de limite</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         )
     }

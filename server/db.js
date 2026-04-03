@@ -364,9 +364,9 @@ const seedDefaults = async () => {
   ('Prata', 19.90, $2, 1),
   ('Ouro', 39.90, $3, 1)
     `, [
-        JSON.stringify({ historico: false, pdf: false, comparativo: false, alertas: false }),
-        JSON.stringify({ historico: true, pdf: true, comparativo: false, alertas: false }),
-        JSON.stringify({ historico: true, pdf: true, comparativo: true, alertas: true })
+        JSON.stringify({ historico: false, pdf: false, comparativo: true, alertas: true }),
+        JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true }),
+        JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true })
       ])
       console.log('✅ Default plans seeded')
     }
@@ -411,9 +411,46 @@ VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
       }
     }
 
-    // Default Alerts for Ouro users (optional seeding for existing users if any, 
-    // but better handled on plan upgrade or login)
-    // For now, we'll ensure the table is ready.
+    // Transaction limits per plan (0 = ilimitado)
+    const transactionLimits = [
+      { key: 'transaction_limit_1', value: '0' },  // Gratuito: ilimitado por padrão
+      { key: 'transaction_limit_2', value: '0' },  // Prata: ilimitado
+      { key: 'transaction_limit_3', value: '0' },  // Ouro: ilimitado
+    ]
+    for (const tl of transactionLimits) {
+      const exists = await pool.query('SELECT 1 FROM system_settings WHERE key = $1', [tl.key])
+      if (exists.rows.length === 0) {
+        await pool.query('INSERT INTO system_settings (key, value) VALUES ($1, $2)', [tl.key, tl.value])
+      }
+    }
+
+    // Wallet limits per plan (0 = ilimitado)
+    const walletLimits = [
+      { key: 'wallet_limit_1', value: '1' },   // Gratuito: 1 carteira
+      { key: 'wallet_limit_2', value: '0' },   // Prata: ilimitado
+      { key: 'wallet_limit_3', value: '0' },   // Ouro: ilimitado
+    ]
+    for (const wl of walletLimits) {
+      const exists = await pool.query('SELECT 1 FROM system_settings WHERE key = $1', [wl.key])
+      if (exists.rows.length === 0) {
+        await pool.query('INSERT INTO system_settings (key, value) VALUES ($1, $2)', [wl.key, wl.value])
+      }
+    }
+
+    // ─── Migration v2: comparativo e alertas passam a ser Grátis ───────────────
+    // Roda apenas uma vez. Não sobrescreve alterações futuras feitas pelo admin.
+    const migV2 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v2'")
+    if (migV2.rows.length === 0) {
+      const gratuitoFeatures = JSON.stringify({ historico: false, pdf: false, comparativo: true, alertas: true })
+      const prataFeatures    = JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true })
+      const ouroFeatures     = JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true })
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Gratuito'`, [gratuitoFeatures])
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Prata'`,    [prataFeatures])
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Ouro'`,     [ouroFeatures])
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v2', 'done')`)
+      console.log('✅ Migration v2: comparativo e alertas liberados para Gratuito')
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
   } catch (e) {
     console.error('Seeding error:', e)

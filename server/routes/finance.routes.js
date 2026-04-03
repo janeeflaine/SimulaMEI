@@ -5,7 +5,84 @@ const { authMiddleware } = require('../middleware/auth')
 const { validateWalletOwnership } = require('../middleware/walletSecurity')
 const { calculateBillingDate } = require('../utils/billingDate')
 
-// Utility to ensure only Ouro plan users can change data
+// Verifica limite de carteiras do plano antes de criar uma nova
+const checkWalletLimit = async (req, res, next) => {
+    try {
+        const planId = Number(req.user.planId) || 1
+        const isAdmin   = req.user?.role === 'ADMIN'
+        const inTrial   = req.user?.isInTrial === true
+
+        // Admin e trial não têm limite
+        if (isAdmin || inTrial) return next()
+
+        const settingKey = `wallet_limit_${planId}`
+        const { rows } = await pool.query(
+            'SELECT value FROM system_settings WHERE key = $1',
+            [settingKey]
+        )
+        const limit = rows.length > 0 ? parseInt(rows[0].value) : 1
+
+        // 0 = ilimitado
+        if (limit === 0) return next()
+
+        const { rows: wallets } = await pool.query(
+            'SELECT COUNT(*) as count FROM business_units WHERE "ownerId" = $1',
+            [req.user.id]
+        )
+        const current = parseInt(wallets[0].count)
+
+        if (current >= limit) {
+            return res.status(403).json({
+                message: `Seu plano permite no máximo ${limit} carteira${limit > 1 ? 's' : ''}. Faça upgrade para adicionar mais.`
+            })
+        }
+        next()
+    } catch (err) {
+        console.error('[checkWalletLimit]', err)
+        res.status(500).json({ message: 'Erro ao verificar limite de carteiras' })
+    }
+}
+
+// Verifica limite mensal de transações do plano antes de criar uma nova
+const checkTransactionLimit = async (req, res, next) => {
+    try {
+        const planId = Number(req.user.planId) || 1
+        const isAdmin = req.user?.role === 'ADMIN'
+        const inTrial = req.user?.isInTrial === true
+
+        if (isAdmin || inTrial) return next()
+
+        const settingKey = `transaction_limit_${planId}`
+        const { rows } = await pool.query(
+            'SELECT value FROM system_settings WHERE key = $1',
+            [settingKey]
+        )
+        const limit = rows.length > 0 ? parseInt(rows[0].value) : 0
+
+        if (limit === 0) return next()
+
+        // Conta transações do mês atual
+        const { rows: countRows } = await pool.query(
+            `SELECT COUNT(*) as count FROM finance_transactions
+             WHERE "userId" = $1
+               AND date_trunc('month', "createdAt") = date_trunc('month', NOW())`,
+            [req.user.id]
+        )
+        const current = parseInt(countRows[0].count)
+
+        if (current >= limit) {
+            return res.status(403).json({
+                message: `Seu plano permite no máximo ${limit} lançamento${limit > 1 ? 's' : ''} por mês. Faça upgrade para continuar.`
+            })
+        }
+        next()
+    } catch (err) {
+        console.error('[checkTransactionLimit]', err)
+        res.status(500).json({ message: 'Erro ao verificar limite de lançamentos' })
+    }
+}
+
+// Restringe rotas de escrita ao plano Ouro (cards, transfers — Phase 3 vai mover para Prata)
 const ouroOnly = (req, res, next) => {
     const isOuro = req.user.plan === 'Ouro' || Number(req.user.planId) === 3 || req.user.isInTrial === true
 
@@ -219,7 +296,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/transactions', authMiddleware, ouroOnly, validateWalletOwnership, async (req, res) => {
+router.post('/transactions', authMiddleware, checkTransactionLimit, validateWalletOwnership, async (req, res) => {
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate, business_unit_id } = req.body
 
     // Normalize empty strings to null for ID and date columns
@@ -260,7 +337,7 @@ router.post('/transactions', authMiddleware, ouroOnly, validateWalletOwnership, 
 })
 
 // Confirm payment of a pending transaction
-router.patch('/transactions/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
+router.patch('/transactions/:id/confirm', authMiddleware, async (req, res) => {
     try {
         const { business_unit_id } = req.body || {}
         // Update status to PAID, date to current timestamp, billing_date to current date, and optionally assign wallet
@@ -306,7 +383,7 @@ router.get('/transactions/due-today', authMiddleware, async (req, res) => {
 
 // Update a transaction
 // Update a transaction (supports partial updates)
-router.patch('/transactions/:id', authMiddleware, ouroOnly, validateWalletOwnership, async (req, res) => {
+router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     const allowedUpdates = [
@@ -379,7 +456,7 @@ router.patch('/transactions/:id', authMiddleware, ouroOnly, validateWalletOwners
 });
 
 // Delete a transaction
-router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.delete('/transactions/:id', authMiddleware, async (req, res) => {
     try {
         const { rowCount } = await db.query(
             'DELETE FROM finance_transactions WHERE id = $1 AND "userId" = $2',
@@ -394,7 +471,7 @@ router.delete('/transactions/:id', authMiddleware, ouroOnly, async (req, res) =>
 })
 
 // Bulk delete transactions
-router.post('/transactions/bulk-delete', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/transactions/bulk-delete', authMiddleware, async (req, res) => {
     const { ids } = req.body
     if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ message: 'Nenhuma transação selecionada.' })
@@ -544,7 +621,7 @@ router.get('/business-units', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/business-units', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/business-units', authMiddleware, checkWalletLimit, async (req, res) => {
     // Recebe os dados do Frontend
     const { name, account_type, cnpj, photo_url, isPrimary } = req.body
 
@@ -575,7 +652,7 @@ router.post('/business-units', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
-router.put('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.put('/business-units/:id', authMiddleware, async (req, res) => {
     const { name, account_type, cnpj, photo_url, isPrimary } = req.body
     try {
         const { rows: [updated] } = await db.query(
@@ -590,7 +667,7 @@ router.put('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => 
     }
 })
 
-router.delete('/business-units/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.delete('/business-units/:id', authMiddleware, async (req, res) => {
     try {
         await db.query('DELETE FROM business_units WHERE id = $1 AND "ownerId" = $2', [req.params.id, req.user.id])
         res.json({ message: 'Carteira excluída' })

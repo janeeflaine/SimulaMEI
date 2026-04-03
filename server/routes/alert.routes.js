@@ -4,16 +4,8 @@ const { db } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { checkUserAlerts } = require('../logic/alert-checker')
 
-// Ensure only Ouro plan users can access alerts
-const ouroOnly = (req, res, next) => {
-    if (req.user.planId !== 3) {
-        return res.status(403).json({ message: 'Acesso exclusivo para assinantes do plano Ouro' })
-    }
-    next()
-}
-
-// GET /api/alerts - List all alerts for the user
-router.get('/', authMiddleware, ouroOnly, async (req, res) => {
+// GET /api/alerts - List all alerts for the user (disponível para todos os planos)
+router.get('/', authMiddleware, async (req, res) => {
     try {
         const { rows } = await db.query(
             'SELECT * FROM user_alerts WHERE "userId" = $1 ORDER BY id ASC',
@@ -47,7 +39,7 @@ router.get('/', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // GET /api/alerts/check - Run a manual check and return triggered alerts
-router.get('/check', authMiddleware, ouroOnly, async (req, res) => {
+router.get('/check', authMiddleware, async (req, res) => {
     try {
         const triggered = await checkUserAlerts(req.user.id)
         res.json(triggered)
@@ -58,7 +50,7 @@ router.get('/check', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // PUT /api/alerts/:id - Update an alert (toggle enabled or update config)
-router.put('/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.put('/:id', authMiddleware, async (req, res) => {
     const { id } = req.params
     const { enabled, config } = req.body
 

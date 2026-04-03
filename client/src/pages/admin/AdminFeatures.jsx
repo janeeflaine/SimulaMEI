@@ -106,11 +106,201 @@ export default function AdminFeatures() {
                     </table>
                 </div>
 
+                <AdminTransactionLimits plans={plans} />
+
+                <AdminWalletLimits plans={plans} />
+
                 <AdminTrialSettings />
 
                 <div className="alert-banner" style={{ marginTop: 'var(--spacing-6)', marginBottom: 0 }}>
                     <span>💡</span>
                     <span>As alterações são aplicadas imediatamente para todos os usuários do plano.</span>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function AdminTransactionLimits({ plans }) {
+    const [limits, setLimits] = useState({})
+    const [saving, setSaving] = useState(false)
+    const [loaded, setLoaded] = useState(false)
+
+    useEffect(() => { fetchLimits() }, [])
+
+    const fetchLimits = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+            const data = await res.json()
+            const parsed = {}
+            plans.forEach(p => {
+                const setting = data.find(s => s.key === `transaction_limit_${p.id}`)
+                parsed[p.id] = setting ? setting.value : '0'
+            })
+            setLimits(parsed)
+        } catch (err) {
+            console.error('Erro ao buscar limites de transações:', err)
+        } finally {
+            setLoaded(true)
+        }
+    }
+
+    const handleSave = async () => {
+        setSaving(true)
+        try {
+            const token = localStorage.getItem('token')
+            await Promise.all(
+                plans.map(p =>
+                    fetch('/api/settings', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ key: `transaction_limit_${p.id}`, value: String(limits[p.id] ?? '0') })
+                    })
+                )
+            )
+            alert('Limites de lançamentos salvos!')
+        } catch (err) {
+            console.error(err)
+            alert('Erro ao salvar limites')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    if (!loaded) return null
+
+    return (
+        <div className="admin-card" style={{ marginTop: '2rem' }}>
+            <div className="card-header" style={{ borderBottom: '1px solid var(--color-slate-200)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    📝 Limite de Lançamentos por Plano (mensal)
+                </h2>
+                <p className="text-secondary">
+                    Quantidade máxima de lançamentos financeiros por mês. Use <strong>0</strong> para ilimitado.
+                </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {plans.map(plan => (
+                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                            <h4 style={{ margin: 0 }}>{plan.name}</h4>
+                            <p className="text-secondary" style={{ fontSize: '0.875rem' }}>
+                                {limits[plan.id] === '0' || !limits[plan.id] ? 'Ilimitado' : `Máximo de ${limits[plan.id]} lançamentos/mês`}
+                            </p>
+                        </div>
+                        <input
+                            type="number"
+                            min="0"
+                            value={limits[plan.id] ?? '0'}
+                            onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
+                            style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-slate-200)', textAlign: 'center' }}
+                        />
+                    </div>
+                ))}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                        {saving ? 'Salvando...' : 'Salvar Limites'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function AdminWalletLimits({ plans }) {
+    const [limits, setLimits] = useState({})
+    const [saving, setSaving] = useState(false)
+    const [loaded, setLoaded] = useState(false)
+
+    useEffect(() => {
+        fetchLimits()
+    }, [])
+
+    const fetchLimits = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/settings', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            const data = await res.json()
+            const parsed = {}
+            plans.forEach(p => {
+                const setting = data.find(s => s.key === `wallet_limit_${p.id}`)
+                parsed[p.id] = setting ? setting.value : '1'
+            })
+            setLimits(parsed)
+        } catch (err) {
+            console.error('Erro ao buscar limites de carteiras:', err)
+        } finally {
+            setLoaded(true)
+        }
+    }
+
+    const handleSave = async () => {
+        setSaving(true)
+        try {
+            const token = localStorage.getItem('token')
+            await Promise.all(
+                plans.map(p =>
+                    fetch('/api/settings', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ key: `wallet_limit_${p.id}`, value: String(limits[p.id] ?? '1') })
+                    })
+                )
+            )
+            alert('Limites de carteiras salvos!')
+        } catch (err) {
+            console.error(err)
+            alert('Erro ao salvar limites')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    if (!loaded) return null
+
+    return (
+        <div className="admin-card" style={{ marginTop: '2rem' }}>
+            <div className="card-header" style={{ borderBottom: '1px solid var(--color-slate-200)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    👛 Limite de Carteiras por Plano
+                </h2>
+                <p className="text-secondary">
+                    Quantidade máxima de carteiras que cada plano pode criar. Use <strong>0</strong> para ilimitado.
+                </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {plans.map(plan => (
+                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                            <h4 style={{ margin: 0 }}>{plan.name}</h4>
+                            <p className="text-secondary" style={{ fontSize: '0.875rem' }}>
+                                {limits[plan.id] === '0' ? 'Ilimitado' : `Máximo de ${limits[plan.id]} carteira${limits[plan.id] === '1' ? '' : 's'}`}
+                            </p>
+                        </div>
+                        <input
+                            type="number"
+                            min="0"
+                            value={limits[plan.id] ?? '1'}
+                            onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
+                            style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-slate-200)', textAlign: 'center' }}
+                        />
+                    </div>
+                ))}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleSave}
+                        disabled={saving}
+                    >
+                        {saving ? 'Salvando...' : 'Salvar Limites'}
+                    </button>
                 </div>
             </div>
         </div>

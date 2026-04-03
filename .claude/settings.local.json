@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//a:/**)",
+      "Read(//mnt/a/**)",
+      "Bash(grep -n \"features\\\\|comparativo\\\\|pdf\\\\|historico\\\\|alertas\" /a/SimulaMEI/client/src/pages/*.jsx)"
+    ]
+  }
+}
