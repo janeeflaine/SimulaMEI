@@ -14,12 +14,8 @@ export default function FinanceCategories() {
     const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
 
     useEffect(() => {
-        if (isOuro) {
-            fetchCategories()
-        } else {
-            setLoading(false)
-        }
-    }, [isOuro])
+        fetchCategories()
+    }, [])
 
     const fetchCategories = async () => {
         try {
@@ -102,18 +98,6 @@ export default function FinanceCategories() {
         }
     }
 
-    if (!isOuro && !loading) {
-        return (
-            <div className="container py-8">
-                <FeatureLock
-                    featureName="Gerenciamento de Categorias"
-                    requiredPlan="Ouro"
-                    description="Organize suas receitas e despesas por categorias personalizadas para um controle financeiro completo do seu MEI."
-                    icon="🏷️"
-                />
-            </div>
-        )
-    }
 
     const renderList = (type, title, icon) => {
         const filtered = categories.filter(c => c.type === type)

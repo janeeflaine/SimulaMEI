@@ -16,19 +16,14 @@ router.post('/create-checkout-session', authMiddleware, async (req, res) => {
         // Find Plan Stripe Price ID (Assuming we store this somewhere, or hardcode mapping for now)
         // In a real app we'd map plan.id to a Stripe Price ID.
         // For MVP, we rely on the client sending a temporary explicit priceId or mapping them here:
-        const planResult = await db.query('SELECT id, name, price FROM plans WHERE id = $1', [planId])
+        const planResult = await db.query('SELECT id, name, price, "stripePriceId" FROM plans WHERE id = $1', [planId])
         if (planResult.rowCount === 0) return res.status(404).json({ message: 'Plano não encontrado' })
 
         const plan = planResult.rows[0]
+        const priceId = plan.stripePriceId
 
-        // Mock mapping (in a real app, add stripePriceId to the plans table)
-        // You MUST replace these with real STRIPE PRICE IDs after creating products in Stripe
-        let priceId = ''
-        if (plan.name.includes('Prata')) priceId = process.env.STRIPE_PRICE_SILVER || 'price_123_prata'
-        if (plan.name.includes('Ouro')) priceId = process.env.STRIPE_PRICE_GOLD || 'price_123_ouro'
-
-        if (!priceId || priceId.startsWith('price_123')) {
-            return res.status(400).json({ message: 'Preços da Stripe não configurados no backend.' })
+        if (!priceId) {
+            return res.status(400).json({ message: 'Este plano não está configurado para pagamentos na Stripe.' })
         }
 
         const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'

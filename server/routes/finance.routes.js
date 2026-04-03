@@ -38,7 +38,7 @@ router.get('/categories', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/categories', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/categories', authMiddleware, async (req, res) => {
     const { name, type } = req.body
     try {
         const { rows: [newCat] } = await db.query(
@@ -52,7 +52,7 @@ router.post('/categories', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
-router.patch('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.patch('/categories/:id', authMiddleware, async (req, res) => {
     const { name, type } = req.body
     try {
         const { rows: [updated] } = await db.query(
@@ -66,7 +66,7 @@ router.patch('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
-router.delete('/categories/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.delete('/categories/:id', authMiddleware, async (req, res) => {
     try {
         await db.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
         res.json({ message: 'Categoria excluída' })

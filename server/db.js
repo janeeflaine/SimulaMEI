@@ -47,6 +47,7 @@ const init = async () => {
         name TEXT NOT NULL,
         price REAL DEFAULT 0,
         features TEXT DEFAULT '{}',
+        "stripePriceId" TEXT,
         "isActive" INTEGER DEFAULT 1,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -278,6 +279,7 @@ const init = async () => {
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "billing_date" DATE')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_name TEXT')
       await pool.query('ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_cpf TEXT')
+      await pool.query('ALTER TABLE plans ADD COLUMN IF NOT EXISTS "stripePriceId" TEXT')
 
       // Fix for business_units schema change (userId -> ownerId, photo_url -> logo_url)
       // We check if "userId" exists and rename it
