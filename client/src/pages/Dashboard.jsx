@@ -156,9 +156,11 @@ export default function Dashboard() {
     useEffect(() => {
         if (userPlan) {
             if (userPlan.features?.historico) fetchSimulations()
+            // Lançamentos disponíveis para todos os planos
+            fetchTransactions()
+            // Recursos avançados apenas Ouro (Phase 3 vai mover alguns para Prata)
             if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
                 fetchWallets()
-                fetchTransactions()
                 fetchDueTodayBills()
                 fetchCashFlowData(new Date().getFullYear())
                 fetchWalletBreakdown()
@@ -170,8 +172,10 @@ export default function Dashboard() {
 
     // Re-fetch when filters change
     useEffect(() => {
-        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
+        if (userPlan) {
             fetchTransactions()
+        }
+        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
             fetchWalletBreakdown()
         }
     }, [startDate, endDate, walletId])
@@ -571,11 +575,9 @@ export default function Dashboard() {
                             </>
                         )}
 
-                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
-                            <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
-                                <PlusCircle size={18} /> Novo Lançamento
-                            </button>
-                        )}
+                        <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
+                            <PlusCircle size={18} /> Novo Lançamento
+                        </button>
                         <Link to="/simular" className="btn btn-primary">
                             <LayoutDashboard size={18} /> Nova Simulação
                         </Link>
@@ -649,8 +651,8 @@ export default function Dashboard() {
                     )
                 })()}
 
-                {/* Master Financial Summary */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) ? (
+                {/* Master Financial Summary — disponível para todos os planos */}
+                {true ? (
                     <div className="financial-summary-section">
                         <div className="summary-grid">
                             <div className="summary-card revenue">
