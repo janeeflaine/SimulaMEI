@@ -7,10 +7,19 @@ export default function AdminFeatures() {
     const [saving, setSaving] = useState(false)
 
     const featuresList = [
-        { key: 'historico', name: 'Histórico de Simulações', description: 'Salvar e visualizar simulações anteriores' },
-        { key: 'pdf', name: 'Exportar PDF', description: 'Baixar relatórios em PDF' },
-        { key: 'comparativo', name: 'Comparativo MEI x ME', description: 'Comparar custos entre MEI e Microempresa' },
-        { key: 'alertas', name: 'Alertas Personalizados', description: 'Receber alertas sobre limite de faturamento' }
+        // ── Grátis ──────────────────────────────────────────────────────────
+        { key: 'comparativo',    name: 'Comparativo MEI x ME',          description: 'Comparar custos entre MEI e Microempresa',              group: 'Grátis' },
+        { key: 'alertas',        name: 'Alertas de Limite',              description: 'Alertas sobre limite anual de faturamento',             group: 'Grátis' },
+        // ── Prata ────────────────────────────────────────────────────────────
+        { key: 'historico',      name: 'Histórico de Simulações',        description: 'Salvar e visualizar simulações anteriores',             group: 'Prata'  },
+        { key: 'pdf',            name: 'Exportar PDF',                   description: 'Baixar relatórios em PDF',                             group: 'Prata'  },
+        { key: 'categorias',     name: 'Categorias Personalizadas',      description: 'Criar e gerenciar categorias de receitas e despesas',   group: 'Prata'  },
+        { key: 'contas_pagar',   name: 'Contas a Pagar (Boletos)',        description: 'Gerenciar boletos e contas futuras',                   group: 'Prata'  },
+        { key: 'transferencias', name: 'Transferências entre Carteiras', description: 'Mover saldo entre carteiras PF e PJ',                  group: 'Prata'  },
+        { key: 'multi_carteiras',name: 'Multi-Carteiras',                description: 'Criar e gerenciar múltiplas carteiras',                group: 'Prata'  },
+        { key: 'cartoes',        name: 'Cartões (Modo Manual)',          description: 'Gestão de cartões e limites com entrada manual',        group: 'Prata'  },
+        // ── Ouro ─────────────────────────────────────────────────────────────
+        { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     description: 'Upload de PDF/foto e extração inteligente via Gemini',  group: 'Ouro'   },
     ]
 
     useEffect(() => {
@@ -83,25 +92,37 @@ export default function AdminFeatures() {
                             </tr>
                         </thead>
                         <tbody>
-                            {featuresList.map((feature) => (
-                                <tr key={feature.key}>
-                                    <td>
-                                        <div className="feature-info">
-                                            <h4>{feature.name}</h4>
-                                            <p>{feature.description}</p>
-                                        </div>
-                                    </td>
-                                    {plans.map(plan => (
-                                        <td key={plan.id} style={{ textAlign: 'center' }}>
-                                            <div
-                                                className={`admin-toggle ${plan.features?.[feature.key] ? 'active' : ''}`}
-                                                onClick={() => toggleFeature(plan.id, feature.key, plan.features?.[feature.key])}
-                                                style={{ margin: '0 auto', opacity: saving ? 0.5 : 1 }}
-                                            />
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
+                            {['Grátis', 'Prata', 'Ouro'].map(group => {
+                                const groupFeatures = featuresList.filter(f => f.group === group)
+                                return (
+                                    <>
+                                        <tr key={`group-${group}`}>
+                                            <td colSpan={plans.length + 1} style={{ background: 'var(--color-slate-100)', padding: '6px 16px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-slate-500)', textTransform: 'uppercase' }}>
+                                                {group === 'Grátis' ? '🆓 Padrão Grátis' : group === 'Prata' ? '🥈 Prata' : '🥇 Ouro'}
+                                            </td>
+                                        </tr>
+                                        {groupFeatures.map((feature) => (
+                                            <tr key={feature.key}>
+                                                <td>
+                                                    <div className="feature-info">
+                                                        <h4>{feature.name}</h4>
+                                                        <p>{feature.description}</p>
+                                                    </div>
+                                                </td>
+                                                {plans.map(plan => (
+                                                    <td key={plan.id} style={{ textAlign: 'center' }}>
+                                                        <div
+                                                            className={`admin-toggle ${plan.features?.[feature.key] ? 'active' : ''}`}
+                                                            onClick={() => toggleFeature(plan.id, feature.key, plan.features?.[feature.key])}
+                                                            style={{ margin: '0 auto', opacity: saving ? 0.5 : 1 }}
+                                                        />
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </>
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>

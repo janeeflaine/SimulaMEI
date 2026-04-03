@@ -64,14 +64,16 @@ router.post('/register', authLimiter, async (req, res) => {
         const userId = insertResult.rows[0].id
 
         const userResult = await db.query(`
-            SELECT u.id, u.name, u.email, u.role, u."planId", p.name as "planName", u."planExpiresAt" 
+            SELECT u.id, u.name, u.email, u.role, u."planId", p.name as "planName", p.features as "planFeatures", u."planExpiresAt"
             FROM users u
-            LEFT JOIN plans p ON u."planId" = p.id 
+            LEFT JOIN plans p ON u."planId" = p.id
             WHERE u.id = $1
         `, [userId])
 
         const user = userResult.rows[0]
         const token = generateToken(user)
+        let planFeatures = {}
+        try { planFeatures = user.planFeatures ? (typeof user.planFeatures === 'string' ? JSON.parse(user.planFeatures) : user.planFeatures) : {} } catch (_) {}
 
         res.status(201).json({
             token,
@@ -83,7 +85,8 @@ router.post('/register', authLimiter, async (req, res) => {
                 plan: user.planName || (trialEnabled ? 'Ouro' : 'Gratuito'),
                 planId: user.planId,
                 isInTrial: trialEnabled,
-                planExpiresAt: user.planExpiresAt
+                planExpiresAt: user.planExpiresAt,
+                planFeatures
             }
         })
     } catch (error) {
@@ -155,6 +158,9 @@ router.post('/login', authLimiter, async (req, res) => {
             }
         }
 
+        let planFeatures = {}
+        try { planFeatures = user.planFeatures ? (typeof user.planFeatures === 'string' ? JSON.parse(user.planFeatures) : user.planFeatures) : {} } catch (_) {}
+
         res.json({
             token,
             user: {
@@ -167,7 +173,8 @@ router.post('/login', authLimiter, async (req, res) => {
                 isInTrial,
                 trialExpired,
                 planExpiresAt: user.planExpiresAt,
-                subscriptionStatus: user.subscriptionStatus
+                subscriptionStatus: user.subscriptionStatus,
+                planFeatures
             }
         })
     } catch (error) {

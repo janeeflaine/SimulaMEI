@@ -25,7 +25,7 @@ export default function CreditCards() {
 
     const defaultFormData = { name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '', business_unit_id: '' }
 
-    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
+    const isOuro = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
 
     useEffect(() => {
         if (isOuro) {

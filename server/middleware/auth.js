@@ -59,6 +59,13 @@ const authMiddleware = async (req, res, next) => {
             }
         }
 
+        // Parse planFeatures (stored as TEXT in DB, may already be object after downgrade)
+        let planFeatures = {}
+        try {
+            const raw = user.planFeatures
+            planFeatures = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
+        } catch (_) { planFeatures = {} }
+
         req.user = {
             id: user.id,
             name: user.name,
@@ -69,7 +76,8 @@ const authMiddleware = async (req, res, next) => {
             subscriptionStatus: user.subscriptionStatus,
             planExpiresAt: user.planExpiresAt,
             isInTrial,
-            trialExpired
+            trialExpired,
+            planFeatures
         }
         next()
     } catch (error) {

@@ -158,14 +158,12 @@ export default function Dashboard() {
             if (userPlan.features?.historico) fetchSimulations()
             // Lançamentos disponíveis para todos os planos
             fetchTransactions()
-            // Recursos avançados apenas Ouro (Phase 3 vai mover alguns para Prata)
-            if (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial) {
-                fetchWallets()
-                fetchDueTodayBills()
-                fetchCashFlowData(new Date().getFullYear())
-                fetchWalletBreakdown()
-                fetchCardSummary()
-            }
+            // Recursos guiados por features do plano (admin controla pelo painel)
+            if (userPlan.features?.multi_carteiras || user?.isInTrial) fetchWallets()
+            if (userPlan.features?.contas_pagar    || user?.isInTrial) fetchDueTodayBills()
+            if (userPlan.features?.multi_carteiras || user?.isInTrial) fetchWalletBreakdown()
+            if (userPlan.features?.historico       || user?.isInTrial) fetchCashFlowData(new Date().getFullYear())
+            if (userPlan.features?.cartoes         || user?.isInTrial) fetchCardSummary()
             if (!userPlan.features?.historico) setLoading(false)
         }
     }, [userPlan])
@@ -180,16 +178,16 @@ export default function Dashboard() {
         }
     }, [startDate, endDate, walletId])
 
-    // Re-fetch cash flow when year changes (independent filter)
+    // Re-fetch cash flow when year changes
     useEffect(() => {
-        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
+        if (userPlan && (userPlan.features?.historico || user?.isInTrial)) {
             fetchCashFlowData(cashFlowYear)
         }
     }, [cashFlowYear])
 
     // Re-fetch wallet breakdown when type toggle changes
     useEffect(() => {
-        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
+        if (userPlan && (userPlan.features?.multi_carteiras || user?.isInTrial)) {
             fetchWalletBreakdown()
         }
     }, [walletBreakdownType])
@@ -528,8 +526,8 @@ export default function Dashboard() {
                         <p>Bem-vindo à sua central de inteligência financeira.</p>
                     </div>
                     <div className="header-actions">
-                        {/* Smart Filters */}
-                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
+                        {/* Smart Filters — guiado por features */}
+                        {(userPlan?.features?.multi_carteiras || user?.isInTrial) && (
                             <>
                                 {/* Wallet Filter */}
                                 <select
@@ -715,7 +713,7 @@ export default function Dashboard() {
                 )}
 
                 {/* Wallet Breakdown Section */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
+                {(userPlan?.features?.multi_carteiras || user?.isInTrial) && (
                     <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9', marginBottom: '24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -783,8 +781,8 @@ export default function Dashboard() {
                     </div>
                 )}
 
-                {/* Visual Analysis (Ouro) */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && (
+                {/* Visual Analysis */}
+                {(userPlan?.features?.historico || user?.isInTrial) ? (
                     <div className="charts-grid">
                         <div className="chart-container">
                             <div className="chart-header">
@@ -859,10 +857,19 @@ export default function Dashboard() {
                             </div>
                         </div>
                     </div>
+                ) : (
+                    <div className="admin-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2.5rem', textAlign: 'center', gap: '1rem', marginBottom: '24px' }}>
+                        <span style={{ fontSize: '2.5rem' }}>📊</span>
+                        <h3 style={{ margin: 0 }}>Análise Avançada</h3>
+                        <p className="text-secondary" style={{ maxWidth: '360px', margin: 0 }}>
+                            Gráficos de Fluxo de Caixa Anual e Gastos por Categoria disponíveis no plano <strong>Prata</strong> ou superior.
+                        </p>
+                        <a href="/planos" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>Ver Planos</a>
+                    </div>
                 )}
 
-                {/* Credit Cards Summary (Ouro) */}
-                {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) && cardSummary?.cards?.length > 0 && (
+                {/* Credit Cards Summary */}
+                {(userPlan?.features?.cartoes || user?.isInTrial) && cardSummary?.cards?.length > 0 && (
                     <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9', marginBottom: '24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -926,78 +933,77 @@ export default function Dashboard() {
                 {/* Bottom Section: History & Side Panel */}
                 <div className="bottom-grid">
                     <div className="main-content-area">
-                        {/* Transaction History */}
-                        {(userPlan?.name === 'Ouro' || Number(userPlan?.id) === 3 || user?.isInTrial) ? (
-                            <div className="dashboard-section">
-                                <div className="section-header">
-                                    <h2>Últimos Lançamentos</h2>
-                                    <Link to="/financas/extrato" className="text-primary text-sm font-semibold flex items-center gap-1">
-                                        Ver Tudo <ChevronRight size={14} />
-                                    </Link>
-                                </div>
-                                {transactions.length === 0 ? (
-                                    <div className="empty-state">
-                                        <Clock size={40} className="text-slate-300" />
-                                        <p>Nenhuma transação registrada ainda.</p>
-                                    </div>
-                                ) : (
-                                    <div className="history-list">
-                                        {paginate(transactions, transPage).map((t) => (
-                                            <div key={t.id} className="history-item">
-                                                <div className="item-date">{formatDate(t.date)}</div>
-                                                <div className="item-info">
-                                                    <span className="item-title">{t.categoryName || 'Transação'}</span>
-                                                    <span className="item-subtitle">
-                                                        {t.target === 'BUSINESS' ? '🏢 PJ' : '👤 PF'} • {t.description || (t.type === 'RECEITA' ? 'Recebimento' : 'Pagamento')}
-                                                    </span>
-                                                </div>
-                                                <div className={`item-amount ${t.type === 'RECEITA' ? 'positive' : 'negative'}`}>
-                                                    {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
-                                                </div>
-                                                <div className="item-status">
-                                                    <span className={`badge badge-${t.status === 'PAID' ? 'success' : 'warning'}`}>
-                                                        {t.status === 'PAID' ? 'Pago' : 'Pendente'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                <PaginationControls current={transPage} total={transactions.length} onPageChange={setTransPage} />
+                        {/* Últimos Lançamentos — disponível para todos os planos */}
+                        <div className="dashboard-section">
+                            <div className="section-header">
+                                <h2>Últimos Lançamentos</h2>
+                                <Link to="/financas/extrato" className="text-primary text-sm font-semibold flex items-center gap-1">
+                                    Ver Tudo <ChevronRight size={14} />
+                                </Link>
                             </div>
-                        ) : (
-                            <div className="dashboard-section">
-                                <div className="section-header">
-                                    <h2>Histórico de Simulações</h2>
+                            {transactions.length === 0 ? (
+                                <div className="empty-state">
+                                    <Clock size={40} className="text-slate-300" />
+                                    <p>Nenhuma transação registrada ainda.</p>
                                 </div>
-                                {!hasFeature('historico') ? (
-                                    <div className="premium-lock-banner">
-                                        <History size={40} style={{ marginBottom: '15px', opacity: 0.5 }} />
-                                        <h3>Rastreie suas Simulações</h3>
-                                        <p style={{ opacity: 0.7, marginBottom: '20px' }}>No plano Prata você pode salvar e comparar todas as suas simulações MEI.</p>
-                                        <Link to="/planos" className="btn btn-primary">Fazer Upgrade</Link>
-                                    </div>
-                                ) : (
-                                    <div className="history-list">
-                                        {paginate(simulations, simPage).map((s) => (
-                                            <div key={s.id} className="history-item" style={{ gridTemplateColumns: '80px 1fr 120px' }}>
-                                                <div className="item-date">{formatDate(s.createdAt)}</div>
-                                                <div className="item-info">
-                                                    <span className="item-title text-capitalize">{s.activityType}</span>
-                                                    <span className="item-subtitle">Faturamento: {formatCurrency(s.revenue)}</span>
-                                                </div>
-                                                <div className="item-amount">
-                                                    <span className={`badge badge-${s.limitPercentage < 90 ? 'success' : 'danger'}`}>
-                                                        {s.limitPercentage.toFixed(1)}% do Limite
-                                                    </span>
-                                                </div>
+                            ) : (
+                                <div className="history-list">
+                                    {paginate(transactions, transPage).map((t) => (
+                                        <div key={t.id} className="history-item">
+                                            <div className="item-date">{formatDate(t.date)}</div>
+                                            <div className="item-info">
+                                                <span className="item-title">{t.categoryName || 'Transação'}</span>
+                                                <span className="item-subtitle">
+                                                    {t.target === 'BUSINESS' ? '🏢 PJ' : '👤 PF'} • {t.description || (t.type === 'RECEITA' ? 'Recebimento' : 'Pagamento')}
+                                                </span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                                <PaginationControls current={simPage} total={simulations.length} onPageChange={setSimPage} />
+                                            <div className={`item-amount ${t.type === 'RECEITA' ? 'positive' : 'negative'}`}>
+                                                {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
+                                            </div>
+                                            <div className="item-status">
+                                                <span className={`badge badge-${t.status === 'PAID' ? 'success' : 'warning'}`}>
+                                                    {t.status === 'PAID' ? 'Pago' : 'Pendente'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <PaginationControls current={transPage} total={transactions.length} onPageChange={setTransPage} />
+                        </div>
+
+                        {/* Histórico de Simulações — Prata+ */}
+                        <div className="dashboard-section" style={{ marginTop: '1.5rem' }}>
+                            <div className="section-header">
+                                <h2>Histórico de Simulações</h2>
                             </div>
-                        )}
+                            {!hasFeature('historico') ? (
+                                <div className="premium-lock-banner">
+                                    <History size={40} style={{ marginBottom: '15px', opacity: 0.5 }} />
+                                    <h3>Rastreie suas Simulações</h3>
+                                    <p style={{ opacity: 0.7, marginBottom: '20px' }}>No plano Prata você pode salvar e comparar todas as suas simulações MEI.</p>
+                                    <Link to="/planos" className="btn btn-primary">Fazer Upgrade</Link>
+                                </div>
+                            ) : (
+                                <div className="history-list">
+                                    {paginate(simulations, simPage).map((s) => (
+                                        <div key={s.id} className="history-item" style={{ gridTemplateColumns: '80px 1fr 120px' }}>
+                                            <div className="item-date">{formatDate(s.createdAt)}</div>
+                                            <div className="item-info">
+                                                <span className="item-title text-capitalize">{s.activityType}</span>
+                                                <span className="item-subtitle">Faturamento: {formatCurrency(s.revenue)}</span>
+                                            </div>
+                                            <div className="item-amount">
+                                                <span className={`badge badge-${s.limitPercentage < 90 ? 'success' : 'danger'}`}>
+                                                    {s.limitPercentage.toFixed(1)}% do Limite
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <PaginationControls current={simPage} total={simulations.length} onPageChange={setSimPage} />
+                        </div>
                     </div>
 
                     <div className="side-panel">
@@ -1019,10 +1025,17 @@ export default function Dashboard() {
                                     <div className="quick-icon"><CreditCard size={18} /></div>
                                     <span className="quick-label">Cartões</span>
                                 </Link>
-                                <button onClick={generatePDF} className="quick-feature-card">
-                                    <div className="quick-icon"><FileDown size={18} /></div>
-                                    <span className="quick-label">PDF</span>
-                                </button>
+                                {hasFeature('pdf') ? (
+                                    <button onClick={generatePDF} className="quick-feature-card">
+                                        <div className="quick-icon"><FileDown size={18} /></div>
+                                        <span className="quick-label">PDF</span>
+                                    </button>
+                                ) : (
+                                    <a href="/planos" className="quick-feature-card" title="Disponível no plano Prata ou superior" style={{ opacity: 0.5, cursor: 'not-allowed', textDecoration: 'none' }}>
+                                        <div className="quick-icon"><FileDown size={18} /></div>
+                                        <span className="quick-label">PDF 🔒</span>
+                                    </a>
+                                )}
                             </div>
                         </div>
 

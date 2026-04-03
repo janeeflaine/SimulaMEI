@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import {
     Briefcase,
     User,
@@ -16,6 +17,8 @@ import ImageCropperModal from '../../components/ImageCropperModal'
 import './AccountManager.css'
 
 export default function AccountManager() {
+    const { user } = useAuth()
+    const isPrataPluS = user?.planFeatures?.multi_carteiras || user?.isInTrial || user?.role === 'ADMIN'
     const [accounts, setAccounts] = useState([])
     const [isLoading, setIsLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -212,9 +215,15 @@ export default function AccountManager() {
                         <p>Cadastre e gerencie suas entidades pessoais e empresariais.</p>
                     </div>
                     <div className="header-actions">
-                        <button className="btn btn-primary" onClick={() => handleOpenModal()}>
-                            <Plus size={20} /> Nova Conta
-                        </button>
+                        {isPrataPluS ? (
+                            <button className="btn btn-primary" onClick={() => handleOpenModal()}>
+                                <Plus size={20} /> Nova Conta
+                            </button>
+                        ) : (
+                            <a href="/planos" className="btn btn-secondary" title="Multi-carteiras disponível no plano Prata ou superior">
+                                🔒 Prata para adicionar
+                            </a>
+                        )}
                     </div>
                 </div>
 

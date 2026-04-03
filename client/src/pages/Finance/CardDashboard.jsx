@@ -40,7 +40,7 @@ export default function CardDashboard() {
 
     const API = import.meta.env.VITE_API_URL || ''
     const token = localStorage.getItem('token')
-    const isOuro = user?.plan === 'Ouro' || user?.isInTrial
+    const isOuro = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
 
     // Fetch card dashboard data
     const fetchDashboard = useCallback(async () => {

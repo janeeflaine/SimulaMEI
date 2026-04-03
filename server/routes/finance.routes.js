@@ -4,6 +4,7 @@ const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { validateWalletOwnership } = require('../middleware/walletSecurity')
 const { calculateBillingDate } = require('../utils/billingDate')
+const { prataPlusOnly } = require('../middleware/planGuard')
 
 // Verifica limite de carteiras do plano antes de criar uma nova
 const checkWalletLimit = async (req, res, next) => {
@@ -82,24 +83,6 @@ const checkTransactionLimit = async (req, res, next) => {
     }
 }
 
-// Restringe rotas de escrita ao plano Ouro (cards, transfers — Phase 3 vai mover para Prata)
-const ouroOnly = (req, res, next) => {
-    const isOuro = req.user.plan === 'Ouro' || Number(req.user.planId) === 3 || req.user.isInTrial === true
-
-    if (!isOuro) {
-        console.log(`[ouroOnly] Access Denied for user ${req.user.id}. Plan: ${req.user.plan}, PlanId: ${req.user.planId}, Trial: ${req.user.isInTrial}`)
-        return res.status(403).json({
-            message: 'Acesso exclusivo para assinantes do plano Ouro',
-            debug: {
-                plan: req.user.plan,
-                planId: req.user.planId,
-                isInTrial: req.user.isInTrial
-            }
-        })
-    }
-    next()
-}
-
 // --- CATEGORIES ---
 
 router.get('/categories', authMiddleware, async (req, res) => {
@@ -115,7 +98,7 @@ router.get('/categories', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/categories', authMiddleware, async (req, res) => {
+router.post('/categories', authMiddleware, prataPlusOnly, async (req, res) => {
     const { name, type } = req.body
     try {
         const { rows: [newCat] } = await db.query(
@@ -129,7 +112,7 @@ router.post('/categories', authMiddleware, async (req, res) => {
     }
 })
 
-router.patch('/categories/:id', authMiddleware, async (req, res) => {
+router.patch('/categories/:id', authMiddleware, prataPlusOnly, async (req, res) => {
     const { name, type } = req.body
     try {
         const { rows: [updated] } = await db.query(
@@ -143,7 +126,7 @@ router.patch('/categories/:id', authMiddleware, async (req, res) => {
     }
 })
 
-router.delete('/categories/:id', authMiddleware, async (req, res) => {
+router.delete('/categories/:id', authMiddleware, prataPlusOnly, async (req, res) => {
     try {
         await db.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
         res.json({ message: 'Categoria excluída' })
@@ -171,7 +154,7 @@ router.get('/cards', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/cards', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/cards', authMiddleware, prataPlusOnly, async (req, res) => {
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
     try {
         const { rows: [newCard] } = await db.query(
@@ -185,7 +168,7 @@ router.post('/cards', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
-router.patch('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.patch('/cards/:id', authMiddleware, prataPlusOnly, async (req, res) => {
     const { id } = req.params
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
     try {
@@ -209,7 +192,7 @@ router.patch('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
     }
 })
 
-router.delete('/cards/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.delete('/cards/:id', authMiddleware, prataPlusOnly, async (req, res) => {
     try {
         await db.query('DELETE FROM credit_cards WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
         res.json({ message: 'Cartão excluído' })
@@ -525,7 +508,7 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
 
 // --- TRANSFERS ---
 
-router.post('/transfers', authMiddleware, ouroOnly, validateWalletOwnership, async (req, res) => {
+router.post('/transfers', authMiddleware, prataPlusOnly, validateWalletOwnership, async (req, res) => {
     const { sourceWalletId, targetWalletId, amount, date, description } = req.body;
 
     if (!sourceWalletId || !targetWalletId || !amount || !date) {

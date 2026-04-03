@@ -38,7 +38,7 @@ export default function InvoiceUpload() {
 
     const API = import.meta.env.VITE_API_URL || ''
     const token = localStorage.getItem('token')
-    const isOuro = user?.plan === 'Ouro' || user?.isInTrial
+    const isOuro = user?.planFeatures?.upload_faturas || user?.isInTrial || user?.role === 'ADMIN'
 
     // States
     const [dragOver, setDragOver] = useState(false)

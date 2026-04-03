@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import FeatureLock from '../../components/FeatureLock'
 import {
     PlusCircle,
     FileText,
@@ -36,13 +35,20 @@ export default function FinancialStatement() {
     const [selectedIds, setSelectedIds] = useState(new Set())
     const [bulkDeleting, setBulkDeleting] = useState(false)
 
+    // Grátis: extrato limitado aos últimos 30 dias
+    const isGratuito = !user?.isInTrial && (Number(user?.planId) === 1 || (!user?.planId && user?.plan !== 'Prata' && user?.plan !== 'Ouro'))
+    const isPrataPlus = user?.planFeatures?.transferencias || user?.isInTrial || user?.role === 'ADMIN'
+    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const todayStr = new Date().toISOString().split('T')[0]
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
+
     const [filters, setFilters] = useState({
         search: '',
         type: 'ALL',
         walletId: 'ALL',
         categoryId: 'ALL',
-        dateStart: '',
-        dateEnd: ''
+        dateStart: isGratuito ? thirtyDaysAgoStr : '',
+        dateEnd: isGratuito ? todayStr : ''
     })
 
     // Debounce for search
@@ -297,23 +303,30 @@ export default function FinancialStatement() {
         return wallet ? wallet.name : 'Desconhecido'
     }
 
-    if (user?.plan !== 'Ouro' && Number(user?.planId) !== 3 && !user?.isInTrial) {
-        return <FeatureLock feature="Extrato Financeiro" />
-    }
-
     return (
         <div className="financial-statement-page">
             <div className="statement-container">
+                {isGratuito && (
+                    <div className="alert-banner" style={{ marginBottom: '1.5rem' }}>
+                        <span>📅</span>
+                        <span>
+                            Plano Gratuito exibe apenas os últimos 30 dias.{' '}
+                            <a href="/planos" style={{ fontWeight: 600 }}>Faça upgrade para o Prata</a> e acesse todo o histórico.
+                        </span>
+                    </div>
+                )}
                 <div className="statement-header">
                     <div className="header-title">
                         <h1>Extrato Financeiro</h1>
                         <p>Visão unificada das finanças Familiares e Empresariais.</p>
                     </div>
                     <div className="header-actions">
-                        {/* Botão de Transferência */}
-                        <button className="btn btn-outline" onClick={() => setIsTransferModalOpen(true)}>
-                            <ArrowUpCircle size={18} style={{ transform: 'rotate(45deg)' }} /> Transferir
-                        </button>
+                        {/* Botão de Transferência — Prata+ */}
+                        {isPrataPlus && (
+                            <button className="btn btn-outline" onClick={() => setIsTransferModalOpen(true)}>
+                                <ArrowUpCircle size={18} style={{ transform: 'rotate(45deg)' }} /> Transferir
+                            </button>
+                        )}
                         <button className="btn btn-secondary" onClick={() => setIsCreateModalOpen(true)}>
                             <PlusCircle size={18} /> Novo Lançamento
                         </button>
@@ -379,12 +392,12 @@ export default function FinancialStatement() {
 
                     <div className="control-group">
                         <label>De</label>
-                        <input type="date" value={filters.dateStart} onChange={(e) => setFilters({ ...filters, dateStart: e.target.value })} />
+                        <input type="date" value={filters.dateStart} disabled={isGratuito} title={isGratuito ? 'Disponível no plano Prata ou superior' : ''} onChange={(e) => setFilters({ ...filters, dateStart: e.target.value })} />
                     </div>
 
                     <div className="control-group">
                         <label>Até</label>
-                        <input type="date" value={filters.dateEnd} onChange={(e) => setFilters({ ...filters, dateEnd: e.target.value })} />
+                        <input type="date" value={filters.dateEnd} disabled={isGratuito} title={isGratuito ? 'Disponível no plano Prata ou superior' : ''} onChange={(e) => setFilters({ ...filters, dateEnd: e.target.value })} />
                     </div>
                 </div>
 

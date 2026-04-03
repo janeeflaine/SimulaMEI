@@ -437,6 +437,32 @@ VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
       }
     }
 
+    // ─── Migration v3: features completas — admin controla tudo pelo painel ─────
+    const migV3 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v3'")
+    if (migV3.rows.length === 0) {
+      const gratuitoV3 = JSON.stringify({
+        historico: false, pdf: false, comparativo: true, alertas: true,
+        categorias: false, contas_pagar: false, transferencias: false,
+        multi_carteiras: false, cartoes: false, upload_faturas: false
+      })
+      const prataV3 = JSON.stringify({
+        historico: true, pdf: true, comparativo: true, alertas: true,
+        categorias: true, contas_pagar: true, transferencias: true,
+        multi_carteiras: true, cartoes: true, upload_faturas: false
+      })
+      const ouroV3 = JSON.stringify({
+        historico: true, pdf: true, comparativo: true, alertas: true,
+        categorias: true, contas_pagar: true, transferencias: true,
+        multi_carteiras: true, cartoes: true, upload_faturas: true
+      })
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Gratuito'`, [gratuitoV3])
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Prata'`,    [prataV3])
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Ouro'`,     [ouroV3])
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v3', 'done')`)
+      console.log('✅ Migration v3: features completas aplicadas a todos os planos')
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // ─── Migration v2: comparativo e alertas passam a ser Grátis ───────────────
     // Roda apenas uma vez. Não sobrescreve alterações futuras feitas pelo admin.
     const migV2 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v2'")

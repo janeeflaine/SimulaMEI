@@ -10,14 +10,14 @@ export default function BillsToPay() {
     const [loading, setLoading] = useState(true)
     const [confirmModal, setConfirmModal] = useState(null) // { id, description, amount }
     const [selectedWallet, setSelectedWallet] = useState('')
-    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
+    const isPrataPlus = user?.planFeatures?.contas_pagar || user?.isInTrial || user?.role === 'ADMIN'
 
     useEffect(() => {
-        if (isOuro) {
+        if (isPrataPlus) {
             fetchBills()
             fetchWallets()
         }
-    }, [isOuro])
+    }, [isPrataPlus])
 
     const fetchBills = async () => {
         try {
@@ -103,12 +103,12 @@ export default function BillsToPay() {
 
     const todayString = new Date().toLocaleDateString('sv-SE')
 
-    if (!isOuro) {
+    if (!isPrataPlus) {
         return (
             <div className="container py-8">
                 <FeatureLock
                     featureName="Contas a Pagar (Boletos)"
-                    requiredPlan="Ouro"
+                    requiredPlan="Prata"
                     description="Nunca mais esqueça um vencimento. Gerencie seus boletos e contas futuras de forma organizada e eficiente."
                     icon="📄"
                 />

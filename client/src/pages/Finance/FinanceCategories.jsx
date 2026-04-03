@@ -11,7 +11,7 @@ export default function FinanceCategories() {
     const [editingCategory, setEditingCategory] = useState(null)
     const [newCategory, setNewCategory] = useState({ name: '', type: 'RECEITA' })
 
-    const isOuro = user?.plan === 'Ouro' || Number(user?.planId) === 3 || user?.isInTrial
+    const isPrataPlus = user?.planFeatures?.categorias || user?.isInTrial || user?.role === 'ADMIN'
 
     useEffect(() => {
         fetchCategories()
@@ -125,6 +125,19 @@ export default function FinanceCategories() {
                         ))
                     )}
                 </div>
+            </div>
+        )
+    }
+
+    if (!isPrataPlus) {
+        return (
+            <div className="container py-8 finance-categories-page">
+                <FeatureLock
+                    featureName="Categorias Personalizadas"
+                    requiredPlan="Prata"
+                    description="Organize seus lançamentos com categorias próprias: Receitas, Despesas MEI e Despesas Pessoais."
+                    icon="🏷️"
+                />
             </div>
         )
     }
