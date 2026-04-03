@@ -1,14 +1,17 @@
-/* Admin Layout - Premium Dark Theme */
+/* Admin Layout - Premium Slate Theme */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 .admin-layout {
     display: flex;
     min-height: 100vh;
-    background: #0f1117;
+    background: #111827;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* Sidebar */
 .admin-sidebar {
-    width: 280px;
-    background: linear-gradient(180deg, #13151a 0%, #0d0f14 100%);
+    width: 272px;
+    background: #1a2035;
     border-right: 1px solid rgba(255, 255, 255, 0.06);
     display: flex;
     flex-direction: column;
@@ -17,11 +20,11 @@
     left: 0;
     bottom: 0;
     z-index: 50;
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25);
 }
 
 .sidebar-header {
-    padding: 24px;
+    padding: 22px 24px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     display: flex;
     align-items: center;
@@ -32,55 +35,55 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 1.25rem;
+    font-size: 1.2rem;
     font-weight: 700;
-    color: #ffffff;
+    color: #f1f5f9;
     letter-spacing: -0.02em;
 }
 
 .admin-logo span:first-child {
-    font-size: 1.5rem;
+    font-size: 1.45rem;
 }
 
 .admin-badge {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background: #2563eb;
     color: white;
-    padding: 4px 10px;
+    padding: 3px 9px;
     border-radius: 20px;
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    letter-spacing: 0.06em;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
 }
 
 .sidebar-nav {
     flex: 1;
-    padding: 20px 16px;
+    padding: 16px 12px;
     overflow-y: auto;
 }
 
 .nav-item {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 14px 18px;
-    border-radius: 12px;
-    color: rgba(255, 255, 255, 0.55);
-    margin-bottom: 4px;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 3px;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     font-weight: 500;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
 }
 
 .nav-item:hover {
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.85);
 }
 
 .nav-item.active {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.1) 100%);
-    color: #a5b4fc;
+    background: rgba(37, 99, 235, 0.14);
+    color: #93c5fd;
     position: relative;
 }
 
@@ -91,15 +94,16 @@
     top: 50%;
     transform: translateY(-50%);
     width: 3px;
-    height: 24px;
-    background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 100%);
-    border-radius: 0 4px 4px 0;
+    height: 22px;
+    background: #2563eb;
+    border-radius: 0 3px 3px 0;
 }
 
 .nav-icon {
-    font-size: 1.15rem;
-    width: 24px;
+    font-size: 1.1rem;
+    width: 22px;
     text-align: center;
+    opacity: 0.85;
 }
 
 .nav-label {
@@ -107,82 +111,90 @@
 }
 
 .sidebar-footer {
-    padding: 20px;
+    padding: 18px;
     border-top: 1px solid rgba(255, 255, 255, 0.06);
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.15);
 }
 
 .admin-user {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 16px;
-    padding: 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
+    margin-bottom: 14px;
+    padding: 11px 13px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .user-avatar {
-    width: 42px;
-    height: 42px;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
     font-weight: 700;
-    font-size: 1rem;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    font-size: 0.95rem;
+    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);
+    flex-shrink: 0;
 }
 
 .user-info {
     display: flex;
     flex-direction: column;
+    min-width: 0;
 }
 
 .user-name {
     font-weight: 600;
-    font-size: 0.9rem;
-    color: #ffffff;
+    font-size: 0.875rem;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .user-role {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.35);
+    margin-top: 1px;
 }
 
 .logout-btn {
     width: 100%;
-    padding: 12px;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    padding: 11px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    color: #fca5a5;
+    color: rgba(255, 255, 255, 0.45);
     font-weight: 500;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     transition: all 0.2s ease;
+    cursor: pointer;
 }
 
 .logout-btn:hover {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.4);
-    color: #fecaca;
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
 }
 
 /* Main Content */
 .admin-main {
     flex: 1;
-    margin-left: 280px;
+    margin-left: 272px;
     padding: 32px;
     min-height: 100vh;
-    background: #0f1117;
+    background: #111827;
 }
 
 /* Responsive */
 @media (max-width: 1200px) {
     .admin-sidebar {
-        width: 80px;
+        width: 76px;
     }
 
     .admin-logo span:last-child,
@@ -197,7 +209,7 @@
     }
 
     .admin-main {
-        margin-left: 80px;
+        margin-left: 76px;
     }
 
     .nav-item {
@@ -213,6 +225,7 @@
         justify-content: center;
         padding: 0;
         background: transparent;
+        border: none;
     }
 
     .logout-btn {
