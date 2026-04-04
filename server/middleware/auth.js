@@ -31,6 +31,19 @@ const authMiddleware = async (req, res, next) => {
             return res.status(401).json({ message: 'Usuário não encontrado' })
         }
 
+        // Session version check: if token carries a version number (sv) that no
+        // longer matches the DB, the session was invalidated (concurrent login from
+        // a new device). Tokens issued before this feature have no sv field → skip.
+        if (decoded.sv !== undefined && decoded.sv !== null) {
+            const dbSv = user.sessionVersion || 1
+            if (Number(decoded.sv) !== Number(dbSv)) {
+                return res.status(401).json({
+                    message: 'Sessão encerrada. Por favor, faça login novamente.',
+                    code: 'SESSION_INVALIDATED'
+                })
+            }
+        }
+
         // Auto-Downgrade if expired and not actively subscribed
         let finalPlan = user.planName || 'Gratuito'
         let finalPlanId = user.planId ? Number(user.planId) : null
@@ -112,7 +125,13 @@ const optionalAuth = (req, res, next) => {
 
 const generateToken = (user) => {
     return jwt.sign(
-        { id: user.id, email: user.email, role: user.role, name: user.name },
+        {
+            id:    user.id,
+            email: user.email,
+            role:  user.role,
+            name:  user.name,
+            sv:    user.sessionVersion || 1,  // session version for concurrent-login prevention
+        },
         JWT_SECRET,
         { expiresIn: '7d' }
     )

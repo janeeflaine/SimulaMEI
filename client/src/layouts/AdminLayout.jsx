@@ -21,6 +21,7 @@ export default function AdminLayout() {
         { path: '/admin/funcionalidades', icon: '🔧', label: 'Funcionalidades' },
         { path: '/admin/configuracoes', icon: '⚙️', label: 'Configurações' },
         { path: '/admin/relatorios', icon: '📈', label: 'Relatórios' },
+        { path: '/admin/logs', icon: '🛡️', label: 'Logs de Auditoria' },
     ]
 
     return (

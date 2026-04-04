@@ -33,6 +33,7 @@ import AdminPlans from './pages/admin/AdminPlans'
 import AdminFeatures from './pages/admin/AdminFeatures'
 import AdminReports from './pages/admin/AdminReports'
 import AdminSettings from './pages/admin/AdminSettings'
+import AdminLogs from './pages/admin/AdminLogs'
 
 // Layouts
 import UserLayout from './layouts/UserLayout'
@@ -87,6 +88,7 @@ function App() {
                             <Route path="/admin/funcionalidades" element={<AdminFeatures />} />
                             <Route path="/admin/relatorios" element={<AdminReports />} />
                             <Route path="/admin/configuracoes" element={<AdminSettings />} />
+                            <Route path="/admin/logs" element={<AdminLogs />} />
                         </Route>
                     </Route>
                 </Routes>

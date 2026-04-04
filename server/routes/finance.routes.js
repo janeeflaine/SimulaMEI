@@ -9,34 +9,57 @@ const { prataPlusOnly } = require('../middleware/planGuard')
 // Verifica limite de carteiras do plano antes de criar uma nova
 const checkWalletLimit = async (req, res, next) => {
     try {
-        const planId = Number(req.user.planId) || 1
-        const isAdmin   = req.user?.role === 'ADMIN'
-        const inTrial   = req.user?.isInTrial === true
+        const planId  = Number(req.user.planId) || 1
+        const isAdmin = req.user?.role === 'ADMIN'
+        const inTrial = req.user?.isInTrial === true
 
-        // Admin e trial não têm limite
         if (isAdmin || inTrial) return next()
 
-        const settingKey = `wallet_limit_${planId}`
-        const { rows } = await pool.query(
-            'SELECT value FROM system_settings WHERE key = $1',
-            [settingKey]
-        )
-        const limit = rows.length > 0 ? parseInt(rows[0].value) : 1
+        const accountType = (req.body.account_type || 'PF').toUpperCase() // 'PF' ou 'PJ'
 
-        // 0 = ilimitado
-        if (limit === 0) return next()
+        // Buscar os 3 limites em paralelo
+        const [totalRow, pfRow, pjRow] = await Promise.all([
+            pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_limit_${planId}`]),
+            pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_pf_limit_${planId}`]),
+            pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_pj_limit_${planId}`]),
+        ])
 
-        const { rows: wallets } = await pool.query(
-            'SELECT COUNT(*) as count FROM business_units WHERE "ownerId" = $1',
+        const totalLimit = totalRow.rows.length > 0 ? parseInt(totalRow.rows[0].value) : 2
+        const pfLimit    = pfRow.rows.length   > 0 ? parseInt(pfRow.rows[0].value)    : 1
+        const pjLimit    = pjRow.rows.length   > 0 ? parseInt(pjRow.rows[0].value)    : 1
+
+        // Buscar contagens atuais
+        const { rows: counts } = await pool.query(
+            `SELECT account_type, COUNT(*) as count
+             FROM business_units WHERE "ownerId" = $1
+             GROUP BY account_type`,
             [req.user.id]
         )
-        const current = parseInt(wallets[0].count)
+        const pfCount    = parseInt(counts.find(r => r.account_type === 'PF')?.count || 0)
+        const pjCount    = parseInt(counts.find(r => r.account_type === 'PJ')?.count || 0)
+        const totalCount = pfCount + pjCount
 
-        if (current >= limit) {
+        // Verificar limite total (0 = ilimitado)
+        if (totalLimit > 0 && totalCount >= totalLimit) {
             return res.status(403).json({
-                message: `Seu plano permite no máximo ${limit} carteira${limit > 1 ? 's' : ''}. Faça upgrade para adicionar mais.`
+                message: `Seu plano permite no máximo ${totalLimit} carteira${totalLimit > 1 ? 's' : ''} no total. Faça upgrade para adicionar mais.`
             })
         }
+
+        // Verificar limite por tipo PF
+        if (accountType === 'PF' && pfLimit > 0 && pfCount >= pfLimit) {
+            return res.status(403).json({
+                message: `Seu plano permite no máximo ${pfLimit} carteira${pfLimit > 1 ? 's' : ''} Pessoa Física. Faça upgrade para adicionar mais.`
+            })
+        }
+
+        // Verificar limite por tipo PJ
+        if (accountType === 'PJ' && pjLimit > 0 && pjCount >= pjLimit) {
+            return res.status(403).json({
+                message: `Seu plano permite no máximo ${pjLimit} carteira${pjLimit > 1 ? 's' : ''} Pessoa Jurídica. Faça upgrade para adicionar mais.`
+            })
+        }
+
         next()
     } catch (err) {
         console.error('[checkWalletLimit]', err)

@@ -254,6 +254,41 @@ const init = async () => {
       );
     `)
 
+    // Audit Logs (structured security/audit trail)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        level TEXT DEFAULT 'INFO' CHECK(level IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')),
+        event_type TEXT NOT NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        user_role TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        device_fingerprint TEXT,
+        resource_type TEXT,
+        resource_id TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        metadata TEXT
+      );
+    `)
+
+    // User Sessions (concurrent session tracking)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        ip_address TEXT,
+        user_agent TEXT,
+        device_fingerprint TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        invalidated_at TIMESTAMP
+      );
+    `)
+
     // Business Units (Wallets/Accounts)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS business_units (
@@ -296,6 +331,7 @@ const init = async () => {
       `)
 
       // Add columns for users table hardening/logic
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "sessionVersion" INTEGER DEFAULT 1')
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "isBlocked" INTEGER DEFAULT 0')
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP')
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "planExpiresAt" TIMESTAMP')
@@ -328,7 +364,7 @@ const init = async () => {
       console.log('🔒 Applying Row Level Security (RLS) lockdown...')
       const tablesToLock = [
         'users', 'plans', 'simulations', 'calculation_rules', 'mei_limits',
-        'admin_logs', 'payments', 'system_settings', 'user_alerts',
+        'admin_logs', 'audit_logs', 'user_sessions', 'payments', 'system_settings', 'user_alerts',
         'business_units', 'invoice_uploads', 'credit_cards',
         'finance_categories', 'card_invoices', 'invoice_items',
         'finance_transactions', 'bills_to_pay'
@@ -426,15 +462,41 @@ VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
 
     // Wallet limits per plan (0 = ilimitado)
     const walletLimits = [
-      { key: 'wallet_limit_1', value: '1' },   // Gratuito: 1 carteira
-      { key: 'wallet_limit_2', value: '0' },   // Prata: ilimitado
-      { key: 'wallet_limit_3', value: '0' },   // Ouro: ilimitado
+      { key: 'wallet_limit_1', value: '2' },   // Gratuito: 2 carteiras (1 PF + 1 PJ)
+      { key: 'wallet_limit_2', value: '4' },   // Prata: 4 carteiras (2 PF + 2 PJ)
+      { key: 'wallet_limit_3', value: '8' },   // Ouro: 8 carteiras (5 PF + 3 PJ)
     ]
     for (const wl of walletLimits) {
       const exists = await pool.query('SELECT 1 FROM system_settings WHERE key = $1', [wl.key])
       if (exists.rows.length === 0) {
         await pool.query('INSERT INTO system_settings (key, value) VALUES ($1, $2)', [wl.key, wl.value])
       }
+    }
+
+    // PF/PJ type limits per plan (0 = ilimitado por tipo)
+    const walletTypeLimits = [
+      { key: 'wallet_pf_limit_1', value: '1' }, // Gratuito: 1 PF
+      { key: 'wallet_pj_limit_1', value: '1' }, // Gratuito: 1 PJ
+      { key: 'wallet_pf_limit_2', value: '2' }, // Prata: 2 PF
+      { key: 'wallet_pj_limit_2', value: '2' }, // Prata: 2 PJ
+      { key: 'wallet_pf_limit_3', value: '5' }, // Ouro: 5 PF
+      { key: 'wallet_pj_limit_3', value: '3' }, // Ouro: 3 PJ
+    ]
+    for (const tl of walletTypeLimits) {
+      const exists = await pool.query('SELECT 1 FROM system_settings WHERE key = $1', [tl.key])
+      if (exists.rows.length === 0) {
+        await pool.query('INSERT INTO system_settings (key, value) VALUES ($1, $2)', [tl.key, tl.value])
+      }
+    }
+
+    // ─── Migration v4: atualiza wallet limits existentes para novos padrões ─────
+    const migV4 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v4'")
+    if (migV4.rows.length === 0) {
+      await pool.query("UPDATE system_settings SET value = '2' WHERE key = 'wallet_limit_1'")
+      await pool.query("UPDATE system_settings SET value = '4' WHERE key = 'wallet_limit_2'")
+      await pool.query("UPDATE system_settings SET value = '8' WHERE key = 'wallet_limit_3'")
+      await pool.query("INSERT INTO system_settings (key, value) VALUES ('plan_migration_v4', 'done') ON CONFLICT (key) DO NOTHING")
+      console.log('[DB] Migration v4: wallet limits atualizados (2/4/8 com PF/PJ por tipo)')
     }
 
     // ─── Migration v3: features completas — admin controla tudo pelo painel ─────

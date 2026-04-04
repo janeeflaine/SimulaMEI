@@ -3,7 +3,9 @@
     "allow": [
       "Read(//a:/**)",
       "Read(//mnt/a/**)",
-      "Bash(grep -n \"features\\\\|comparativo\\\\|pdf\\\\|historico\\\\|alertas\" /a/SimulaMEI/client/src/pages/*.jsx)"
+      "Bash(grep -n \"features\\\\|comparativo\\\\|pdf\\\\|historico\\\\|alertas\" /a/SimulaMEI/client/src/pages/*.jsx)",
+      "Bash(find /a/SimulaMEI -type f -name *redis* -o -name *cache*)",
+      "Bash(grep -r \"redis\\\\|cache\\\\|memcache\" /a/SimulaMEI/server --include=*.js)"
     ]
   }
 }

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { getDeviceFingerprint } from '../utils/fingerprint'
 
 const AuthContext = createContext(null)
 
@@ -19,7 +20,10 @@ export function AuthProvider({ children }) {
     const login = async (email, password) => {
         const res = await fetch('/api/auth/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Device-Fingerprint': getDeviceFingerprint(),
+            },
             body: JSON.stringify({ email, password })
         })
 
@@ -39,7 +43,10 @@ export function AuthProvider({ children }) {
     const register = async (name, email, password) => {
         const res = await fetch('/api/auth/register', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Device-Fingerprint': getDeviceFingerprint(),
+            },
             body: JSON.stringify({ name, email, password })
         })
 

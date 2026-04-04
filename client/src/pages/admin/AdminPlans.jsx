@@ -128,7 +128,7 @@ export default function AdminPlans() {
                 ))}
 
                 {/* Add New Plan Card */}
-                <div className="plan-admin-card" style={{ border: '2px dashed var(--color-border)', background: 'transparent' }}>
+                <div className="plan-admin-card" style={{ border: '2px dashed rgba(255,255,255,0.12)', background: 'transparent' }}>
                     <div className="text-center" style={{ padding: 'var(--spacing-4)' }}>
                         <span style={{ fontSize: '2rem' }}>➕</span>
                         <h3 style={{ marginTop: 'var(--spacing-2)' }}>Novo Plano</h3>
