@@ -15,8 +15,6 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
         cardId: initialData?.cardId || '',
         description: initialData?.description || '',
         dueDate: initialData?.dueDate ? initialData.dueDate.substring(0, 10) : '',
-        isRecurring: initialData?.isRecurring || false,
-        isSubscription: initialData?.isSubscription || false
     })
     const [categories, setCategories] = useState([])
     const [cards, setCards] = useState([])
@@ -420,24 +418,6 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
                                 />
                             </div>
 
-                            <div className="form-checkboxes">
-                                <label className="checkbox-item">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.isRecurring}
-                                        onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
-                                    />
-                                    <span>Esta transação é recorrente</span>
-                                </label>
-                                <label className="checkbox-item">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.isSubscription}
-                                        onChange={(e) => setFormData({ ...formData, isSubscription: e.target.checked })}
-                                    />
-                                    <span>Assinatura (gerar alertas mensais)</span>
-                                </label>
-                            </div>
                         </div>
 
                         <button type="submit" className={`btn btn-submit ${formData.type.toLowerCase()}`} disabled={loading}>

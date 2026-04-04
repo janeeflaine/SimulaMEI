@@ -576,9 +576,6 @@ export default function Dashboard() {
                         <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
                             <PlusCircle size={18} /> Novo Lançamento
                         </button>
-                        <Link to="/simular" className="btn btn-primary">
-                            <LayoutDashboard size={18} /> Nova Simulação
-                        </Link>
                     </div>
                 </div>
 
