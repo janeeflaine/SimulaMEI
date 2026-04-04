@@ -135,47 +135,50 @@ export default function AdminSettings() {
             <style>{`
                 .settings-grid {
                     display: grid;
-                    gap: 1.5rem;
+                    gap: 14px;
                 }
                 .setting-card {
-                    background: #f8fafc;
-                    border: 1px solid #e2e8f0;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.07);
                     border-radius: 12px;
-                    padding: 1.5rem;
+                    padding: 20px 22px;
                     display: grid;
-                    gap: 1rem;
+                    gap: 14px;
                     transition: all 0.2s;
                 }
                 .setting-card:hover {
-                    border-color: #cbd5e1;
-                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+                    border-color: rgba(37,99,235,0.25);
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
                 }
                 .setting-label {
                     font-weight: 600;
-                    font-size: 1rem;
-                    color: #1e293b;
+                    font-size: 0.95rem;
+                    color: #e2e8f0;
                     display: block;
-                    margin-bottom: 0.25rem;
+                    margin-bottom: 6px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                    font-size: 0.78rem;
                 }
                 .status-badge {
                     display: inline-flex;
                     align-items: center;
-                    padding: 0.25rem 0.75rem;
-                    border-radius: 9999px;
-                    font-size: 0.75rem;
+                    padding: 3px 10px;
+                    border-radius: 20px;
+                    font-size: 0.72rem;
                     font-weight: 600;
                 }
                 .status-badge.secure {
-                    background: #dcfce7;
-                    color: #166534;
+                    background: rgba(5,150,105,0.15);
+                    color: #6ee7b7;
                 }
                 .status-badge.warning {
-                    background: #fef9c3;
-                    color: #854d0e;
+                    background: rgba(180,130,20,0.13);
+                    color: #fde68a;
                 }
                 .setting-actions {
                     display: flex;
-                    gap: 1rem;
+                    gap: 12px;
                     align-items: center;
                     flex-wrap: wrap;
                 }
@@ -186,28 +189,37 @@ export default function AdminSettings() {
                 }
                 .input-icon {
                     position: absolute;
-                    left: 1rem;
+                    left: 12px;
                     top: 50%;
                     transform: translateY(-50%);
                     pointer-events: none;
+                    font-size: 0.9rem;
+                    opacity: 0.6;
                 }
                 .admin-input {
                     width: 100%;
-                    padding: 0.75rem 1rem 0.75rem 2.5rem;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    font-family: monospace;
-                    font-size: 0.9rem;
-                    transition: border-color 0.2s;
+                    padding: 11px 14px 11px 36px;
+                    background: rgba(255,255,255,0.05);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 9px;
+                    color: #f1f5f9;
+                    font-family: 'Fira Code', 'Courier New', monospace;
+                    font-size: 0.875rem;
+                    transition: all 0.2s;
+                    box-sizing: border-box;
                 }
                 .admin-input:focus {
-                    border-color: #3b82f6;
+                    border-color: #2563eb;
                     outline: none;
-                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+                    background: rgba(37,99,235,0.07);
+                    box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+                }
+                .admin-input::placeholder {
+                    color: rgba(255,255,255,0.25);
                 }
                 .setting-footer small {
-                    color: #94a3b8;
-                    font-size: 0.8rem;
+                    color: rgba(255,255,255,0.3);
+                    font-size: 0.775rem;
                 }
             `}</style>
         </div>

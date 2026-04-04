@@ -97,7 +97,7 @@ export default function AdminFeatures() {
                                 return (
                                     <>
                                         <tr key={`group-${group}`}>
-                                            <td colSpan={plans.length + 1} style={{ background: 'var(--color-slate-100)', padding: '6px 16px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-slate-500)', textTransform: 'uppercase' }}>
+                                            <td colSpan={plans.length + 1} style={{ background: 'rgba(37,99,235,0.07)', padding: '6px 16px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', color: '#93c5fd', textTransform: 'uppercase', borderTop: '1px solid rgba(37,99,235,0.15)', borderBottom: '1px solid rgba(37,99,235,0.15)' }}>
                                                 {group === 'Grátis' ? '🆓 Padrão Grátis' : group === 'Prata' ? '🥈 Prata' : '🥇 Ouro'}
                                             </td>
                                         </tr>
@@ -193,21 +193,21 @@ function AdminTransactionLimits({ plans }) {
 
     return (
         <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div className="card-header" style={{ borderBottom: '1px solid var(--color-slate-200)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
                     📝 Limite de Lançamentos por Plano (mensal)
                 </h2>
-                <p className="text-secondary">
-                    Quantidade máxima de lançamentos financeiros por mês. Use <strong>0</strong> para ilimitado.
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', margin: 0 }}>
+                    Quantidade máxima de lançamentos financeiros por mês. Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
                 </p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {plans.map(plan => (
-                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <div>
-                            <h4 style={{ margin: 0 }}>{plan.name}</h4>
-                            <p className="text-secondary" style={{ fontSize: '0.875rem' }}>
+                            <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
+                            <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
                                 {limits[plan.id] === '0' || !limits[plan.id] ? 'Ilimitado' : `Máximo de ${limits[plan.id]} lançamentos/mês`}
                             </p>
                         </div>
@@ -216,7 +216,7 @@ function AdminTransactionLimits({ plans }) {
                             min="0"
                             value={limits[plan.id] ?? '0'}
                             onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
-                            style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-slate-200)', textAlign: 'center' }}
+                            style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
                         />
                     </div>
                 ))}
@@ -286,21 +286,21 @@ function AdminWalletLimits({ plans }) {
 
     return (
         <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div className="card-header" style={{ borderBottom: '1px solid var(--color-slate-200)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
                     👛 Limite de Carteiras por Plano
                 </h2>
-                <p className="text-secondary">
-                    Quantidade máxima de carteiras que cada plano pode criar. Use <strong>0</strong> para ilimitado.
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', margin: 0 }}>
+                    Quantidade máxima de carteiras que cada plano pode criar. Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
                 </p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {plans.map(plan => (
-                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <div>
-                            <h4 style={{ margin: 0 }}>{plan.name}</h4>
-                            <p className="text-secondary" style={{ fontSize: '0.875rem' }}>
+                            <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
+                            <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
                                 {limits[plan.id] === '0' ? 'Ilimitado' : `Máximo de ${limits[plan.id]} carteira${limits[plan.id] === '1' ? '' : 's'}`}
                             </p>
                         </div>
@@ -309,7 +309,7 @@ function AdminWalletLimits({ plans }) {
                             min="0"
                             value={limits[plan.id] ?? '1'}
                             onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
-                            style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-slate-200)', textAlign: 'center' }}
+                            style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
                         />
                     </div>
                 ))}
@@ -394,18 +394,18 @@ function AdminTrialSettings() {
 
     return (
         <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div className="card-header" style={{ borderBottom: '1px solid var(--color-slate-200)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
                     ⭐ Acesso para Novos Usuários (Trial)
                 </h2>
-                <p className="text-secondary">Disponibiliza todas as funções premium automaticamente para novos cadastros.</p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>Disponibiliza todas as funções premium automaticamente para novos cadastros.</p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <div>
-                        <h4 style={{ margin: 0 }}>Ativar Período de Avaliação</h4>
-                        <p className="text-secondary" style={{ fontSize: '0.875rem' }}>Novos usuários receberão o plano Ouro temporariamente.</p>
+                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>Ativar Período de Avaliação</h4>
+                        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>Novos usuários receberão o plano Ouro temporariamente.</p>
                     </div>
                     <div
                         className={`admin-toggle ${trialEnabled ? 'active' : ''}`}
@@ -418,17 +418,17 @@ function AdminTrialSettings() {
                     />
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <div>
-                        <h4 style={{ margin: 0 }}>Duração do Acesso (Dias)</h4>
-                        <p className="text-secondary" style={{ fontSize: '0.875rem' }}>Quantidade de dias que o usuário terá acesso total.</p>
+                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>Duração do Acesso (Dias)</h4>
+                        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>Quantidade de dias que o usuário terá acesso total.</p>
                     </div>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                         <input
                             type="number"
                             value={trialDays}
                             onChange={(e) => setTrialDays(e.target.value)}
-                            style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-slate-200)' }}
+                            style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
                         />
                         <button
                             className="btn btn-primary btn-sm"

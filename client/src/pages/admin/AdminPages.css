@@ -63,15 +63,13 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    padding-left: 11px;
+    border-left: 3px solid #2563eb;
 }
 
+/* remove pseudo-before since we use border-left now */
 .admin-card h2::before {
-    content: '';
-    width: 3px;
-    height: 18px;
-    background: #2563eb;
-    border-radius: 2px;
-    flex-shrink: 0;
+    display: none;
 }
 
 /* Table Styling */
@@ -527,6 +525,102 @@
     }
 }
 
+/* ─── Select & Option — force dark background (browser override) ─── */
+.admin-page select,
+.admin-page .form-select {
+    background-color: #1e2537;
+    color: #f1f5f9;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2393c5fd' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 38px !important;
+}
+
+.admin-page select option,
+.admin-page .form-select option {
+    background-color: #1e2537;
+    color: #f1f5f9;
+}
+
+/* ─── Modal — works inside and outside .admin-page ─── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    animation: fadeIn 0.2s ease;
+}
+
+.modal {
+    background: linear-gradient(145deg, #1e2537 0%, #1a2035 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 30px;
+    width: 90%;
+    max-width: 480px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    animation: slideUp 0.28s ease;
+}
+
+.modal h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 6px;
+}
+
+.modal .text-secondary {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.875rem;
+    margin-bottom: 20px;
+    display: block;
+}
+
+.modal .form-label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 7px;
+}
+
+.modal .form-select,
+.modal select {
+    width: 100%;
+    padding: 12px 38px 12px 14px;
+    background-color: #111827;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 9px;
+    color: #f1f5f9;
+    font-size: 0.9rem;
+    font-family: inherit;
+    transition: all 0.2s;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2393c5fd' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+}
+
+.modal .form-select:focus,
+.modal select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.modal select option {
+    background-color: #1e2537;
+    color: #f1f5f9;
+}
+
+/* ─── Flex utilities ─── */
 /* Flex utilities */
 .flex {
     display: flex;
