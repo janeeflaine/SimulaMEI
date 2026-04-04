@@ -6,13 +6,13 @@ const ALL_FEATURES = [
     { key: 'comparativo',    name: 'Comparativo MEI x ME',          group: 'Padrão Grátis' },
     { key: 'alertas',        name: 'Alertas de Limite',              group: 'Padrão Grátis' },
     { key: 'categorias',     name: 'Categorias Personalizadas',      group: 'Padrão Grátis' },
+    { key: 'cartoes',        name: 'Cartões (Cadastro Manual)',      group: 'Padrão Grátis' },
     { key: 'historico',      name: 'Histórico de Simulações',        group: 'Prata' },
     { key: 'pdf',            name: 'Exportar PDF',                   group: 'Prata' },
     { key: 'contas_pagar',   name: 'Contas a Pagar (Boletos)',        group: 'Prata' },
     { key: 'transferencias', name: 'Transferências entre Carteiras', group: 'Prata' },
     { key: 'multi_carteiras',name: 'Multi-Carteiras',                group: 'Prata' },
-    { key: 'cartoes',        name: 'Cartões (Modo Manual)',          group: 'Prata' },
-    { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     group: 'Ouro' },
+    { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     group: 'Prata' },
 ]
 
 export default function AdminPlans() {

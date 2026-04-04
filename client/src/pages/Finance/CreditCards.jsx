@@ -25,14 +25,14 @@ export default function CreditCards() {
 
     const defaultFormData = { name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '', business_unit_id: '' }
 
-    const isOuro = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
+    const hasCartoes = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
 
     useEffect(() => {
-        if (isOuro) {
+        if (hasCartoes) {
             fetchCards()
             fetchWallets()
         }
-    }, [isOuro])
+    }, [hasCartoes])
 
     const fetchCards = async () => {
         try {
@@ -151,12 +151,12 @@ export default function CreditCards() {
         return <span className={`wallet-badge ${card.walletType?.toLowerCase()}`}>{icon} {label} - {card.walletName}</span>
     }
 
-    if (!isOuro) {
+    if (!hasCartoes) {
         return (
             <div className="container py-8">
                 <FeatureLock
                     featureName="Gestão de Cartões"
-                    requiredPlan="Ouro"
+                    requiredPlan="Gratuito"
                     description="Controle todos os seus cartões de crédito em um só lugar, com acompanhamento de faturas e datas de vencimento."
                     icon="💳"
                 />

@@ -8,7 +8,9 @@ const express = require('express')
 const router = express.Router()
 const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
-const { ouroOnly } = require('../middleware/ouroGuard')
+const { featureGuard } = require('../middleware/planGuard')
+const cartoesGuard = featureGuard('cartoes')
+const uploadFaturasGuard = featureGuard('upload_faturas')
 const { calculateBillingDate } = require('../utils/billingDate')
 const multer = require('multer')
 const { parseInvoice, validateFile, SUPPORTED_MIME_TYPES, MAX_FILE_SIZE } = require('../utils/geminiService')
@@ -31,7 +33,7 @@ const upload = multer({
 // =============================================
 
 // GET /api/finance/invoices — List invoices (optionally filtered by cardId)
-router.get('/', authMiddleware, ouroOnly, async (req, res) => {
+router.get('/', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { cardId, year } = req.query
         let query = `
@@ -63,7 +65,7 @@ router.get('/', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // POST /api/finance/invoices — Create a new invoice
-router.post('/', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { cardId, referenceMonth, referenceYear, totalAmount, dueDate, closingDate } = req.body
 
@@ -106,7 +108,7 @@ router.post('/', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // GET /api/finance/invoices/:id/items — Get items for an invoice
-router.get('/:id/items', authMiddleware, ouroOnly, async (req, res) => {
+router.get('/:id/items', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { id } = req.params
 
@@ -137,7 +139,7 @@ router.get('/:id/items', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // DELETE /api/finance/invoices/:id — Delete an entire invoice (and cascade items)
-router.delete('/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.delete('/:id', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { id } = req.params
 
@@ -161,7 +163,7 @@ router.delete('/:id', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // PATCH /api/finance/invoices/:id/confirm — Confirm/pay an invoice
-router.patch('/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
+router.patch('/:id/confirm', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { id } = req.params
         const { paidAmount } = req.body
@@ -195,7 +197,7 @@ router.patch('/:id/confirm', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // GET /api/finance/invoices/:id/dashboard — Dashboard summary for a card
-router.get('/:id/dashboard', authMiddleware, ouroOnly, async (req, res) => {
+router.get('/:id/dashboard', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { id } = req.params // invoiceId
 
@@ -232,7 +234,7 @@ router.get('/:id/dashboard', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // DELETE /api/finance/invoices/:id — Delete an invoice (cascade deletes items)
-router.delete('/:id', authMiddleware, ouroOnly, async (req, res) => {
+router.delete('/:id', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { id } = req.params
 
@@ -260,7 +262,7 @@ router.delete('/:id', authMiddleware, ouroOnly, async (req, res) => {
 // =============================================
 
 // POST /api/finance/invoices/:id/items — Add item to invoice
-router.post('/:id/items', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/:id/items', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { id: invoiceId } = req.params
         const { description, amount, transactionDate, categoryId, aiCategory, aiConfidence, installment } = req.body
@@ -300,7 +302,7 @@ router.post('/:id/items', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // PATCH /api/finance/invoices/items/:itemId — Update an item
-router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
+router.patch('/items/:itemId', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { itemId } = req.params
         const { categoryId, categoryName, isConfirmed, description, amount } = req.body
@@ -421,7 +423,7 @@ router.patch('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // DELETE /api/finance/invoices/items/:itemId — Delete an item
-router.delete('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
+router.delete('/items/:itemId', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { itemId } = req.params
 
@@ -457,7 +459,7 @@ router.delete('/items/:itemId', authMiddleware, ouroOnly, async (req, res) => {
 })
 
 // POST /api/finance/invoices/items/bulk-delete — Bulk delete invoice items
-router.post('/items/bulk-delete', authMiddleware, ouroOnly, async (req, res) => {
+router.post('/items/bulk-delete', authMiddleware, cartoesGuard, async (req, res) => {
     const { ids } = req.body
     if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ message: 'Nenhum item selecionado.' })
@@ -505,7 +507,7 @@ router.post('/items/bulk-delete', authMiddleware, ouroOnly, async (req, res) => 
 // =============================================
 
 // GET /api/finance/invoices/card/:cardId/summary — Full card dashboard data
-router.get('/card/:cardId/summary', authMiddleware, ouroOnly, async (req, res) => {
+router.get('/card/:cardId/summary', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { cardId } = req.params
         const { year } = req.query
@@ -571,7 +573,7 @@ router.get('/card/:cardId/summary', authMiddleware, ouroOnly, async (req, res) =
 // =============================================
 
 // POST /api/finance/invoices/upload — Upload invoice PDF/image for AI parsing
-router.post('/upload', authMiddleware, ouroOnly, (req, res, next) => {
+router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
     upload.single('file')(req, res, (err) => {
         if (err) {
             if (err.code === 'LIMIT_FILE_SIZE') {
@@ -734,7 +736,7 @@ router.post('/upload', authMiddleware, ouroOnly, (req, res, next) => {
 })
 
 // GET /api/finance/invoices/dashboard-summary — Consolidated cards summary for main dashboard
-router.get('/dashboard-summary', authMiddleware, ouroOnly, async (req, res) => {
+router.get('/dashboard-summary', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const currentDate = new Date()
         const currentMonth = currentDate.getMonth() + 1

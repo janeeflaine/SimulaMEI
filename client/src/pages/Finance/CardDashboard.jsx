@@ -40,7 +40,14 @@ export default function CardDashboard() {
 
     const API = import.meta.env.VITE_API_URL || ''
     const token = localStorage.getItem('token')
-    const isOuro = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
+    const hasCartoes = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
+    const hasUploadFaturas = user?.planFeatures?.upload_faturas || user?.isInTrial || user?.role === 'ADMIN'
+
+    // Manual item modal state
+    const [showManualModal, setShowManualModal] = useState(false)
+    const [manualForm, setManualForm] = useState({ description: '', amount: '', transactionDate: '', categoryName: '' })
+    const [manualSaving, setManualSaving] = useState(false)
+    const [manualError, setManualError] = useState('')
 
     // Fetch card dashboard data
     const fetchDashboard = useCallback(async () => {
@@ -278,12 +285,82 @@ export default function CardDashboard() {
         }
     }
 
-    if (!isOuro) {
+    // --- ADD MANUAL ITEM ---
+    const handleAddManualItem = async () => {
+        if (!manualForm.description || !manualForm.amount) {
+            setManualError('Descrição e valor são obrigatórios.')
+            return
+        }
+        setManualSaving(true)
+        setManualError('')
+        try {
+            // Find or create invoice for selected month
+            const now = new Date()
+            const refMonth = selectedMonth || (now.getMonth() + 1)
+            const refYear = year
+
+            // Find the card's dueDate to set invoice due date
+            const dueDateDay = data?.card?.dueDate || 10
+            const invoiceDueDate = `${refYear}-${String(refMonth).padStart(2,'0')}-${String(dueDateDay).padStart(2,'0')}`
+
+            // Try to find existing invoice
+            const listRes = await fetch(`${API}/api/finance/invoices?cardId=${cardId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            const invoices = listRes.ok ? await listRes.json() : []
+            let invoice = invoices.find(inv => inv.referenceMonth === refMonth && inv.referenceYear === refYear)
+
+            if (!invoice) {
+                // Create invoice for this month
+                const createRes = await fetch(`${API}/api/finance/invoices`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cardId, referenceMonth: refMonth, referenceYear: refYear, dueDate: invoiceDueDate })
+                })
+                if (!createRes.ok) throw new Error('Erro ao criar fatura')
+                invoice = await createRes.json()
+            }
+
+            // Resolve categoryName to id
+            let categoryId = null
+            if (manualForm.categoryName) {
+                const catMatch = (await fetch(`${API}/api/finance/categories`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }).then(r => r.json()).catch(() => [])).find(c => c.name === manualForm.categoryName)
+                if (catMatch) categoryId = catMatch.id
+            }
+
+            // Add item
+            const itemRes = await fetch(`${API}/api/finance/invoices/${invoice.id}/items`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    description: manualForm.description,
+                    amount: parseFloat(manualForm.amount),
+                    transactionDate: manualForm.transactionDate || null,
+                    categoryId,
+                    isConfirmed: true
+                })
+            })
+            if (!itemRes.ok) throw new Error('Erro ao adicionar item')
+
+            setShowManualModal(false)
+            setManualForm({ description: '', amount: '', transactionDate: '', categoryName: '' })
+            await fetchDashboard()
+            await fetchItems()
+        } catch (err) {
+            setManualError(err.message || 'Erro de conexão')
+        } finally {
+            setManualSaving(false)
+        }
+    }
+
+    if (!hasCartoes) {
         return (
             <div className="container py-8">
                 <FeatureLock
                     featureName="Dashboard do Cartão"
-                    requiredPlan="Ouro"
+                    requiredPlan="Gratuito"
                     description="Visualize gráficos detalhados de gastos e categorias por cartão."
                     icon="📊"
                 />
@@ -402,14 +479,26 @@ export default function CardDashboard() {
                     <div className="card-hero-info">
                         <h1>{card.name}</h1>
                         <p>Dashboard de gastos e análises do cartão</p>
-                        <div style={{ marginBottom: '0.75rem', marginTop: '0.5rem' }}>
-                            <Link
-                                to={`/financas/cartoes/${cardId}/upload`}
-                                className="btn btn-primary btn-sm"
-                                style={{ textDecoration: 'none' }}
+                        <div style={{ marginBottom: '0.75rem', marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                    setManualForm({ description: '', amount: '', transactionDate: new Date().toISOString().split('T')[0], categoryName: categories[0] || '' })
+                                    setManualError('')
+                                    setShowManualModal(true)
+                                }}
                             >
-                                📤 Upload de Fatura
-                            </Link>
+                                ➕ Adicionar Item
+                            </button>
+                            {hasUploadFaturas && (
+                                <Link
+                                    to={`/financas/cartoes/${cardId}/upload`}
+                                    className="btn btn-primary btn-sm"
+                                    style={{ textDecoration: 'none' }}
+                                >
+                                    📤 Upload de Fatura IA
+                                </Link>
+                            )}
                         </div>
                         <div className="hero-meta">
                             <div className="hero-meta-item">
@@ -787,12 +876,96 @@ export default function CardDashboard() {
                         <div className="cd-empty">
                             <span className="empty-icon">🧾</span>
                             <h3>Nenhum item nesta fatura</h3>
-                            <p>Faça upload de um PDF/imagem da fatura para que a IA extraia os itens automaticamente.</p>
+                            <p>
+                                Adicione itens manualmente ou{hasUploadFaturas ? ' faça upload da fatura para extração automática via IA.' : ' faça upgrade para o Prata para usar o Upload IA.'}
+                            </p>
+                            <button className="btn btn-primary btn-sm" style={{ marginTop: '1rem' }} onClick={() => {
+                                setManualForm({ description: '', amount: '', transactionDate: new Date().toISOString().split('T')[0], categoryName: categories[0] || '' })
+                                setManualError('')
+                                setShowManualModal(true)
+                            }}>
+                                ➕ Adicionar Item Manualmente
+                            </button>
                         </div>
                     )}
                 </div>
 
             </div>
+
+            {/* Manual Item Modal */}
+            {showManualModal && (
+                <div className="modal-overlay" onClick={() => setShowManualModal(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+                        <button className="close-x" onClick={() => setShowManualModal(false)}>×</button>
+                        <h3>➕ Adicionar Item à Fatura</h3>
+                        <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+                            O item será adicionado à fatura de <strong>{MONTH_FULL[selectedMonth || (new Date().getMonth() + 1)]}/{year}</strong>.
+                        </p>
+
+                        <div className="form-group">
+                            <label>Descrição *</label>
+                            <input
+                                type="text"
+                                autoFocus
+                                required
+                                value={manualForm.description}
+                                onChange={e => setManualForm(p => ({ ...p, description: e.target.value }))}
+                                placeholder="Ex: Netflix, Mercado, Posto de gasolina..."
+                            />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div className="form-group">
+                                <label>Valor (R$) *</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    required
+                                    value={manualForm.amount}
+                                    onChange={e => setManualForm(p => ({ ...p, amount: e.target.value }))}
+                                    placeholder="0,00"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Data da Compra</label>
+                                <input
+                                    type="date"
+                                    value={manualForm.transactionDate}
+                                    onChange={e => setManualForm(p => ({ ...p, transactionDate: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Categoria</label>
+                            <select
+                                value={manualForm.categoryName}
+                                onChange={e => setManualForm(p => ({ ...p, categoryName: e.target.value }))}
+                            >
+                                <option value="">Sem categoria</option>
+                                {categories.map((cat, i) => (
+                                    <option key={i} value={cat}>{cat}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {manualError && (
+                            <div className="alert alert-warning" style={{ marginBottom: '1rem' }}>
+                                <span>⚠️</span><span>{manualError}</span>
+                            </div>
+                        )}
+
+                        <div className="modal-actions">
+                            <button className="btn btn-secondary" onClick={() => setShowManualModal(false)}>Cancelar</button>
+                            <button className="btn btn-primary" onClick={handleAddManualItem} disabled={manualSaving}>
+                                {manualSaving ? 'Salvando...' : '💾 Salvar Item'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div >
     )
 }

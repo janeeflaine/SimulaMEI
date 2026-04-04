@@ -4,7 +4,9 @@ const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { validateWalletOwnership } = require('../middleware/walletSecurity')
 const { calculateBillingDate } = require('../utils/billingDate')
-const { prataPlusOnly } = require('../middleware/planGuard')
+const { featureGuard } = require('../middleware/planGuard')
+const cartoesGuard = featureGuard('cartoes')
+const transferenciasGuard = featureGuard('transferencias', 2)
 
 // Verifica limite de carteiras do plano antes de criar uma nova
 const checkWalletLimit = async (req, res, next) => {
@@ -121,7 +123,7 @@ router.get('/categories', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/categories', authMiddleware, prataPlusOnly, async (req, res) => {
+router.post('/categories', authMiddleware, featureGuard('categorias'), async (req, res) => {
     const { name, type } = req.body
     try {
         const { rows: [newCat] } = await db.query(
@@ -135,7 +137,7 @@ router.post('/categories', authMiddleware, prataPlusOnly, async (req, res) => {
     }
 })
 
-router.patch('/categories/:id', authMiddleware, prataPlusOnly, async (req, res) => {
+router.patch('/categories/:id', authMiddleware, featureGuard('categorias'), async (req, res) => {
     const { name, type } = req.body
     try {
         const { rows: [updated] } = await db.query(
@@ -149,7 +151,7 @@ router.patch('/categories/:id', authMiddleware, prataPlusOnly, async (req, res) 
     }
 })
 
-router.delete('/categories/:id', authMiddleware, prataPlusOnly, async (req, res) => {
+router.delete('/categories/:id', authMiddleware, featureGuard('categorias'), async (req, res) => {
     try {
         await db.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
         res.json({ message: 'Categoria excluída' })
@@ -177,7 +179,7 @@ router.get('/cards', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/cards', authMiddleware, prataPlusOnly, async (req, res) => {
+router.post('/cards', authMiddleware, cartoesGuard, async (req, res) => {
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
     try {
         const { rows: [newCard] } = await db.query(
@@ -191,7 +193,7 @@ router.post('/cards', authMiddleware, prataPlusOnly, async (req, res) => {
     }
 })
 
-router.patch('/cards/:id', authMiddleware, prataPlusOnly, async (req, res) => {
+router.patch('/cards/:id', authMiddleware, cartoesGuard, async (req, res) => {
     const { id } = req.params
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
     try {
@@ -215,7 +217,7 @@ router.patch('/cards/:id', authMiddleware, prataPlusOnly, async (req, res) => {
     }
 })
 
-router.delete('/cards/:id', authMiddleware, prataPlusOnly, async (req, res) => {
+router.delete('/cards/:id', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         await db.query('DELETE FROM credit_cards WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
         res.json({ message: 'Cartão excluído' })
@@ -531,7 +533,7 @@ router.get('/stats/cash-flow', authMiddleware, async (req, res) => {
 
 // --- TRANSFERS ---
 
-router.post('/transfers', authMiddleware, prataPlusOnly, validateWalletOwnership, async (req, res) => {
+router.post('/transfers', authMiddleware, transferenciasGuard, validateWalletOwnership, async (req, res) => {
     const { sourceWalletId, targetWalletId, amount, date, description } = req.body;
 
     if (!sourceWalletId || !targetWalletId || !amount || !date) {

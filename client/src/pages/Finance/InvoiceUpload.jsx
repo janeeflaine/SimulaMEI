@@ -39,6 +39,7 @@ export default function InvoiceUpload() {
     const API = import.meta.env.VITE_API_URL || ''
     const token = localStorage.getItem('token')
     const isOuro = user?.planFeatures?.upload_faturas || user?.isInTrial || user?.role === 'ADMIN'
+    // upload_faturas is available from Prata onwards (migration v6)
 
     // States
     const [dragOver, setDragOver] = useState(false)
@@ -324,9 +325,9 @@ export default function InvoiceUpload() {
         return (
             <div className="container py-8">
                 <FeatureLock
-                    featureName="Upload de Faturas"
-                    requiredPlan="Ouro"
-                    description="Faça upload de faturas e deixe a IA extrair os itens automaticamente."
+                    featureName="Upload de Faturas com IA"
+                    requiredPlan="Prata"
+                    description="Faça upload de faturas e deixe a IA extrair os itens automaticamente. Disponível nos planos Prata e Ouro."
                     icon="📤"
                 />
             </div>

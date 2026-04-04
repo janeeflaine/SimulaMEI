@@ -72,10 +72,15 @@ const authMiddleware = async (req, res, next) => {
             }
         }
 
-        // Parse planFeatures (stored as TEXT in DB, may already be object after downgrade)
+        // Parse planFeatures — if plan was just downgraded, re-fetch the free plan's features
         let planFeatures = {}
         try {
-            const raw = user.planFeatures
+            let raw = user.planFeatures
+            if (trialExpired || (finalPlanId && finalPlanId !== Number(user.planId))) {
+                // planId was changed in this request; fetch fresh features for the new plan
+                const freshPlan = await db.query('SELECT features FROM plans WHERE id = $1', [finalPlanId])
+                raw = freshPlan.rows[0]?.features ?? null
+            }
             planFeatures = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
         } catch (_) { planFeatures = {} }
 

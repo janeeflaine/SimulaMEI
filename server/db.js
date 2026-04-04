@@ -489,6 +489,23 @@ VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
       }
     }
 
+    // ─── Migration v6: cartoes para todos; upload_faturas para Prata+ ───────────
+    const migV6 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v6'")
+    if (migV6.rows.length === 0) {
+      const plans = await pool.query(`SELECT id, name, features FROM plans WHERE name IN ('Gratuito','Prata','Ouro')`)
+      for (const plan of plans.rows) {
+        let f = {}
+        try { f = JSON.parse(plan.features || '{}') } catch (_) {}
+        // All plans get card management
+        f.cartoes = true
+        // Prata and Ouro get AI invoice upload
+        if (plan.name === 'Prata' || plan.name === 'Ouro') f.upload_faturas = true
+        await pool.query(`UPDATE plans SET features = $1 WHERE id = $2`, [JSON.stringify(f), plan.id])
+      }
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v6', 'done')`)
+      console.log('✅ Migration v6: cartoes liberado para todos; upload_faturas para Prata+')
+    }
+
     // ─── Migration v5: categorias disponível no plano Gratuito ──────────────────
     const migV5 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v5'")
     if (migV5.rows.length === 0) {
