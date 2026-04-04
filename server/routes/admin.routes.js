@@ -1,4 +1,5 @@
 const express = require('express')
+const bcrypt = require('bcryptjs')
 const { db, pool } = require('../db')
 const { authMiddleware, adminMiddleware } = require('../middleware/auth')
 const auditLogger = require('../utils/auditLogger')
@@ -95,15 +96,34 @@ router.get('/users', async (req, res) => {
 router.put('/users/:id', async (req, res) => {
     try {
         const { id } = req.params
-        const { isBlocked, planId, role } = req.body
+        const { isBlocked, planId, role, name, email, newPassword } = req.body
 
         // Fetch old values for audit
-        const oldUserResult = await db.query('SELECT "isBlocked", "planId", role FROM users WHERE id = $1', [id])
-        const oldUser = oldUserResult.rows[0] || {}
+        const oldUserResult = await db.query('SELECT "isBlocked", "planId", role, name, email FROM users WHERE id = $1', [id])
+        const oldUser = oldUserResult.rows[0]
+        if (!oldUser) return res.status(404).json({ message: 'Usuário não encontrado' })
+
+        // Validate email uniqueness if changing
+        if (email && email !== oldUser.email) {
+            const emailCheck = await db.query('SELECT id FROM users WHERE email = $1 AND id != $2', [email, id])
+            if (emailCheck.rows.length > 0) {
+                return res.status(400).json({ message: 'Este e-mail já está em uso por outro usuário.' })
+            }
+        }
 
         const updates = []
         const params = []
         let paramIndex = 1
+
+        if (name !== undefined && name.trim()) {
+            updates.push(`name = $${paramIndex++}`)
+            params.push(name.trim())
+        }
+
+        if (email !== undefined && email.trim()) {
+            updates.push(`email = $${paramIndex++}`)
+            params.push(email.trim().toLowerCase())
+        }
 
         if (isBlocked !== undefined) {
             updates.push(`"isBlocked" = $${paramIndex++}`)
@@ -116,7 +136,6 @@ router.put('/users/:id', async (req, res) => {
         }
 
         if (role !== undefined) {
-            // FIX-9: Validate role to prevent arbitrary privilege escalation
             const allowedRoles = ['USER', 'ADMIN']
             if (!allowedRoles.includes(role)) {
                 return res.status(400).json({ message: 'Role inválida. Valores permitidos: USER, ADMIN' })
@@ -125,32 +144,54 @@ router.put('/users/:id', async (req, res) => {
             params.push(role)
         }
 
+        // Admin password reset — no old password required
+        if (newPassword) {
+            if (newPassword.length < 8) {
+                return res.status(400).json({ message: 'A nova senha deve ter pelo menos 8 caracteres.' })
+            }
+            const hashed = await bcrypt.hash(newPassword, 10)
+            updates.push(`password = $${paramIndex++}`)
+            params.push(hashed)
+            // Invalidate all existing sessions/tokens for this user
+            updates.push(`"sessionVersion" = COALESCE("sessionVersion", 1) + 1`)
+            await pool.query(
+                `UPDATE user_sessions SET is_active = 0, invalidated_at = NOW() WHERE user_id = $1`,
+                [id]
+            )
+        }
+
         if (updates.length > 0) {
             updates.push(`"updatedAt" = CURRENT_TIMESTAMP`)
             params.push(id)
 
             await db.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex}`, params)
 
-            // Determine event type for audit
+            // Determine primary event type for audit
             let eventType = 'USER_UPDATED'
-            if (isBlocked !== undefined) eventType = isBlocked ? 'USER_BLOCKED' : 'USER_UNBLOCKED'
+            if (newPassword)              eventType = 'ADMIN_PASSWORD_RESET'
+            else if (isBlocked !== undefined) eventType = isBlocked ? 'USER_BLOCKED' : 'USER_UNBLOCKED'
             else if (planId !== undefined) eventType = 'USER_PLAN_CHANGED'
-            else if (role !== undefined) eventType = 'USER_ROLE_CHANGED'
+            else if (role !== undefined)   eventType = 'USER_ROLE_CHANGED'
+
+            const safeBody = { ...req.body }
+            delete safeBody.newPassword // never log passwords
 
             await auditLogger.log({
-                level: 'INFO',
+                level: newPassword ? 'WARN' : 'INFO',
                 event_type: eventType,
                 actor: { user_id: req.user.id, role: req.user.role },
                 context: req.context || {},
                 target: { resource_type: 'USER', resource_id: id },
-                changes: { old_value: oldUser, new_value: req.body }
+                changes: {
+                    old_value: { isBlocked: oldUser.isBlocked, planId: oldUser.planId, role: oldUser.role, name: oldUser.name, email: oldUser.email },
+                    new_value: safeBody
+                }
             })
 
-            // Legacy admin_logs
             await db.query(`
                 INSERT INTO admin_logs ("userId", action, details)
                 VALUES ($1, 'UPDATE_USER', $2)
-            `, [req.user.id, JSON.stringify({ targetUserId: id, changes: req.body })])
+            `, [req.user.id, JSON.stringify({ targetUserId: id, changes: safeBody })])
         }
 
         res.json({ message: 'Usuário atualizado com sucesso' })
