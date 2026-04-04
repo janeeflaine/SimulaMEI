@@ -489,6 +489,21 @@ VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
       }
     }
 
+    // ─── Migration v5: categorias disponível no plano Gratuito ──────────────────
+    const migV5 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v5'")
+    if (migV5.rows.length === 0) {
+      // Lê features atuais do Gratuito e habilita apenas categorias, preservando o resto
+      const gratuitoRow = await pool.query(`SELECT features FROM plans WHERE name = 'Gratuito'`)
+      if (gratuitoRow.rows.length > 0) {
+        let f = {}
+        try { f = JSON.parse(gratuitoRow.rows[0].features || '{}') } catch (_) {}
+        f.categorias = true
+        await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Gratuito'`, [JSON.stringify(f)])
+      }
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v5', 'done')`)
+      console.log('✅ Migration v5: categorias habilitadas no plano Gratuito')
+    }
+
     // ─── Migration v4: atualiza wallet limits existentes para novos padrões ─────
     const migV4 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v4'")
     if (migV4.rows.length === 0) {

@@ -307,11 +307,11 @@ export default function FinancialStatement() {
         <div className="financial-statement-page">
             <div className="statement-container">
                 {isGratuito && (
-                    <div className="alert-banner" style={{ marginBottom: '1.5rem' }}>
+                    <div className="alert alert-warning" style={{ marginBottom: '1.5rem' }}>
                         <span>📅</span>
                         <span>
                             Plano Gratuito exibe apenas os últimos 30 dias.{' '}
-                            <a href="/planos" style={{ fontWeight: 600 }}>Faça upgrade para o Prata</a> e acesse todo o histórico.
+                            <a href="/planos" style={{ fontWeight: 600, color: 'inherit', textDecoration: 'underline' }}>Faça upgrade para o Prata</a> e acesse todo o histórico.
                         </span>
                     </div>
                 )}

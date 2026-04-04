@@ -1,19 +1,45 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import './UserLayout.css'
 
 export default function UserLayout() {
-    const { user, logout } = useAuth()
+    const { user, logout, refreshUser } = useAuth()
     const location = useLocation()
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isFinanceOpen, setIsFinanceOpen] = useState(false)
+    const lastRefresh = useRef(0)
 
-    // Close menus on route change
+    // Refresh user data on every route change and when tab regains focus
+    // This ensures plan changes made by admin take effect without requiring re-login
     useEffect(() => {
         setIsMenuOpen(false)
         setIsFinanceOpen(false)
+        if (!user) return
+        const now = Date.now()
+        if (now - lastRefresh.current > 10_000) {
+            lastRefresh.current = now
+            refreshUser()
+        }
     }, [location])
+
+    useEffect(() => {
+        const onFocus = () => {
+            if (!user) return
+            const now = Date.now()
+            if (now - lastRefresh.current > 10_000) {
+                lastRefresh.current = now
+                refreshUser()
+            }
+        }
+        window.addEventListener('focus', onFocus)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') onFocus()
+        })
+        return () => {
+            window.removeEventListener('focus', onFocus)
+        }
+    }, [user])
 
     return (
         <div className="user-layout">

@@ -10,10 +10,10 @@ export default function AdminFeatures() {
         // ── Grátis ──────────────────────────────────────────────────────────
         { key: 'comparativo',    name: 'Comparativo MEI x ME',          description: 'Comparar custos entre MEI e Microempresa',              group: 'Grátis' },
         { key: 'alertas',        name: 'Alertas de Limite',              description: 'Alertas sobre limite anual de faturamento',             group: 'Grátis' },
+        { key: 'categorias',     name: 'Categorias Personalizadas',      description: 'Criar e gerenciar categorias de receitas e despesas',   group: 'Grátis' },
         // ── Prata ────────────────────────────────────────────────────────────
         { key: 'historico',      name: 'Histórico de Simulações',        description: 'Salvar e visualizar simulações anteriores',             group: 'Prata'  },
         { key: 'pdf',            name: 'Exportar PDF',                   description: 'Baixar relatórios em PDF',                             group: 'Prata'  },
-        { key: 'categorias',     name: 'Categorias Personalizadas',      description: 'Criar e gerenciar categorias de receitas e despesas',   group: 'Prata'  },
         { key: 'contas_pagar',   name: 'Contas a Pagar (Boletos)',        description: 'Gerenciar boletos e contas futuras',                   group: 'Prata'  },
         { key: 'transferencias', name: 'Transferências entre Carteiras', description: 'Mover saldo entre carteiras PF e PJ',                  group: 'Prata'  },
         { key: 'multi_carteiras',name: 'Multi-Carteiras',                description: 'Criar e gerenciar múltiplas carteiras',                group: 'Prata'  },

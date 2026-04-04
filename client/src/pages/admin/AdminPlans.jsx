@@ -1,6 +1,20 @@
 import { useState, useEffect } from 'react'
 import './AdminPages.css'
 
+// Lista mestra de funcionalidades — adicione aqui sempre que surgir uma nova feature
+const ALL_FEATURES = [
+    { key: 'comparativo',    name: 'Comparativo MEI x ME',          group: 'Padrão Grátis' },
+    { key: 'alertas',        name: 'Alertas de Limite',              group: 'Padrão Grátis' },
+    { key: 'categorias',     name: 'Categorias Personalizadas',      group: 'Padrão Grátis' },
+    { key: 'historico',      name: 'Histórico de Simulações',        group: 'Prata' },
+    { key: 'pdf',            name: 'Exportar PDF',                   group: 'Prata' },
+    { key: 'contas_pagar',   name: 'Contas a Pagar (Boletos)',        group: 'Prata' },
+    { key: 'transferencias', name: 'Transferências entre Carteiras', group: 'Prata' },
+    { key: 'multi_carteiras',name: 'Multi-Carteiras',                group: 'Prata' },
+    { key: 'cartoes',        name: 'Cartões (Modo Manual)',          group: 'Prata' },
+    { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     group: 'Ouro' },
+]
+
 export default function AdminPlans() {
     const [plans, setPlans] = useState([])
     const [loading, setLoading] = useState(true)
@@ -8,12 +22,7 @@ export default function AdminPlans() {
     const [newPlan, setNewPlan] = useState({
         name: '',
         price: 0,
-        features: {
-            historico: true,
-            pdf: false,
-            comparativo: false,
-            alertas: false
-        },
+        features: {},
         isActive: true
     })
 
@@ -174,16 +183,23 @@ export default function AdminPlans() {
 
                         <div className="form-group">
                             <label className="form-label">Funcionalidades</label>
-                            {['historico', 'pdf', 'comparativo', 'alertas'].map((feature) => (
-                                <div key={feature} className="feature-row" style={{ padding: 'var(--spacing-2) 0' }}>
-                                    <span style={{ textTransform: 'capitalize' }}>{feature}</span>
-                                    <div
-                                        className={`admin-toggle ${editingPlan.features?.[feature] ? 'active' : ''}`}
-                                        onClick={() => setEditingPlan({
-                                            ...editingPlan,
-                                            features: { ...editingPlan.features, [feature]: !editingPlan.features?.[feature] }
-                                        })}
-                                    />
+                            {['Padrão Grátis', 'Prata', 'Ouro'].map(group => (
+                                <div key={group}>
+                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#93c5fd', padding: '10px 0 4px', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '8px' }}>
+                                        {group === 'Padrão Grátis' ? '🆓 Padrão Grátis' : group === 'Prata' ? '🥈 Prata' : '🥇 Ouro'}
+                                    </div>
+                                    {ALL_FEATURES.filter(f => f.group === group).map((feature) => (
+                                        <div key={feature.key} className="feature-row" style={{ padding: '8px 0' }}>
+                                            <span>{feature.name}</span>
+                                            <div
+                                                className={`admin-toggle ${editingPlan.features?.[feature.key] ? 'active' : ''}`}
+                                                onClick={() => setEditingPlan({
+                                                    ...editingPlan,
+                                                    features: { ...editingPlan.features, [feature.key]: !editingPlan.features?.[feature.key] }
+                                                })}
+                                            />
+                                        </div>
+                                    ))}
                                 </div>
                             ))}
                         </div>
