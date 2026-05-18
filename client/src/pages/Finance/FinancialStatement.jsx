@@ -323,7 +323,11 @@ export default function FinancialStatement() {
                     <div className="header-actions">
                         {/* Botão de Transferência — Prata+ */}
                         {isPrataPlus && (
-                            <button className="btn btn-outline" onClick={() => setIsTransferModalOpen(true)}>
+                            <button
+                                className="btn btn-outline"
+                                onClick={() => setIsTransferModalOpen(true)}
+                                title="Mova dinheiro entre suas carteiras (ex: da conta PJ para a conta PF). O sistema registra automaticamente a saída em uma e a entrada na outra."
+                            >
                                 <ArrowUpCircle size={18} style={{ transform: 'rotate(45deg)' }} /> Transferir
                             </button>
                         )}
@@ -620,7 +624,6 @@ export default function FinancialStatement() {
                     <FinanceQuickActionModal
                         onClose={() => setIsCreateModalOpen(false)}
                         onSuccess={() => {
-                            setIsCreateModalOpen(false)
                             fetchTransactions()
                         }}
                     />

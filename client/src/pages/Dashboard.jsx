@@ -1060,7 +1060,6 @@ export default function Dashboard() {
                 <FinanceQuickActionModal
                     onClose={() => setIsFinanceModalOpen(false)}
                     onSuccess={() => {
-                        setIsFinanceModalOpen(false)
                         fetchTransactions()
                         fetchStats()
                         fetchDueTodayBills()

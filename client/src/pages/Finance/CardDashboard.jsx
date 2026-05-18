@@ -43,6 +43,9 @@ export default function CardDashboard() {
     const hasCartoes = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
     const hasUploadFaturas = user?.planFeatures?.upload_faturas || user?.isInTrial || user?.role === 'ADMIN'
 
+    // Upgrade promo modal
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+
     // Manual item modal state
     const [showManualModal, setShowManualModal] = useState(false)
     const [manualForm, setManualForm] = useState({ description: '', amount: '', transactionDate: '', categoryName: '' })
@@ -490,7 +493,7 @@ export default function CardDashboard() {
                             >
                                 ➕ Adicionar Item
                             </button>
-                            {hasUploadFaturas && (
+                            {hasUploadFaturas ? (
                                 <Link
                                     to={`/financas/cartoes/${cardId}/upload`}
                                     className="btn btn-primary btn-sm"
@@ -498,6 +501,14 @@ export default function CardDashboard() {
                                 >
                                     📤 Upload de Fatura IA
                                 </Link>
+                            ) : (
+                                <button
+                                    className="btn btn-sm"
+                                    style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', cursor: 'pointer' }}
+                                    onClick={() => setShowUpgradeModal(true)}
+                                >
+                                    🔒 Cadastrar Fatura com IA
+                                </button>
                             )}
                         </div>
                         <div className="hero-meta">
@@ -962,6 +973,39 @@ export default function CardDashboard() {
                                 {manualSaving ? 'Salvando...' : '💾 Salvar Item'}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Upgrade Promo Modal — AI Invoice Upload */}
+            {showUpgradeModal && (
+                <div className="modal-overlay" onClick={() => setShowUpgradeModal(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ textAlign: 'center', maxWidth: '420px' }}>
+                        <div style={{ fontSize: '3.5rem', marginBottom: '0.5rem' }}>🤖</div>
+                        <h2 style={{ marginBottom: '0.5rem' }}>Cadastre Faturas com Inteligência Artificial</h2>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+                            Com o plano <strong style={{ color: '#a78bfa' }}>Prata</strong> ou <strong style={{ color: '#fbbf24' }}>Ouro</strong>, você pode fazer upload do PDF ou imagem da sua fatura e a IA lê e importa todos os itens automaticamente — sem digitar nada.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(99,102,241,0.08)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+                                <span style={{ fontSize: '1.25rem' }}>⚡</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Importação automática de todos os itens da fatura</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(99,102,241,0.08)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+                                <span style={{ fontSize: '1.25rem' }}>🏷️</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Categorização inteligente das despesas</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(99,102,241,0.08)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+                                <span style={{ fontSize: '1.25rem' }}>⏱️</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Economize tempo — processe faturas em segundos</span>
+                            </div>
+                        </div>
+                        <button className="btn btn-primary" style={{ width: '100%', marginBottom: '0.75rem' }} onClick={() => setShowUpgradeModal(false)}>
+                            ✨ Fazer Upgrade para Prata
+                        </button>
+                        <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setShowUpgradeModal(false)}>
+                            Continuar no Gratuito
+                        </button>
                     </div>
                 </div>
             )}

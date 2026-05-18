@@ -171,6 +171,21 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, initialDat
             if (res.ok) {
                 showToast(initialData?.id ? 'Lançamento atualizado!' : 'Lançamento salvo!', 'success')
                 onSuccess()
+                if (!initialData?.id) {
+                    setStep(1)
+                    setFormData({
+                        ...formData,
+                        target: '',
+                        type: '',
+                        business_unit_id: '',
+                        amount: '',
+                        categoryId: '',
+                        paymentMethod: 'Dinheiro',
+                        cardId: '',
+                        description: '',
+                        dueDate: ''
+                    })
+                }
             } else {
                 const data = await res.json()
                 showToast(`Erro: ${data.message || 'Falha ao processar'}`, 'error')
