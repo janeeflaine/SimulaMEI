@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import FeatureLock from '../../components/FeatureLock'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import './FinanceCategories.css'
 
 export default function BillsToPay() {
@@ -103,6 +105,194 @@ export default function BillsToPay() {
 
     const todayString = new Date().toLocaleDateString('sv-SE')
 
+    const generateBillsPDF = () => {
+        try {
+            const doc = new jsPDF('portrait', 'mm', 'a4')
+            const pageWidth = doc.internal.pageSize.getWidth()
+            const pageHeight = doc.internal.pageSize.getHeight()
+            const margin = 14
+
+            // ─── HEADER GRADIENT BAR ───
+            doc.setFillColor(16, 185, 129) // emerald-500
+            doc.rect(0, 0, pageWidth, 38, 'F')
+            doc.setFillColor(5, 150, 105) // emerald-600 accent stripe
+            doc.rect(0, 35, pageWidth, 3, 'F')
+
+            // ─── HEADER TEXT ───
+            doc.setFont('helvetica', 'bold')
+            doc.setFontSize(22)
+            doc.setTextColor(255, 255, 255)
+            doc.text('📄 Contas a Pagar', margin, 18)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            doc.text('Relatório de Boletos Pendentes', margin, 27)
+            // Date on right side
+            doc.setFontSize(9)
+            const today = new Date()
+            const dateStr = `Gerado em: ${today.toLocaleDateString('pt-BR')} às ${today.toLocaleTimeString('pt-BR')}`
+            doc.text(dateStr, pageWidth - margin, 27, { align: 'right' })
+            doc.text(`Usuário: ${user?.name || 'MEI'}`, pageWidth - margin, 18, { align: 'right' })
+
+            // ─── SUMMARY CARDS ───
+            const overdueBills = bills.filter(b => b.dueDate < todayString)
+            const todayBills = bills.filter(b => b.dueDate === todayString)
+            const upcomingBills = bills.filter(b => b.dueDate > todayString)
+            const totalAmount = bills.reduce((sum, b) => sum + (b.amount || 0), 0)
+            const overdueAmount = overdueBills.reduce((sum, b) => sum + (b.amount || 0), 0)
+
+            const cardY = 46
+            const cardH = 22
+            const cardW = (pageWidth - margin * 2 - 12) / 4 // 4 cards with gaps
+            const cardGap = 4
+
+            const cards = [
+                { label: 'Total Pendente', value: formatCurrency(totalAmount), bg: [241, 245, 249], accent: [30, 41, 59], icon: '💰' },
+                { label: 'Vencidos', value: `${overdueBills.length} boleto(s)`, bg: [254, 242, 242], accent: [239, 68, 68], icon: '🚨' },
+                { label: 'Vencem Hoje', value: `${todayBills.length} boleto(s)`, bg: [255, 251, 235], accent: [217, 119, 6], icon: '📅' },
+                { label: 'A Vencer', value: `${upcomingBills.length} boleto(s)`, bg: [236, 253, 245], accent: [16, 185, 129], icon: '✅' },
+            ]
+
+            cards.forEach((card, i) => {
+                const x = margin + i * (cardW + cardGap)
+                // Card background
+                doc.setFillColor(...card.bg)
+                doc.roundedRect(x, cardY, cardW, cardH, 3, 3, 'F')
+                // Accent left bar
+                doc.setFillColor(...card.accent)
+                doc.rect(x, cardY, 2.5, cardH, 'F')
+                // Label
+                doc.setFont('helvetica', 'normal')
+                doc.setFontSize(7.5)
+                doc.setTextColor(100, 116, 139) // slate-500
+                doc.text(card.label, x + 6, cardY + 7)
+                // Value
+                doc.setFont('helvetica', 'bold')
+                doc.setFontSize(10)
+                doc.setTextColor(...card.accent)
+                doc.text(card.value, x + 6, cardY + 16)
+            })
+
+            // ─── TABLE ───
+            const tableStartY = cardY + cardH + 10
+
+            // Section title
+            doc.setFont('helvetica', 'bold')
+            doc.setFontSize(12)
+            doc.setTextColor(30, 41, 59)
+            doc.text('Detalhamento dos Boletos', margin, tableStartY - 2)
+
+            const tableData = bills.map(bill => {
+                let status = 'A VENCER'
+                if (bill.dueDate < todayString) status = 'VENCIDO'
+                else if (bill.dueDate === todayString) status = 'VENCE HOJE'
+
+                return [
+                    formatDate(bill.dueDate),
+                    bill.description || 'S/ Descrição',
+                    bill.paymentMethod || '-',
+                    bill.categoryName || 'S/ Categoria',
+                    bill.target === 'BUSINESS' ? 'PJ' : 'PF',
+                    formatCurrency(bill.amount),
+                    status
+                ]
+            })
+
+            autoTable(doc, {
+                startY: tableStartY + 2,
+                head: [['Vencimento', 'Descrição', 'Método', 'Categoria', 'Tipo', 'Valor', 'Status']],
+                body: tableData,
+                styles: {
+                    fontSize: 8.5,
+                    cellPadding: 4,
+                    lineColor: [226, 232, 240],
+                    lineWidth: 0.3,
+                    font: 'helvetica',
+                },
+                headStyles: {
+                    fillColor: [16, 185, 129],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    fontSize: 8,
+                    halign: 'center',
+                },
+                alternateRowStyles: {
+                    fillColor: [248, 250, 252], // slate-50
+                },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 24 },
+                    1: { cellWidth: 'auto' },
+                    2: { halign: 'center', cellWidth: 22 },
+                    3: { cellWidth: 28 },
+                    4: { halign: 'center', cellWidth: 14 },
+                    5: { halign: 'right', cellWidth: 28, fontStyle: 'bold' },
+                    6: { halign: 'center', cellWidth: 24 },
+                },
+                didParseCell: function(data) {
+                    // Style the status column
+                    if (data.section === 'body' && data.column.index === 6) {
+                        const status = data.cell.raw
+                        if (status === 'VENCIDO') {
+                            data.cell.styles.textColor = [239, 68, 68]
+                            data.cell.styles.fontStyle = 'bold'
+                        } else if (status === 'VENCE HOJE') {
+                            data.cell.styles.textColor = [217, 119, 6]
+                            data.cell.styles.fontStyle = 'bold'
+                        } else {
+                            data.cell.styles.textColor = [16, 185, 129]
+                        }
+                    }
+                    // Highlight overdue rows
+                    if (data.section === 'body') {
+                        const rowStatus = tableData[data.row.index]?.[6]
+                        if (rowStatus === 'VENCIDO') {
+                            if (data.column.index !== 6) {
+                                data.cell.styles.fillColor = data.row.index % 2 === 0 ? [254, 242, 242] : [254, 226, 226]
+                            }
+                        }
+                    }
+                },
+                margin: { left: margin, right: margin },
+                tableWidth: 'auto',
+            })
+
+            // ─── TOTAL ROW below table ───
+            const finalY = doc.lastAutoTable.finalY + 4
+            if (overdueAmount > 0) {
+                doc.setFillColor(254, 242, 242)
+                doc.roundedRect(margin, finalY, pageWidth - margin * 2, 12, 2, 2, 'F')
+                doc.setFont('helvetica', 'bold')
+                doc.setFontSize(9)
+                doc.setTextColor(239, 68, 68)
+                doc.text(`⚠ Total Vencido: ${formatCurrency(overdueAmount)}`, margin + 4, finalY + 7.5)
+            }
+
+            doc.setFillColor(236, 253, 245)
+            const totalRowY = overdueAmount > 0 ? finalY + 16 : finalY
+            doc.roundedRect(margin, totalRowY, pageWidth - margin * 2, 12, 2, 2, 'F')
+            doc.setFont('helvetica', 'bold')
+            doc.setFontSize(9)
+            doc.setTextColor(5, 150, 105)
+            doc.text(`💰 Total Geral Pendente: ${formatCurrency(totalAmount)}`, margin + 4, totalRowY + 7.5)
+            doc.text(`${bills.length} boleto(s)`, pageWidth - margin - 4, totalRowY + 7.5, { align: 'right' })
+
+            // ─── FOOTER ───
+            const footerY = pageHeight - 12
+            doc.setDrawColor(226, 232, 240)
+            doc.line(margin, footerY - 4, pageWidth - margin, footerY - 4)
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(7)
+            doc.setTextColor(148, 163, 184) // slate-400
+            doc.text('SimulaMEI — Relatório de Contas a Pagar', margin, footerY)
+            doc.text('Documento gerado automaticamente. Confira os dados com seu controle financeiro.', pageWidth / 2, footerY, { align: 'center' })
+            doc.text('Pág. 1', pageWidth - margin, footerY, { align: 'right' })
+
+            doc.save(`contas-a-pagar-${today.toISOString().split('T')[0]}.pdf`)
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error)
+            alert('Erro ao gerar o PDF. Tente novamente.')
+        }
+    }
+
     if (!isPrataPlus) {
         return (
             <div className="container py-8">
@@ -123,6 +313,30 @@ export default function BillsToPay() {
                     <div className="header-title">
                         <h1>Contas a Pagar</h1>
                         <p>Boletos e compromissos aguardando confirmação</p>
+                    </div>
+                    <div className="header-actions">
+                        {bills.length > 0 && (
+                            <button
+                                onClick={generateBillsPDF}
+                                className="btn btn-primary btn-sm"
+                                id="btn-export-bills-pdf"
+                                style={{
+                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                    border: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '8px 18px',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    borderRadius: '10px',
+                                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)',
+                                    transition: 'all 0.2s',
+                                }}
+                            >
+                                📥 Exportar PDF
+                            </button>
+                        )}
                     </div>
                 </div>
 
