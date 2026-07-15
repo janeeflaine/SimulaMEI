@@ -280,6 +280,19 @@ export default function FinancialStatement() {
 
     // paginatedTransactions was removed, use transactions directly
 
+    // Financial summary computed from loaded transactions
+    const financialTotals = useMemo(() => {
+        const safeTransactions = Array.isArray(transactions) ? transactions : []
+        const totalReceitas = safeTransactions
+            .filter(t => t.type === 'RECEITA')
+            .reduce((sum, t) => sum + (t.amount || 0), 0)
+        const totalDespesas = safeTransactions
+            .filter(t => t.type === 'DESPESA')
+            .reduce((sum, t) => sum + (t.amount || 0), 0)
+        const saldo = totalReceitas - totalDespesas
+        return { totalReceitas, totalDespesas, saldo }
+    }, [transactions])
+
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -567,6 +580,115 @@ export default function FinancialStatement() {
                             }}
                         >
                             Carregando mais transações...
+                        </div>
+                    )}
+
+                    {/* ═══ RESUMO FINANCEIRO ═══ */}
+                    {!loading && transactions.length > 0 && (
+                        <div style={{
+                            padding: '20px 24px',
+                            borderTop: '2px solid var(--color-slate-200)',
+                            background: 'linear-gradient(to bottom, #f8fafc, #ffffff)',
+                        }}>
+                            {/* Nota parcial */}
+                            {hasMore && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    marginBottom: '12px',
+                                    padding: '8px 12px',
+                                    background: '#fffbeb',
+                                    borderRadius: '8px',
+                                    border: '1px solid #fde68a',
+                                    fontSize: '0.8rem',
+                                    color: '#92400e',
+                                }}>
+                                    ⚠️ Totais parciais — role para baixo para carregar todas as transações.
+                                </div>
+                            )}
+
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(3, 1fr)',
+                                gap: '16px',
+                            }}>
+                                {/* Receitas */}
+                                <div style={{
+                                    background: '#ecfdf5',
+                                    borderRadius: '12px',
+                                    padding: '16px 20px',
+                                    borderLeft: '4px solid #10b981',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                    }}>
+                                        <ArrowUpCircle size={18} color="#10b981" />
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                            Total Receitas
+                                        </span>
+                                    </div>
+                                    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#059669' }}>
+                                        + {formatCurrency(financialTotals.totalReceitas)}
+                                    </span>
+                                </div>
+
+                                {/* Despesas */}
+                                <div style={{
+                                    background: '#fef2f2',
+                                    borderRadius: '12px',
+                                    padding: '16px 20px',
+                                    borderLeft: '4px solid #ef4444',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                    }}>
+                                        <ArrowDownCircle size={18} color="#ef4444" />
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                            Total Despesas
+                                        </span>
+                                    </div>
+                                    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#dc2626' }}>
+                                        − {formatCurrency(financialTotals.totalDespesas)}
+                                    </span>
+                                </div>
+
+                                {/* Saldo */}
+                                <div style={{
+                                    background: financialTotals.saldo >= 0 ? 'linear-gradient(135deg, #ecfdf5, #eff6ff)' : 'linear-gradient(135deg, #fef2f2, #fff7ed)',
+                                    borderRadius: '12px',
+                                    padding: '16px 20px',
+                                    borderLeft: `4px solid ${financialTotals.saldo >= 0 ? '#3b82f6' : '#f97316'}`,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                    }}>
+                                        <Wallet size={18} color={financialTotals.saldo >= 0 ? '#3b82f6' : '#f97316'} />
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: financialTotals.saldo >= 0 ? '#1e40af' : '#9a3412', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                            Saldo (Receita − Despesa)
+                                        </span>
+                                    </div>
+                                    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: financialTotals.saldo >= 0 ? '#1d4ed8' : '#ea580c' }}>
+                                        {financialTotals.saldo >= 0 ? '+ ' : '− '}{formatCurrency(Math.abs(financialTotals.saldo))}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     )}
 
