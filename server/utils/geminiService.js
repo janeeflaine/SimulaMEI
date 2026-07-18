@@ -228,7 +228,10 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
             throw apiErr // Re-throw our own validation errors
         }
         console.error('Gemini API Error:', apiErr.message)
-        throw new Error('Erro ao processar fatura via IA. Tente novamente mais tarde.')
+        if (apiErr.message.includes('API key not valid') || apiErr.message.includes('API_KEY_INVALID') || apiErr.message.includes('400')) {
+            throw new Error('Chave de API do Gemini inválida (API_KEY_INVALID). Crie e configure uma nova chave no Google AI Studio.')
+        }
+        throw new Error(`Erro ao processar fatura via IA: ${apiErr.message}`)
     }
 }
 
