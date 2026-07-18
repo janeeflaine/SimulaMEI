@@ -260,7 +260,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
         // New Category Filter
         if (req.query.categoryId && req.query.categoryId !== 'ALL') {
             params.push(req.query.categoryId)
-            query += ` AND t."categoryId" = $${params.length}`
+            query += ` AND t."categoryId" IN (SELECT id FROM finance_categories WHERE TRIM(name) = (SELECT TRIM(name) FROM finance_categories WHERE id = $${params.length}))`
         }
 
         if (search) {

@@ -392,7 +392,15 @@ export default function FinancialStatement() {
                             onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
                         >
                             <option value="ALL">Todas</option>
-                            {categories.map(c => (
+                            {Object.values(
+                                categories.reduce((acc, c) => {
+                                    const key = c.name.trim().toLowerCase();
+                                    if (!acc[key]) {
+                                        acc[key] = c;
+                                    }
+                                    return acc;
+                                }, {})
+                            ).map((c) => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
                             ))}
                         </select>
