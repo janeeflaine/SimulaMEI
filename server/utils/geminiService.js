@@ -134,7 +134,6 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
     }
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME })
 
     // Build prompt with user categories if available
     let prompt = INVOICE_EXTRACTION_PROMPT
@@ -164,8 +163,31 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
         contentParts = [prompt, imagePart]
     }
 
+    const CANDIDATE_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+
+    let result
+    let lastError
+    for (const modelName of CANDIDATE_MODELS) {
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName })
+            result = await model.generateContent(contentParts)
+            console.log(`Sucesso no processamento com o modelo Gemini: ${modelName}`)
+            break
+        } catch (err) {
+            lastError = err
+            if (err.message && (err.message.includes('404') || err.message.includes('not found'))) {
+                console.warn(`Modelo ${modelName} não encontrado, tentando próximo candidato...`)
+                continue
+            }
+            throw err
+        }
+    }
+
+    if (!result) {
+        throw lastError || new Error('Nenhum modelo Gemini suportado foi encontrado.')
+    }
+
     try {
-        const result = await model.generateContent(contentParts)
         const response = await result.response
         const text = response.text()
 
