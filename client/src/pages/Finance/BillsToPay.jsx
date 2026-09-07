@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import FeatureLock from '../../components/FeatureLock'
+import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { PlusCircle } from 'lucide-react'
 import './FinanceCategories.css'
 
 export default function BillsToPay() {
@@ -13,6 +15,7 @@ export default function BillsToPay() {
     const [confirmModal, setConfirmModal] = useState(null) // { id, description, amount }
     const [selectedWallet, setSelectedWallet] = useState('')
     const isPrataPlus = user?.planFeatures?.contas_pagar || user?.isInTrial || user?.role === 'ADMIN'
+    const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false)
 
     useEffect(() => {
         if (isPrataPlus) {
@@ -337,6 +340,9 @@ export default function BillsToPay() {
                                 📥 Exportar PDF
                             </button>
                         )}
+                        <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
+                            <PlusCircle size={18} /> Novo Lançamento
+                        </button>
                     </div>
                 </div>
 
@@ -474,6 +480,15 @@ export default function BillsToPay() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {isFinanceModalOpen && (
+                <FinanceQuickActionModal
+                    onClose={() => setIsFinanceModalOpen(false)}
+                    onSuccess={() => {
+                        fetchBills()
+                    }}
+                />
             )}
         </div>
     )
