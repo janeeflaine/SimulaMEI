@@ -60,7 +60,7 @@ export default function Home() {
                         <h1>Evolua a Gestão do seu MEI para o <span>Nível Profissional</span></h1>
                         <p>Diga adeus às planilhas confusas. O SimulaMEI é a plataforma completa para você simular impostos, controlar finanças e nunca mais perder prazos.</p>
                         <div className="hero-buttons">
-                            <button onClick={() => navigate('/cadastro')} className="btn-main">
+                            <button onClick={() => navigate('/planos')} className="btn-main">
                                 Começar Agora <ArrowRight size={20} />
                             </button>
                             <button onClick={() => navigate('/simular')} className="btn-outline-v2">

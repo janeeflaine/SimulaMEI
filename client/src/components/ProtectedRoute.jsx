@@ -16,5 +16,10 @@ export default function ProtectedRoute() {
         return <Navigate to="/login" replace />
     }
 
+    // Do NOT let the user pass if payment verification is pending with Stripe
+    if (user.subscriptionStatus === 'pending_payment') {
+        return <Navigate to="/planos?pending=true" replace />
+    }
+
     return <Outlet />
 }

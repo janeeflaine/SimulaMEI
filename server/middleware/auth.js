@@ -95,7 +95,8 @@ const authMiddleware = async (req, res, next) => {
             planExpiresAt: user.planExpiresAt,
             isInTrial,
             trialExpired,
-            planFeatures
+            planFeatures,
+            stripeCustomerId: user.stripeCustomerId
         }
         next()
     } catch (error) {

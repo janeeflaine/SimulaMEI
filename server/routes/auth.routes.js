@@ -118,30 +118,37 @@ router.post('/register', authLimiter, async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10)
 
-        // Find Plan 'Ouro' for the Trial, or fallback to any Free plan
-        const goldPlanResult = await db.query("SELECT id FROM plans WHERE name ILIKE '%Ouro%' OR price > 0 ORDER BY price DESC LIMIT 1")
-        const freePlanResult = await db.query("SELECT id FROM plans WHERE price = 0 LIMIT 1")
+        const { planId } = req.body
 
-        const goldPlanId = goldPlanResult.rows[0]?.id || 3
-        const freePlanId = freePlanResult.rows[0]?.id || 1
+        // Free plan
+        const freePlanResult = await db.query("SELECT id, name, price FROM plans WHERE price = 0 LIMIT 1")
+        const freePlan = freePlanResult.rows[0] || { id: 1, name: 'Gratuito', price: 0 }
 
-        const trialEnabledRes = await db.query("SELECT value FROM system_settings WHERE key = 'trial_enabled'")
-        const trialEnabled = trialEnabledRes.rows[0]?.value !== 'false'
+        let initialPlanId = freePlan.id
+        let subscriptionStatus = 'active'
+        let requiresPayment = false
 
-        const initialPlanId = trialEnabled ? goldPlanId : freePlanId
-        const planExpiresAt = trialEnabled ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null
+        if (planId) {
+            const requestedPlanRes = await db.query('SELECT id, name, price FROM plans WHERE id = $1', [planId])
+            const requestedPlan = requestedPlanRes.rows[0]
+            if (requestedPlan && Number(requestedPlan.price) > 0) {
+                initialPlanId = requestedPlan.id
+                subscriptionStatus = 'pending_payment'
+                requiresPayment = true
+            }
+        }
 
         // Create user
         const insertResult = await db.query(`
             INSERT INTO users (name, email, password, "planId", "planExpiresAt", "subscriptionStatus")
-            VALUES ($1, $2, $3, $4, $5, 'trialing')
+            VALUES ($1, $2, $3, $4, NULL, $5)
             RETURNING id
-        `, [name, email, hashedPassword, initialPlanId, planExpiresAt])
+        `, [name, email, hashedPassword, initialPlanId, subscriptionStatus])
 
         const userId = insertResult.rows[0].id
 
         const userResult = await db.query(`
-            SELECT u.id, u.name, u.email, u.role, u."planId", u."sessionVersion",
+            SELECT u.id, u.name, u.email, u.role, u."planId", u."subscriptionStatus", u."sessionVersion",
                    p.name as "planName", p.features as "planFeatures", u."planExpiresAt"
             FROM users u
             LEFT JOIN plans p ON u."planId" = p.id
@@ -163,7 +170,7 @@ router.post('/register', authLimiter, async (req, res) => {
             actor: { user_id: userId, role: 'USER' },
             context: req.context || {},
             target: { resource_type: 'USER', resource_id: userId },
-            metadata: { name, email, planId: initialPlanId, trialEnabled }
+            metadata: { name, email, planId: initialPlanId, subscriptionStatus, requiresPayment }
         })
 
         res.status(201).json({
@@ -173,10 +180,12 @@ router.post('/register', authLimiter, async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                plan: user.planName || (trialEnabled ? 'Ouro' : 'Gratuito'),
+                plan: user.planName || 'Gratuito',
                 planId: user.planId,
-                isInTrial: trialEnabled,
-                planExpiresAt: user.planExpiresAt,
+                subscriptionStatus: user.subscriptionStatus,
+                requiresPayment,
+                isInTrial: false,
+                planExpiresAt: null,
                 planFeatures
             }
         })
@@ -313,11 +322,13 @@ router.post('/login', authLimiter, async (req, res) => {
 router.post('/forgot-password', authLimiter, async (req, res) => {
     try {
         // Auto-heal DB schema for Serverless environments (Vercel)
-        try {
-            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
-            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
-        } catch (migErr) {
-            console.log('Ignored auto-heal error:', migErr.message)
+        if (process.env.NODE_ENV !== 'test') {
+            try {
+                await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
+                await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
+            } catch (migErr) {
+                console.log('Ignored auto-heal error:', migErr.message)
+            }
         }
 
         const { email } = req.body
@@ -368,10 +379,12 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
 router.post('/reset-password', async (req, res) => {
     try {
         // Auto-heal schema
-        try {
-            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
-            await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
-        } catch (migErr) { }
+        if (process.env.NODE_ENV !== 'test') {
+            try {
+                await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
+                await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
+            } catch (migErr) { }
+        }
 
         const { token, newPassword } = req.body
 

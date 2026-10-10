@@ -31,7 +31,25 @@ export default function Account() {
     }
 
     const handleUpgrade = async (planId) => {
-        alert('Integração com gateway de pagamento em desenvolvimento!')
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/stripe/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ planId })
+            })
+            const data = await res.json()
+            if (res.ok && data.url) {
+                window.location.href = data.url
+            } else {
+                alert(data.message || 'Erro ao iniciar pagamento com Stripe')
+            }
+        } catch (e) {
+            window.location.href = '/planos'
+        }
     }
 
     return (

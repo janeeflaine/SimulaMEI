@@ -12,14 +12,18 @@ const authRoutes = require('./routes/auth.routes')
 const simulationRoutes = require('./routes/simulation.routes')
 const adminRoutes = require('./routes/admin.routes')
 const planRoutes = require('./routes/plan.routes')
-const paymentRoutes = require('./routes/payments.routes')
+const paymentRoutes = require('./routes/payment.routes')
 const settingsRoutes = require('./routes/settings.routes')
 const alertRoutes = require('./routes/alert.routes')
 const financeRoutes = require('./routes/finance.routes')
 const invoiceRoutes = require('./routes/invoice.routes')
+const stripeRoutes = require('./routes/stripe.routes')
 
 const app = express()
 const PORT = process.env.PORT || 3001
+
+// Stripe Webhook: must be mounted BEFORE express.json() to preserve raw body signature
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeRoutes.webhookHandler)
 
 // Middleware
 app.use(cors())
@@ -38,6 +42,8 @@ app.use('/api/payments', paymentRoutes)
 app.use('/api/alerts', alertRoutes)
 app.use('/api/finance', financeRoutes)
 app.use('/api/finance/invoices', invoiceRoutes)
+app.use('/api/stripe', stripeRoutes.router)
+
 
 
 // Health check

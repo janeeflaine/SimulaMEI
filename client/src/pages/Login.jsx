@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import './Login.css'
 
 export default function Login() {
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
+    const planIdParam = searchParams.get('planId') || sessionStorage.getItem('selectedPlanId')
+
     const { login } = useAuth()
     const [formData, setFormData] = useState({ email: '', password: '' })
     const [error, setError] = useState('')
@@ -23,6 +26,11 @@ export default function Login() {
             const user = await login(formData.email, formData.password)
             if (user.role === 'ADMIN') {
                 navigate('/admin')
+            } else if (user.subscriptionStatus === 'pending_payment') {
+                navigate('/planos?pending=true')
+            } else if (planIdParam) {
+                sessionStorage.removeItem('selectedPlanId')
+                navigate(`/planos?selected=${planIdParam}&autoCheckout=true`)
             } else {
                 navigate('/dashboard')
             }
@@ -93,7 +101,9 @@ export default function Login() {
                     <div className="auth-footer">
                         <p>
                             Não tem uma conta?{' '}
-                            <Link to="/cadastro" className="auth-link">Criar conta grátis</Link>
+                            <Link to={planIdParam ? `/cadastro?planId=${planIdParam}` : '/cadastro'} className="auth-link">
+                                Criar conta
+                            </Link>
                         </p>
                     </div>
                 </div>
