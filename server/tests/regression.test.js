@@ -51,6 +51,13 @@ jest.mock('../middleware/ouroGuard', () => ({
     }
 }))
 
+jest.mock('../middleware/planGuard', () => ({
+    featureGuard: () => (req, res, next) => next(),
+    minPlan: () => (req, res, next) => next(),
+    prataPlusOnly: (req, res, next) => next(),
+    ouroOnly: (req, res, next) => next()
+}))
+
 const mockParseInvoice = jest.fn()
 jest.mock('../utils/geminiService', () => ({
     parseInvoice: (...args) => mockParseInvoice(...args),

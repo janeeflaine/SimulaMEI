@@ -201,6 +201,98 @@ router.put('/users/:id', async (req, res) => {
     }
 })
 
+// ========== DELETE USER ==========
+router.delete('/users/:id', async (req, res) => {
+    const client = await pool.connect()
+    try {
+        const { id } = req.params
+        const targetUserId = parseInt(id, 10)
+
+        if (isNaN(targetUserId)) {
+            client.release()
+            return res.status(400).json({ message: 'ID de usuário inválido.' })
+        }
+
+        // Prevent self-deletion
+        if (targetUserId === req.user.id) {
+            client.release()
+            return res.status(400).json({ message: 'Você não pode excluir sua própria conta de administrador.' })
+        }
+
+        // Fetch user to check existence & role & stripe info
+        const userResult = await client.query(
+            'SELECT id, name, email, role, "stripeSubscriptionId" FROM users WHERE id = $1',
+            [targetUserId]
+        )
+        const user = userResult.rows[0]
+        if (!user) {
+            client.release()
+            return res.status(404).json({ message: 'Usuário não encontrado.' })
+        }
+
+        // Prevent deleting another ADMIN
+        if (user.role === 'ADMIN') {
+            client.release()
+            return res.status(403).json({ message: 'Não é permitido excluir contas com privilégio de Administrador.' })
+        }
+
+        // Cancel Stripe subscription if active
+        if (user.stripeSubscriptionId && process.env.STRIPE_SECRET_KEY) {
+            try {
+                const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+                await stripe.subscriptions.cancel(user.stripeSubscriptionId)
+            } catch (stripeErr) {
+                console.warn('Falha ao cancelar assinatura Stripe do usuário:', stripeErr.message)
+            }
+        }
+
+        // Execute DB Transaction
+        await client.query('BEGIN')
+
+        // Delete from related tables in child-to-parent order
+        await client.query('DELETE FROM finance_transactions WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM invoice_items WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM card_invoices WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM invoice_uploads WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM credit_cards WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM finance_categories WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM business_units WHERE "ownerId" = $1', [targetUserId])
+        await client.query('DELETE FROM user_alerts WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM payments WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM simulations WHERE "userId" = $1', [targetUserId])
+        await client.query('DELETE FROM user_sessions WHERE user_id = $1', [targetUserId])
+        await client.query('DELETE FROM admin_logs WHERE "userId" = $1', [targetUserId])
+
+        // Unlink references where needed
+        await client.query('UPDATE calculation_rules SET "updatedBy" = NULL WHERE "updatedBy" = $1', [targetUserId])
+        await client.query('UPDATE mei_limits SET "updatedBy" = NULL WHERE "updatedBy" = $1', [targetUserId])
+        await client.query('UPDATE audit_logs SET user_id = NULL WHERE user_id = $1', [targetUserId])
+
+        // Delete user record
+        await client.query('DELETE FROM users WHERE id = $1', [targetUserId])
+
+        await client.query('COMMIT')
+
+        // Audit log for security tracking
+        await auditLogger.log({
+            level: 'WARN',
+            event_type: 'USER_DELETED_PERMANENTLY',
+            actor: { user_id: req.user.id, role: req.user.role },
+            context: req.context || {},
+            target: { resource_type: 'USER', resource_id: targetUserId },
+            changes: { old_value: { id: user.id, name: user.name, email: user.email } }
+        })
+
+        res.json({ message: 'Usuário e todos os seus dados foram excluídos permanentemente.' })
+    } catch (error) {
+        await client.query('ROLLBACK')
+        console.error('Delete user error:', error)
+        res.status(500).json({ message: 'Erro ao excluir usuário do banco de dados.' })
+    } finally {
+        client.release()
+    }
+})
+
 // ========== RULES ==========
 router.get('/rules', async (req, res) => {
     try {

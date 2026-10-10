@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import './AdminPages.css'
 
 const inputStyle = {
@@ -253,10 +254,125 @@ function EditUserModal({ user, plans, onClose, onSaved }) {
     )
 }
 
+function DeleteUserModal({ user, onClose, onDeleted }) {
+    const [confirmText, setConfirmText] = useState('')
+    const [deleting, setDeleting] = useState(false)
+    const [error, setError] = useState('')
+
+    const isConfirmed = confirmText.trim().toUpperCase() === 'EXCLUIR'
+
+    const handleDelete = async () => {
+        if (!isConfirmed) return
+        setError('')
+        setDeleting(true)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/admin/users/${user.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.message || 'Erro ao excluir usuário.')
+
+            onDeleted()
+        } catch (err) {
+            setError(err.message)
+            setDeleting(false)
+        }
+    }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <div style={{
+                        width: 44, height: 44, borderRadius: '50%', background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0
+                    }}>
+                        🗑️
+                    </div>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: 18, color: '#f87171' }}>Excluir Usuário Definitivamente</h2>
+                        <p style={{ margin: '2px 0 0', color: '#94a3b8', fontSize: 13 }}>ID #{user.id} — {user.name} ({user.email})</p>
+                    </div>
+                </div>
+
+                {error && (
+                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 14px', color: '#fca5a5', fontSize: 13, marginBottom: 16 }}>
+                        ⚠️ {error}
+                    </div>
+                )}
+
+                <div style={{
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    borderRadius: 10,
+                    padding: 16,
+                    marginBottom: 20
+                }}>
+                    <div style={{ color: '#fca5a5', fontWeight: 600, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        ⚠️ ATENÇÃO: Ação Irreversível!
+                    </div>
+                    <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+                        Ao confirmar, o usuário <strong>{user.name}</strong> e <strong>TODOS os dados associados a ele serão permanentemente apagados do banco de dados</strong>.
+                    </p>
+                    <ul style={{ color: '#94a3b8', fontSize: 12, margin: '10px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
+                        <li>Todas as transações financeiras (receitas e despesas)</li>
+                        <li>Todos os cartões de crédito, faturas e lançamentos</li>
+                        <li>Todas as contas e carteiras (PF/PJ)</li>
+                        <li>Todas as simulações registradas</li>
+                        <li>Alertas, sessões e históricos da conta</li>
+                    </ul>
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                    <label style={{ display: 'block', fontSize: 13, color: '#e2e8f0', marginBottom: 8, fontWeight: 500 }}>
+                        Para confirmar a exclusão de todos os dados, digite <strong>EXCLUIR</strong> abaixo:
+                    </label>
+                    <input
+                        type="text"
+                        style={inputStyle}
+                        value={confirmText}
+                        onChange={e => setConfirmText(e.target.value)}
+                        placeholder="Digite EXCLUIR"
+                        autoFocus
+                    />
+                </div>
+
+                <div className="modal-actions">
+                    <button type="button" className="btn btn-secondary" onClick={onClose} disabled={deleting}>
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        className="btn"
+                        style={{
+                            background: isConfirmed ? '#dc2626' : 'rgba(220, 38, 38, 0.4)',
+                            color: '#fff',
+                            border: 'none',
+                            cursor: isConfirmed && !deleting ? 'pointer' : 'not-allowed',
+                            opacity: isConfirmed && !deleting ? 1 : 0.6
+                        }}
+                        disabled={!isConfirmed || deleting}
+                        onClick={handleDelete}
+                    >
+                        {deleting ? 'Excluindo...' : '🗑️ Confirmar Exclusão Definitiva'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 export default function AdminUsers() {
+    const { user: currentUser } = useAuth()
     const [users, setUsers] = useState([])
     const [loading, setLoading] = useState(true)
     const [selectedUser, setSelectedUser] = useState(null)
+    const [userToDelete, setUserToDelete] = useState(null)
     const [plans, setPlans] = useState([])
     const [search, setSearch] = useState('')
 
@@ -393,6 +509,20 @@ export default function AdminUsers() {
                                                 >
                                                     {user.isBlocked ? '🔓 Desbloquear' : '🔒 Bloquear'}
                                                 </button>
+                                                {user.role !== 'ADMIN' && currentUser?.id !== user.id && (
+                                                    <button
+                                                        className="btn btn-sm"
+                                                        style={{
+                                                            background: 'rgba(239, 68, 68, 0.15)',
+                                                            color: '#fca5a5',
+                                                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                                                        }}
+                                                        onClick={() => setUserToDelete(user)}
+                                                        title="Excluir usuário e todas as suas movimentações do banco"
+                                                    >
+                                                        🗑️ Excluir
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -416,6 +546,17 @@ export default function AdminUsers() {
                     plans={plans}
                     onClose={() => setSelectedUser(null)}
                     onSaved={() => { fetchUsers(); }}
+                />
+            )}
+
+            {userToDelete && (
+                <DeleteUserModal
+                    user={userToDelete}
+                    onClose={() => setUserToDelete(null)}
+                    onDeleted={() => {
+                        setUserToDelete(null)
+                        fetchUsers()
+                    }}
                 />
             )}
         </div>
