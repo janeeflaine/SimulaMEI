@@ -179,6 +179,12 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
                 console.warn(`Modelo ${modelName} não encontrado, tentando próximo candidato...`)
                 continue
             }
+            if (err.message && err.message.includes('The document has no pages')) {
+                throw new Error('O arquivo PDF enviado possui proteção digital, criptografia do banco ou páginas ilegíveis pela IA. Como resolver: abra o PDF no seu navegador ou leitor de PDF e use a opção "Imprimir como PDF" (Salvar como PDF) para gerar uma nova versão sem proteção, ou envie em formato Imagem (PNG/JPG) ou CSV.')
+            }
+            if (err.message && (err.message.includes('API key not valid') || err.message.includes('API_KEY_INVALID'))) {
+                throw new Error('Chave de API do Gemini inválida (API_KEY_INVALID). Crie e configure uma nova chave no Google AI Studio.')
+            }
             throw err
         }
     }
@@ -246,12 +252,15 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
 
         return parsed
     } catch (apiErr) {
-        if (apiErr.message.includes('IA retornou') || apiErr.message.includes('não contém')) {
+        if (apiErr.message.includes('IA retornou') || apiErr.message.includes('não contém') || apiErr.message.includes('O arquivo PDF enviado')) {
             throw apiErr // Re-throw our own validation errors
         }
         console.error('Gemini API Error:', apiErr.message)
-        if (apiErr.message.includes('API key not valid') || apiErr.message.includes('API_KEY_INVALID') || apiErr.message.includes('400')) {
+        if (apiErr.message.includes('API key not valid') || apiErr.message.includes('API_KEY_INVALID')) {
             throw new Error('Chave de API do Gemini inválida (API_KEY_INVALID). Crie e configure uma nova chave no Google AI Studio.')
+        }
+        if (apiErr.message.includes('The document has no pages')) {
+            throw new Error('O arquivo PDF enviado possui proteção digital, criptografia do banco ou páginas ilegíveis pela IA. Como resolver: abra o PDF no seu navegador ou leitor de PDF e use a opção "Imprimir como PDF" (Salvar como PDF) para gerar uma nova versão sem proteção, ou envie em formato Imagem (PNG/JPG) ou CSV.')
         }
         throw new Error(`Erro ao processar fatura via IA: ${apiErr.message}`)
     }
