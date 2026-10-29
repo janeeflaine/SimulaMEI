@@ -1,17 +1,17 @@
 /**
  * Gemini Vision API Service — Invoice Parser
- * 
+ *
  * Isolated module for parsing credit card invoices via Google Gemini.
  * Accepts PDF, CSV, OFX, or image data and returns structured JSON with invoice items.
  * Recommended formats: PDF and CSV.
- * 
+ *
  * Environment: GEMINI_API_KEY must be set in .env
+ * Supports both legacy AIza... keys and new AQ.Ab8R... auth keys via @google/genai SDK.
  */
-const { GoogleGenerativeAI } = require('@google/generative-ai')
+const { GoogleGenAI } = require('@google/genai')
 
 // --- Configuration ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-const MODEL_NAME = 'gemini-1.5-flash'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const SUPPORTED_MIME_TYPES = [
     'application/pdf',
@@ -133,7 +133,8 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
         throw new Error(validation.error)
     }
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
+    // Initialize new unified SDK (supports both AIza... and AQ.Ab8R... key formats)
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY })
 
     // Build prompt with user categories if available
     let prompt = INVOICE_EXTRACTION_PROMPT
@@ -146,124 +147,116 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
     // Determine how to send the file to Gemini
     const isTextBased = TEXT_MIME_TYPES.includes(mimeType)
 
-    let contentParts
+    let contents
     if (isTextBased) {
-        // For CSV/OFX: send as text content
+        // For CSV/OFX: send as plain text
         const textContent = fileBuffer.toString('utf-8')
-        contentParts = [prompt + '\n\nConteúdo do arquivo:\n```\n' + textContent + '\n```']
+        contents = prompt + '\n\nConteúdo do arquivo:\n```\n' + textContent + '\n```'
     } else {
-        // For PDF/images: send as inlineData (base64)
+        // For PDF/images: send as inlineData (base64) alongside the prompt
         const base64Data = fileBuffer.toString('base64')
-        const imagePart = {
-            inlineData: {
-                data: base64Data,
-                mimeType: mimeType
-            }
-        }
-        contentParts = [prompt, imagePart]
+        contents = [
+            { text: prompt },
+            { inlineData: { data: base64Data, mimeType: mimeType } }
+        ]
     }
 
-    const CANDIDATE_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+    // Model fallback chain — try in order until one succeeds
+    const CANDIDATE_MODELS = [
+        'gemini-2.0-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-pro'
+    ]
 
-    let result
+    let rawText
     let lastError
     for (const modelName of CANDIDATE_MODELS) {
         try {
-            const model = genAI.getGenerativeModel({ model: modelName })
-            result = await model.generateContent(contentParts)
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: contents
+            })
+            rawText = response.text
             console.log(`Sucesso no processamento com o modelo Gemini: ${modelName}`)
             break
         } catch (err) {
             lastError = err
-            if (err.message && (err.message.includes('404') || err.message.includes('not found'))) {
-                console.warn(`Modelo ${modelName} não encontrado, tentando próximo candidato...`)
+            const msg = err.message || ''
+
+            if (msg.includes('404') || msg.includes('not found') || msg.includes('NOT_FOUND')) {
+                console.warn(`Modelo ${modelName} não encontrado, tentando próximo...`)
                 continue
             }
-            if (err.message && err.message.includes('The document has no pages')) {
+            if (msg.includes('The document has no pages')) {
                 throw new Error('O arquivo PDF enviado possui proteção digital, criptografia do banco ou páginas ilegíveis pela IA. Como resolver: abra o PDF no seu navegador ou leitor de PDF e use a opção "Imprimir como PDF" (Salvar como PDF) para gerar uma nova versão sem proteção, ou envie em formato Imagem (PNG/JPG) ou CSV.')
             }
-            if (err.message && (err.message.includes('API key not valid') || err.message.includes('API_KEY_INVALID'))) {
-                throw new Error('Chave de API do Gemini inválida (API_KEY_INVALID). Crie e configure uma nova chave no Google AI Studio.')
+            if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED')) {
+                throw new Error('Chave de API do Gemini inválida ou sem permissão. Acesse https://aistudio.google.com/apikey, crie uma nova chave e atualize a variável GEMINI_API_KEY.')
             }
             throw err
         }
     }
 
-    if (!result) {
+    if (rawText === undefined) {
         throw lastError || new Error('Nenhum modelo Gemini suportado foi encontrado.')
     }
 
-    try {
-        const response = await result.response
-        const text = response.text()
-
-        // Clean up response — remove markdown fences if present
-        let cleanText = text.trim()
-        if (cleanText.startsWith('```json')) {
-            cleanText = cleanText.slice(7)
-        } else if (cleanText.startsWith('```')) {
-            cleanText = cleanText.slice(3)
-        }
-        if (cleanText.endsWith('```')) {
-            cleanText = cleanText.slice(0, -3)
-        }
-        cleanText = cleanText.trim()
-
-        // Parse JSON
-        let parsed
-        try {
-            parsed = JSON.parse(cleanText)
-        } catch (parseErr) {
-            console.error('Gemini returned invalid JSON:', cleanText.substring(0, 200))
-            throw new Error('A IA retornou uma resposta inválida. Tente novamente com uma imagem mais clara.')
-        }
-
-        // Validate structure
-        if (!parsed.items || !Array.isArray(parsed.items)) {
-            throw new Error('Resposta da IA não contém lista de itens válida')
-        }
-
-        if (!parsed.metadata) {
-            parsed.metadata = {}
-        }
-
-        // Sanitize items — ensure amounts are positive numbers
-        parsed.items = parsed.items
-            .filter(item => item.description && item.amount !== undefined)
-            .map(item => ({
-                description: String(item.description).trim(),
-                amount: Math.abs(parseFloat(item.amount) || 0),
-                transactionDate: item.transactionDate || null,
-                category: item.category || 'Outros',
-                confidence: Math.min(1, Math.max(0, parseFloat(item.confidence) || 0)),
-                installment: item.installment || null
-            }))
-
-        // Sanitize metadata
-        parsed.metadata = {
-            cardLastFour: parsed.metadata.cardLastFour || null,
-            holderName: parsed.metadata.holderName || null,
-            totalAmount: Math.abs(parseFloat(parsed.metadata.totalAmount) || 0),
-            dueDate: parsed.metadata.dueDate || null,
-            closingDate: parsed.metadata.closingDate || null,
-            referenceMonth: parseInt(parsed.metadata.referenceMonth) || null,
-            referenceYear: parseInt(parsed.metadata.referenceYear) || null
-        }
-
-        return parsed
-    } catch (apiErr) {
-        if (apiErr.message.includes('IA retornou') || apiErr.message.includes('não contém') || apiErr.message.includes('O arquivo PDF enviado')) {
-            throw apiErr // Re-throw our own validation errors
-        }
-        console.error('Gemini API Error:', apiErr.message)
-        if (apiErr.message.includes('API key not valid') || apiErr.message.includes('API_KEY_INVALID')) {
-            throw new Error('Chave de API do Gemini inválida (API_KEY_INVALID). Crie e configure uma nova chave no Google AI Studio.')
-        }
-        if (apiErr.message.includes('The document has no pages')) {
-            throw new Error('O arquivo PDF enviado possui proteção digital, criptografia do banco ou páginas ilegíveis pela IA. Como resolver: abra o PDF no seu navegador ou leitor de PDF e use a opção "Imprimir como PDF" (Salvar como PDF) para gerar uma nova versão sem proteção, ou envie em formato Imagem (PNG/JPG) ou CSV.')
-        }
-        throw new Error(`Erro ao processar fatura via IA: ${apiErr.message}`)
+    // Clean up response — remove markdown fences if present
+    let cleanText = rawText.trim()
+    if (cleanText.startsWith('```json')) {
+        cleanText = cleanText.slice(7)
+    } else if (cleanText.startsWith('```')) {
+        cleanText = cleanText.slice(3)
     }
+    if (cleanText.endsWith('```')) {
+        cleanText = cleanText.slice(0, -3)
+    }
+    cleanText = cleanText.trim()
+
+    // Parse JSON
+    let parsed
+    try {
+        parsed = JSON.parse(cleanText)
+    } catch (parseErr) {
+        console.error('Gemini returned invalid JSON:', cleanText.substring(0, 200))
+        throw new Error('A IA retornou uma resposta inválida. Tente novamente com uma imagem mais clara.')
+    }
+
+    // Validate structure
+    if (!parsed.items || !Array.isArray(parsed.items)) {
+        throw new Error('Resposta da IA não contém lista de itens válida')
+    }
+
+    if (!parsed.metadata) {
+        parsed.metadata = {}
+    }
+
+    // Sanitize items — ensure amounts are positive numbers
+    parsed.items = parsed.items
+        .filter(item => item.description && item.amount !== undefined)
+        .map(item => ({
+            description: String(item.description).trim(),
+            amount: Math.abs(parseFloat(item.amount) || 0),
+            transactionDate: item.transactionDate || null,
+            category: item.category || 'Outros',
+            confidence: Math.min(1, Math.max(0, parseFloat(item.confidence) || 0)),
+            installment: item.installment || null
+        }))
+
+    // Sanitize metadata
+    parsed.metadata = {
+        cardLastFour: parsed.metadata.cardLastFour || null,
+        holderName: parsed.metadata.holderName || null,
+        totalAmount: Math.abs(parseFloat(parsed.metadata.totalAmount) || 0),
+        dueDate: parsed.metadata.dueDate || null,
+        closingDate: parsed.metadata.closingDate || null,
+        referenceMonth: parseInt(parsed.metadata.referenceMonth) || null,
+        referenceYear: parseInt(parsed.metadata.referenceYear) || null
+    }
+
+    return parsed
 }
 
 module.exports = {
