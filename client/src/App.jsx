@@ -9,6 +9,9 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import TermsOfService from './pages/TermsOfService'
+import Contact from './pages/Contact'
 import Dashboard from './pages/Dashboard'
 import Comparison from './pages/Comparison'
 import Account from './pages/Account'
@@ -58,6 +61,11 @@ function App() {
                         <Route path="/cadastro" element={<Register />} />
                         <Route path="/esqueci-senha" element={<ForgotPassword />} />
                         <Route path="/redefinir-senha" element={<ResetPassword />} />
+                        <Route path="/politica-de-privacidade" element={<PrivacyPolicy />} />
+                        <Route path="/privacidade" element={<PrivacyPolicy />} />
+                        <Route path="/termos-de-servico" element={<TermsOfService />} />
+                        <Route path="/termos" element={<TermsOfService />} />
+                        <Route path="/contato" element={<Contact />} />
 
                         {/* Protected User Routes */}
                         <Route element={<ProtectedRoute />}>

@@ -135,18 +135,88 @@ export default function UserLayout() {
 
             <footer className="footer">
                 <div className="container">
-                    <div className="footer-content">
-                        <div className="footer-brand">
-                            <span className="logo-icon">📊</span>
-                            <span>SimulaMEI</span>
+                    <div className="footer-grid">
+                        {/* Coluna 1: Marca & Identificação da Empresa */}
+                        <div className="footer-col footer-col-brand">
+                            <Link to="/" className="footer-brand">
+                                <span className="logo-icon">📊</span>
+                                <span className="logo-text">SimulaMEI</span>
+                            </Link>
+                            <p className="footer-desc">
+                                Plataforma inteligente de apoio à gestão financeira, controle de faturamento e simulação tributária para o Microempreendedor Individual (MEI).
+                            </p>
+                            <div className="footer-entity-pill">
+                                🏢 SimulaMEI é um produto de <strong>ESPETINHO DO NORDESTE</strong>
+                                <div className="footer-cnpj">CNPJ: <strong>33.137.007/0001-09</strong></div>
+                            </div>
                         </div>
+
+                        {/* Coluna 2: Navegação Rápida */}
+                        <div className="footer-col">
+                            <h4 className="footer-col-title">Navegação</h4>
+                            <ul className="footer-links">
+                                <li><Link to="/">Página Inicial</Link></li>
+                                <li><Link to="/simular">Simulador MEI</Link></li>
+                                <li><Link to="/planos">Planos & Preços</Link></li>
+                                {user ? (
+                                    <li><Link to="/dashboard">Painel Geral</Link></li>
+                                ) : (
+                                    <li><Link to="/login">Acessar Conta</Link></li>
+                                )}
+                            </ul>
+                        </div>
+
+                        {/* Coluna 3: Legal & Regras de Utilização */}
+                        <div className="footer-col">
+                            <h4 className="footer-col-title">Termos & Privacidade</h4>
+                            <ul className="footer-links">
+                                <li>
+                                    <Link to="/politica-de-privacidade">Política de Privacidade</Link>
+                                </li>
+                                <li>
+                                    <Link to="/termos-de-servico">Termos de Serviço</Link>
+                                </li>
+                                <li>
+                                    <Link to="/contato">Informações de Contato</Link>
+                                </li>
+                            </ul>
+                        </div>
+
+                        {/* Coluna 4: Informações de Contato & Suporte */}
+                        <div className="footer-col">
+                            <h4 className="footer-col-title">Atendimento & Contato</h4>
+                            <div className="footer-contact-info">
+                                <p className="footer-contact-line">
+                                    <span className="contact-icon">✉️</span>
+                                    <a href="mailto:contato@simulamei.com.br">contato@simulamei.com.br</a>
+                                </p>
+                                <p className="footer-contact-line">
+                                    <span className="contact-icon">💬</span>
+                                    <a href="mailto:suporte@simulamei.com.br">suporte@simulamei.com.br</a>
+                                </p>
+                                <p className="footer-hours">
+                                    🕒 Seg. a Sex. das 09h às 18h (Brasília)
+                                </p>
+                                <Link to="/contato" className="footer-contact-link">
+                                    Central de Atendimento →
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="footer-bottom">
                         <p className="footer-disclaimer">
-                            ⚠️ Esta é uma simulação estimativa. Os valores apresentados não substituem
-                            a orientação de um contador profissional.
+                            ⚠️ <strong>Aviso Legal:</strong> O SimulaMEI é uma plataforma informativa de apoio à gestão do empreendedor.
+                            Os valores e simulações são estimativos e não substituem o papel de um contador profissional habilitado.
                         </p>
-                        <p className="footer-copyright">
-                            © {new Date().getFullYear()} SimulaMEI. Todos os direitos reservados.
-                        </p>
+                        <div className="footer-copyright-bar">
+                            <p className="footer-copyright">
+                                © {new Date().getFullYear()} SimulaMEI. Todos os direitos reservados.
+                            </p>
+                            <p className="footer-legal-mention">
+                                Desenvolvido e mantido por <strong>ESPETINHO DO NORDESTE</strong> • CNPJ: <strong>33.137.007/0001-09</strong>
+                            </p>
+                        </div>
                     </div>
                 </div>
             </footer>
