@@ -21,6 +21,11 @@ const ACCEPTED_TYPES = {
 const ACCEPT_STRING = Object.keys(ACCEPTED_TYPES).join(',') + ',.ofx,.csv'
 const MAX_SIZE_MB = 10
 
+const MONTH_NAMES = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+]
+
 const CATEGORIES_DEFAULT = [
     'Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Educação', 'Lazer',
     'Vestuário', 'Assinaturas', 'Mercado', 'Restaurante', 'Combustível',
@@ -348,6 +353,54 @@ export default function InvoiceUpload() {
                     <div className="review-header">
                         <h2>🔍 Revisão da Fatura</h2>
                         <span className="badge badge-warning">IA • Revisão necessária</span>
+                    </div>
+
+                    {/* Invoice Metadata Banner */}
+                    <div className="review-meta-banner">
+                        <div className="review-meta-item">
+                            <span className="meta-icon">📅</span>
+                            <div className="meta-text-col">
+                                <span className="meta-label">Fatura de Referência</span>
+                                <strong className="meta-value">
+                                    {result?.metadata?.referenceMonth
+                                        ? `${MONTH_NAMES[result.metadata.referenceMonth - 1]} / ${result.metadata.referenceYear}`
+                                        : 'Mês Atual'}
+                                </strong>
+                            </div>
+                        </div>
+                        {result?.metadata?.dueDate && (
+                            <div className="review-meta-item">
+                                <span className="meta-icon">⏰</span>
+                                <div className="meta-text-col">
+                                    <span className="meta-label">Data de Vencimento</span>
+                                    <strong className="meta-value">
+                                        {new Date(result.metadata.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                    </strong>
+                                </div>
+                            </div>
+                        )}
+                        {result?.metadata?.closingDate && (
+                            <div className="review-meta-item">
+                                <span className="meta-icon">🔒</span>
+                                <div className="meta-text-col">
+                                    <span className="meta-label">Fechamento / Corte</span>
+                                    <strong className="meta-value">
+                                        {new Date(result.metadata.closingDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                    </strong>
+                                </div>
+                            </div>
+                        )}
+                        {result?.metadata?.cardLastFour && (
+                            <div className="review-meta-item">
+                                <span className="meta-icon">💳</span>
+                                <div className="meta-text-col">
+                                    <span className="meta-label">Cartão</span>
+                                    <strong className="meta-value">
+                                        •••• {result.metadata.cardLastFour}
+                                    </strong>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* AI Notice */}

@@ -311,6 +311,48 @@
     margin-top: 0.25rem;
 }
 
+/* Invoice Metadata Banner */
+.review-meta-banner {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--radius-xl);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.review-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.review-meta-item .meta-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.review-meta-item .meta-text-col {
+    display: flex;
+    flex-direction: column;
+}
+
+.review-meta-item .meta-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-slate-500);
+}
+
+.review-meta-item .meta-value {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--color-slate-800);
+}
+
 /* AI Notice Banner */
 .ai-notice {
     display: flex;

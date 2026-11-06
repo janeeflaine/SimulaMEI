@@ -648,8 +648,26 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
 
         try {
             const meta = aiResult.metadata
-            const refMonth = meta.referenceMonth || new Date().getMonth() + 1
-            const refYear = meta.referenceYear || new Date().getFullYear()
+            let refMonth = meta.referenceMonth
+            let refYear = meta.referenceYear
+
+            // Priority: In Brazilian credit cards, invoice reference month and year ALWAYS match dueDate
+            if (meta.dueDate && typeof meta.dueDate === 'string') {
+                const parts = meta.dueDate.split('-')
+                if (parts.length === 3) {
+                    const dueYear = parseInt(parts[0], 10)
+                    const dueMonth = parseInt(parts[1], 10)
+                    if (!isNaN(dueYear) && !isNaN(dueMonth) && dueMonth >= 1 && dueMonth <= 12) {
+                        refMonth = dueMonth
+                        refYear = dueYear
+                        meta.referenceMonth = refMonth
+                        meta.referenceYear = refYear
+                    }
+                }
+            }
+
+            if (!refMonth) refMonth = new Date().getMonth() + 1
+            if (!refYear) refYear = new Date().getFullYear()
 
             // Check for duplicate invoice
             const dupCheck = await client.query(

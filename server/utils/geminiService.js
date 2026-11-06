@@ -54,11 +54,11 @@ Para CADA item extraído, retorne:
 Também extraia os metadados da fatura:
 - cardLastFour: últimos 4 dígitos do cartão (se visível)
 - holderName: nome do titular (se visível)
-- totalAmount: valor total da fatura
-- dueDate: data de vencimento no formato YYYY-MM-DD
-- closingDate: data de fechamento no formato YYYY-MM-DD
-- referenceMonth: mês de referência (1-12)
-- referenceYear: ano de referência (ex: 2026)
+- totalAmount: valor total da fatura (o valor total a pagar no mês da fatura)
+- dueDate: data de vencimento no formato YYYY-MM-DD (ex: 2026-04-10)
+- closingDate: data de fechamento / corte no formato YYYY-MM-DD (se visível)
+- referenceMonth: mês da fatura (1 a 12). REGRA OBRIGATÓRIA NO BRASIL: O mês da fatura é SEMPRE o mês da DATA DE VENCIMENTO (dueDate). Por exemplo, se o vencimento for 10/04/2026, a fatura é de ABRIL (referenceMonth = 4), mesmo que todas as compras listadas nela tenham sido realizadas no mês anterior (março). NUNCA utilize o mês em que as compras foram feitas como referenceMonth.
+- referenceYear: ano da fatura (ex: 2026), correspondente ao ano do vencimento (dueDate).
 
 IMPORTANTE sobre valores monetários brasileiros:
 - O formato BRL usa ponto para separar milhares e vírgula para decimais: 1.200,50 = mil e duzentos reais e cinquenta centavos
@@ -246,14 +246,30 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
         }))
 
     // Sanitize metadata
+    let refMonth = parseInt(parsed.metadata.referenceMonth) || null
+    let refYear = parseInt(parsed.metadata.referenceYear) || null
+
+    // Fallback/Correction: In Brazilian credit cards, invoice cycle and month are always tied to the due date (dueDate).
+    if (parsed.metadata.dueDate && typeof parsed.metadata.dueDate === 'string') {
+        const parts = parsed.metadata.dueDate.split('-')
+        if (parts.length === 3) {
+            const dueYear = parseInt(parts[0], 10)
+            const dueMonth = parseInt(parts[1], 10)
+            if (!isNaN(dueYear) && !isNaN(dueMonth) && dueMonth >= 1 && dueMonth <= 12) {
+                refMonth = dueMonth
+                refYear = dueYear
+            }
+        }
+    }
+
     parsed.metadata = {
         cardLastFour: parsed.metadata.cardLastFour || null,
         holderName: parsed.metadata.holderName || null,
         totalAmount: Math.abs(parseFloat(parsed.metadata.totalAmount) || 0),
         dueDate: parsed.metadata.dueDate || null,
         closingDate: parsed.metadata.closingDate || null,
-        referenceMonth: parseInt(parsed.metadata.referenceMonth) || null,
-        referenceYear: parseInt(parsed.metadata.referenceYear) || null
+        referenceMonth: refMonth,
+        referenceYear: refYear
     }
 
     return parsed
