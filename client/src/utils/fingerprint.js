@@ -8,7 +8,8 @@
  *   headers: { 'X-Device-Fingerprint': getDeviceFingerprint() }
  */
 
-const STORAGE_KEY = '_simulamei_dfp'
+const STORAGE_KEY = '_eusempremei_dfp'
+const LEGACY_STORAGE_KEY = '_simulamei_dfp' // chave da marca anterior; migrada na primeira leitura
 
 function buildComponents() {
   try {
@@ -38,7 +39,15 @@ function djb2Hash(str) {
 
 export function getDeviceFingerprint() {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
+    let stored = localStorage.getItem(STORAGE_KEY)
+    if (!stored) {
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+      if (legacy) {
+        localStorage.setItem(STORAGE_KEY, legacy)
+        localStorage.removeItem(LEGACY_STORAGE_KEY)
+        stored = legacy
+      }
+    }
     if (stored && /^[a-f0-9]{8}-[a-f0-9]+$/.test(stored)) return stored
 
     const components = buildComponents()

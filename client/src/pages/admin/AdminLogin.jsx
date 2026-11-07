@@ -39,7 +39,7 @@ export default function AdminLogin() {
                 <div className="auth-container">
                     <div className="auth-header">
                         <div className="auth-logo">
-                            <span>📊</span> SimulaMEI
+                            <span>📊</span> EuSempreMEI
                         </div>
                         <span className="admin-badge" style={{
                             background: 'var(--color-primary)',
@@ -71,7 +71,7 @@ export default function AdminLogin() {
                                 name="email"
                                 value={formData.email}
                                 onChange={handleChange}
-                                placeholder="admin@simulamei.com"
+                                placeholder="admin@eusempremei.com.br"
                                 className="form-input"
                                 required
                             />

@@ -26,7 +26,7 @@ app.use(helmet())
 
 // Middleware
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'https://simula-mei.vercel.app',
+    origin: process.env.FRONTEND_URL || 'https://www.eusempremei.com.br',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }))

@@ -54,7 +54,7 @@ export default function Contact() {
             `Nome: ${formData.name}`,
             `E-mail para resposta: ${formData.email}`
         ].join('\n')
-        window.location.href = `mailto:${route.email}?subject=${encodeURIComponent(`[SimulaMEI] ${route.label}`)}&body=${encodeURIComponent(body)}`
+        window.location.href = `mailto:${route.email}?subject=${encodeURIComponent(`[EuSempreMEI] ${route.label}`)}&body=${encodeURIComponent(body)}`
         setSubmitted(route.email)
     }
 
@@ -64,12 +64,12 @@ export default function Contact() {
 
     const faqs = [
         {
-            q: 'O SimulaMEI substitui a assessoria de um contador?',
-            a: 'Não. O SimulaMEI é uma ferramenta de tecnologia desenvolvida para apoiar e orientar a gestão financeira e tributária do microempreendedor. O cálculo serve como estimativa e diagnóstico; atos formais perante a Receita Federal e prefeituras devem ser avaliados com um contador habilitado.'
+            q: 'O EuSempreMEI substitui a assessoria de um contador?',
+            a: 'Não. O EuSempreMEI é uma ferramenta de tecnologia desenvolvida para apoiar e orientar a gestão financeira e tributária do microempreendedor. O cálculo serve como estimativa e diagnóstico; atos formais perante a Receita Federal e prefeituras devem ser avaliados com um contador habilitado.'
         },
         {
-            q: 'Quem é a empresa responsável pelo SimulaMEI?',
-            a: 'O SimulaMEI é um produto desenvolvido e administrado pela empresa ESPETINHO DO NORDESTE, inscrita no CNPJ sob o nº 33.137.007/0001-09.'
+            q: 'Quem é a empresa responsável pelo EuSempreMEI?',
+            a: 'O EuSempreMEI é um produto desenvolvido e administrado pela empresa ESPETINHO DO NORDESTE, inscrita no CNPJ sob o nº 33.137.007/0001-09.'
         },
         {
             q: 'Como posso cancelar ou alterar meu plano de assinatura?',
@@ -104,7 +104,7 @@ export default function Contact() {
                     <div className="legal-entity-body">
                         <h3>Informações Corporativas</h3>
                         <p>
-                            <strong>SimulaMEI</strong> é um produto desenvolvido e mantido por{' '}
+                            <strong>EuSempreMEI</strong> é um produto desenvolvido e mantido por{' '}
                             <strong>ESPETINHO DO NORDESTE</strong>, inscrita no CNPJ nº{' '}
                             <strong>33.137.007/0001-09</strong>.
                         </p>

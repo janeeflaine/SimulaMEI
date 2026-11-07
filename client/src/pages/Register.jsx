@@ -114,7 +114,7 @@ export default function Register() {
                 <div className="auth-container">
                     <div className="auth-header">
                         <Link to="/" className="auth-logo">
-                            <span>📊</span> SimulaMEI
+                            <span>📊</span> EuSempreMEI
                         </Link>
                         <h1 className="auth-title">
                             {isPaidPlan ? `Crie sua conta - Plano ${selectedPlan.name}` : 'Crie sua conta'}

@@ -285,7 +285,7 @@ export default function BillsToPay() {
             doc.setFont('helvetica', 'normal')
             doc.setFontSize(7)
             doc.setTextColor(148, 163, 184) // slate-400
-            doc.text('SimulaMEI — Relatório de Contas a Pagar', margin, footerY)
+            doc.text('EuSempreMEI — Relatório de Contas a Pagar', margin, footerY)
             doc.text('Documento gerado automaticamente. Confira os dados com seu controle financeiro.', pageWidth / 2, footerY, { align: 'center' })
             doc.text('Pág. 1', pageWidth - margin, footerY, { align: 'right' })
 

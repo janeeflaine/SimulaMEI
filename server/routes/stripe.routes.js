@@ -42,7 +42,7 @@ router.post('/create-checkout-session', authMiddleware, async (req, res) => {
 
         // Dynamically resolve domain
         const origin = req.headers.origin || req.headers.referer
-        let domain = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://simula-mei.vercel.app' : 'http://localhost:5173')
+        let domain = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://www.eusempremei.com.br' : 'http://localhost:5173')
         if (origin) {
             try {
                 const parsed = new URL(origin)

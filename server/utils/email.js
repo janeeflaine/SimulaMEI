@@ -21,17 +21,17 @@ const createTransporter = () => {
 const sendPasswordResetEmail = async (to, token) => {
     const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
     // Fallback to localhost for dev environment
-    const baseUrl = process.env.FRONTEND_URL || (isProduction ? 'https://simula-mei.vercel.app' : 'http://localhost:5173')
+    const baseUrl = process.env.FRONTEND_URL || (isProduction ? 'https://www.eusempremei.com.br' : 'http://localhost:5173')
     const resetUrl = `${baseUrl}/redefinir-senha?token=${token}`
 
     const mailOptions = {
-        from: `"SimulaMEI Support" <${process.env.SMTP_FROM || 'noreply@simulamei.com'}>`, // sender address
+        from: `"EuSempreMEI Suporte" <${process.env.SMTP_FROM || 'noreply@eusempremei.com.br'}>`, // sender address
         to, // list of receivers
-        subject: 'Redefinição de Senha - SimulaMEI', // Subject line
+        subject: 'Redefinição de Senha - EuSempreMEI', // Subject line
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2>Recuperação de Conta</h2>
-                <p>Você solicitou a redefinição de senha para a sua conta no SimulaMEI.</p>
+                <p>Você solicitou a redefinição de senha para a sua conta no EuSempreMEI.</p>
                 <p>Clique no botão abaixo para criar uma nova senha:</p>
                 <div style="text-align: center; margin: 30px 0;">
                     <a href="${resetUrl}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Redefinir Minha Senha</a>

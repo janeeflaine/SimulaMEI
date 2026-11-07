@@ -58,7 +58,7 @@ export default function Home() {
                     <div className="hero-text">
                         <div className="badge-glow">🚀 O braço direito do MEI moderno</div>
                         <h1>Evolua a Gestão do seu MEI para o <span>Nível Profissional</span></h1>
-                        <p>Diga adeus às planilhas confusas. O SimulaMEI é a plataforma completa para você simular impostos, controlar finanças e nunca mais perder prazos.</p>
+                        <p>Diga adeus às planilhas confusas. O EuSempreMEI é a plataforma completa para você simular impostos, controlar finanças e nunca mais perder prazos.</p>
                         <div className="hero-buttons">
                             <button onClick={() => navigate('/planos')} className="btn-main">
                                 Começar Agora <ArrowRight size={20} />
@@ -222,7 +222,7 @@ export default function Home() {
             {/* 4. PERSUASIVE / MEI FOCUS */}
             <section className="persuasion-pills container">
                 <div className="section-header-v2">
-                    <h2>Por que o SimulaMEI é essencial?</h2>
+                    <h2>Por que o EuSempreMEI é essencial?</h2>
                     <p>Feito por quem entende as dores de ser um MEI no Brasil.</p>
                 </div>
                 <div className="pills-grid">

@@ -53,7 +53,7 @@ app.get('/api/health', (req, res) => {
 
 // API Root message moved or removed to allow frontend serving
 // app.get('/', (req, res) => {
-//     res.json({ message: '🚀 SimulaMEI API is running!' })
+//     res.json({ message: '🚀 EuSempreMEI API is running!' })
 // })
 
 // Serve static files (Production handling)

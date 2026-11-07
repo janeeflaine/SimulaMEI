@@ -31,7 +31,7 @@ export default function AdminLayout() {
                 <div className="sidebar-header">
                     <Link to="/admin" className="admin-logo">
                         <span>📊</span>
-                        <span>SimulaMEI</span>
+                        <span>EuSempreMEI</span>
                     </Link>
                     <span className="admin-badge">Admin</span>
                 </div>

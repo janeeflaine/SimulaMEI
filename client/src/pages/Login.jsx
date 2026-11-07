@@ -47,7 +47,7 @@ export default function Login() {
                 <div className="auth-container">
                     <div className="auth-header">
                         <Link to="/" className="auth-logo">
-                            <span>📊</span> SimulaMEI
+                            <span>📊</span> EuSempreMEI
                         </Link>
                         <h1 className="auth-title">Bem-vindo de volta!</h1>
                         <p className="auth-subtitle">Entre na sua conta para continuar</p>

@@ -49,7 +49,7 @@ export default function UserLayout() {
                     <nav className="nav">
                         <Link to="/" className="logo">
                             <span className="logo-icon">📊</span>
-                            <span className="logo-text">SimulaMEI</span>
+                            <span className="logo-text">EuSempreMEI</span>
                         </Link>
 
                         {/* Mobile Menu Toggle */}
@@ -141,13 +141,13 @@ export default function UserLayout() {
                         <div className="footer-col footer-col-brand">
                             <Link to="/" className="footer-brand">
                                 <span className="logo-icon">📊</span>
-                                <span className="logo-text">SimulaMEI</span>
+                                <span className="logo-text">EuSempreMEI</span>
                             </Link>
                             <p className="footer-desc">
                                 Plataforma inteligente de apoio à gestão financeira, controle de faturamento e simulação tributária para o Microempreendedor Individual (MEI).
                             </p>
                             <div className="footer-entity-pill">
-                                🏢 SimulaMEI é um produto de <strong>ESPETINHO DO NORDESTE</strong>
+                                🏢 EuSempreMEI é um produto de <strong>ESPETINHO DO NORDESTE</strong>
                                 <div className="footer-cnpj">CNPJ: <strong>33.137.007/0001-09</strong></div>
                             </div>
                         </div>
@@ -210,12 +210,12 @@ export default function UserLayout() {
 
                     <div className="footer-bottom">
                         <p className="footer-disclaimer">
-                            ⚠️ <strong>Aviso Legal:</strong> O SimulaMEI é uma plataforma informativa de apoio à gestão do empreendedor.
+                            ⚠️ <strong>Aviso Legal:</strong> O EuSempreMEI é uma plataforma informativa de apoio à gestão do empreendedor.
                             Os valores e simulações são estimativos e não substituem o papel de um contador profissional habilitado.
                         </p>
                         <div className="footer-copyright-bar">
                             <p className="footer-copyright">
-                                © {new Date().getFullYear()} SimulaMEI. Todos os direitos reservados.
+                                © {new Date().getFullYear()} EuSempreMEI. Todos os direitos reservados.
                             </p>
                             <p className="footer-legal-mention">
                                 Desenvolvido e mantido por <strong>ESPETINHO DO NORDESTE</strong> • CNPJ: <strong>33.137.007/0001-09</strong>

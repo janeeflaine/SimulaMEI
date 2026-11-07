@@ -396,7 +396,7 @@ export default function Plans() {
 
                 {/* Benefits Section */}
                 <div className="plans-benefits">
-                    <h2>Por que escolher o SimulaMEI Premium?</h2>
+                    <h2>Por que escolher o EuSempreMEI Premium?</h2>
                     <div className="benefits-grid">
                         <div className="benefit-item">
                             <span className="benefit-icon">📊</span>

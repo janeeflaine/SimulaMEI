@@ -479,7 +479,7 @@ export default function Dashboard() {
             const doc = new jsPDF()
             doc.setFontSize(22)
             doc.setTextColor(16, 185, 129)
-            doc.text('Relatório SimulaMEI', 14, 20)
+            doc.text('Relatório EuSempreMEI', 14, 20)
             doc.setFontSize(10)
             doc.setTextColor(100)
             doc.text(`Gerado em: ${new Date().toLocaleDateString()} às ${new Date().toLocaleTimeString()}`, 14, 30)
@@ -509,7 +509,7 @@ export default function Dashboard() {
                     headStyles: { fillColor: [16, 185, 129] },
                 })
             }
-            doc.save('relatorio-simulamei.pdf')
+            doc.save('relatorio-eusempremei.pdf')
         } catch (error) {
             console.error('Erro ao gerar PDF:', error)
         }

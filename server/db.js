@@ -438,7 +438,7 @@ const seedDefaults = async () => {
       const hashedPassword = await bcrypt.hash(adminPass, 12)
       await pool.query(`
                 INSERT INTO users(name, email, password, role)
-VALUES('Administrador', 'admin@simulamei.com', $1, 'ADMIN')
+VALUES('Administrador', 'admin@eusempremei.com.br', $1, 'ADMIN')
   `, [hashedPassword])
       console.log('✅ Admin user seeded')
       if (!process.env.ADMIN_DEFAULT_PASSWORD) {

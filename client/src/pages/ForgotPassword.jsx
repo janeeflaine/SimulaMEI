@@ -43,7 +43,7 @@ export default function ForgotPassword() {
                 <div className="auth-container">
                     <div className="auth-header">
                         <Link to="/" className="auth-logo">
-                            <span>📊</span> SimulaMEI
+                            <span>📊</span> EuSempreMEI
                         </Link>
                         <h1 className="auth-title">Recuperar Senha</h1>
                         <p className="auth-subtitle">Informe seu e-mail para receber o link de recuperação</p>

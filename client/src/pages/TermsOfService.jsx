@@ -20,7 +20,7 @@ export default function TermsOfService() {
                     </div>
                     <h1>Termos de Serviço</h1>
                     <p>
-                        Regras, responsabilidades e diretrizes que regem o acesso e a utilização dos serviços do SimulaMEI.
+                        Regras, responsabilidades e diretrizes que regem o acesso e a utilização dos serviços do EuSempreMEI.
                     </p>
                     <div className="legal-updated">
                         Última atualização: {LEGAL_LAST_UPDATED}
@@ -35,7 +35,7 @@ export default function TermsOfService() {
                     <div className="legal-entity-body">
                         <h3>Identificação Institucional</h3>
                         <p>
-                            A plataforma <strong>SimulaMEI</strong> é de titularidade e operada exclusivamente pela pessoa jurídica{' '}
+                            A plataforma <strong>EuSempreMEI</strong> é de titularidade e operada exclusivamente pela pessoa jurídica{' '}
                             <strong>ESPETINHO DO NORDESTE</strong>, inscrita no CNPJ sob o nº{' '}
                             <strong>33.137.007/0001-09</strong>.
                         </p>
@@ -47,7 +47,7 @@ export default function TermsOfService() {
                     <section className="legal-section">
                         <h2>1. Aceitação dos Termos</h2>
                         <p>
-                            Ao acessar, navegar, simular ou criar uma conta na plataforma <strong>SimulaMEI</strong>, você (doravante denominado "Usuário") concorda expressamente e sem reservas com estes <strong>Termos de Serviço</strong> e com a nossa <Link to="/politica-de-privacidade" style={{ color: 'var(--color-primary-dark)', fontWeight: 600 }}>Política de Privacidade</Link>.
+                            Ao acessar, navegar, simular ou criar uma conta na plataforma <strong>EuSempreMEI</strong>, você (doravante denominado "Usuário") concorda expressamente e sem reservas com estes <strong>Termos de Serviço</strong> e com a nossa <Link to="/politica-de-privacidade" style={{ color: 'var(--color-primary-dark)', fontWeight: 600 }}>Política de Privacidade</Link>.
                         </p>
                         <p>
                             Ao criar uma conta, o Usuário confirma expressamente o aceite destes Termos e declara ter lido a Política de Privacidade, por meio da caixa de seleção do formulário de cadastro.
@@ -63,7 +63,7 @@ export default function TermsOfService() {
                     <section className="legal-section">
                         <h2>2. Objeto e Descrição dos Serviços</h2>
                         <p>
-                            O <strong>SimulaMEI</strong> é uma plataforma SaaS (Software as a Service) voltada ao Microempreendedor Individual (MEI) e pequenos negócios, fornecendo ferramentas digitais para:
+                            O <strong>EuSempreMEI</strong> é uma plataforma SaaS (Software as a Service) voltada ao Microempreendedor Individual (MEI) e pequenos negócios, fornecendo ferramentas digitais para:
                         </p>
                         <ul>
                             <li>Simulação e estimativa de enquadramento tributário (MEI vs. Simples Nacional vs. Lucro Presumido);</li>
@@ -81,7 +81,7 @@ export default function TermsOfService() {
                                 <AlertTriangle size={18} />
                                 <strong>Aviso Legal Importante:</strong>
                             </div>
-                            As simulações, projeções e cálculos disponibilizados pelo SimulaMEI possuem finalidade estritamente orientativa e de auxílio à gestão. As análises não constituem e não substituem, em hipótese alguma, parecer contábil, consultoria jurídica ou serviço prestado por contador habilitado junto ao Conselho Regional de Contabilidade (CRC).
+                            As simulações, projeções e cálculos disponibilizados pelo EuSempreMEI possuem finalidade estritamente orientativa e de auxílio à gestão. As análises não constituem e não substituem, em hipótese alguma, parecer contábil, consultoria jurídica ou serviço prestado por contador habilitado junto ao Conselho Regional de Contabilidade (CRC).
                         </div>
                         <p>
                             Cabe exclusivamente ao empreendedor a validação formal de seus recolhimentos, emissões de notas fiscais e declaração anual (DASN-SIMEI) perante a Receita Federal do Brasil e os órgãos municipais e estaduais competentes.
@@ -94,27 +94,27 @@ export default function TermsOfService() {
                         <ul>
                             <li>O Usuário é o único responsável pela guarda, confidencialidade e uso de sua senha de acesso;</li>
                             <li>É expressamente proibido ceder, emprestar, vender ou transferir sua conta a terceiros sem prévia autorização;</li>
-                            <li>Em caso de suspeita de uso indevido ou invasão de sua conta, o Usuário deverá comunicar imediatamente a equipe do SimulaMEI;</li>
-                            <li>O SimulaMEI se reserva o direito de suspender ou encerrar contas com cadastros falsos, fraudulentos ou que violem estes termos.</li>
+                            <li>Em caso de suspeita de uso indevido ou invasão de sua conta, o Usuário deverá comunicar imediatamente a equipe do EuSempreMEI;</li>
+                            <li>O EuSempreMEI se reserva o direito de suspender ou encerrar contas com cadastros falsos, fraudulentos ou que violem estes termos.</li>
                         </ul>
                     </section>
 
                     <section className="legal-section">
                         <h2>5. Regras de Utilização e Condutas Vedadas</h2>
-                        <p>Ao utilizar o SimulaMEI, o Usuário compromete-se a NÃO:</p>
+                        <p>Ao utilizar o EuSempreMEI, o Usuário compromete-se a NÃO:</p>
                         <ol>
                             <li>Utilizar a plataforma para quaisquer propósitos ilícitos, fraudulentos ou contrários à moral e aos bons costumes;</li>
                             <li>Executar ataques de negação de serviço (DDoS), engenharia reversa, descompilação, scraping abusivo ou invasão de sistemas;</li>
-                            <li>Inserir vírus, cavalos de troia ou qualquer código malicioso capaz de danificar a infraestrutura do SimulaMEI ou de terceiros;</li>
+                            <li>Inserir vírus, cavalos de troia ou qualquer código malicioso capaz de danificar a infraestrutura do EuSempreMEI ou de terceiros;</li>
                             <li>Tentar contornar travas de planos, limites de recursos ou privilégios de acesso sem a devida contratação;</li>
-                            <li>Reproduzir, duplicar, copiar ou revender o software e o modelo de negócios do SimulaMEI sem consentimento prévio e expresso da empresa <strong>ESPETINHO DO NORDESTE</strong>.</li>
+                            <li>Reproduzir, duplicar, copiar ou revender o software e o modelo de negócios do EuSempreMEI sem consentimento prévio e expresso da empresa <strong>ESPETINHO DO NORDESTE</strong>.</li>
                         </ol>
                     </section>
 
                     <section className="legal-section">
                         <h2>6. Planos de Assinatura, Cobrança e Cancelamento</h2>
                         <p>
-                            O SimulaMEI oferece planos gratuitos com funcionalidades essenciais e planos pagos com recursos avançados:
+                            O EuSempreMEI oferece planos gratuitos com funcionalidades essenciais e planos pagos com recursos avançados:
                         </p>
                         <ul>
                             <li><strong>Cobrança:</strong> Planos por assinatura são faturados de forma recorrente (mensal ou anual) através dos meios de pagamento oficiais disponibilizados na plataforma.</li>
@@ -134,7 +134,7 @@ export default function TermsOfService() {
                     <section className="legal-section">
                         <h2>8. Limitação de Responsabilidade</h2>
                         <p>
-                            A ESPETINHO DO NORDESTE empenha os melhores esforços técnicos para manter o SimulaMEI disponível 24 horas por dia, 7 dias por semana. Entretanto, não garante operação livre de eventuais interrupções temporárias decorrentes de manutenção técnica, falhas de conectividade de operadoras ou eventos de força maior.
+                            A ESPETINHO DO NORDESTE empenha os melhores esforços técnicos para manter o EuSempreMEI disponível 24 horas por dia, 7 dias por semana. Entretanto, não garante operação livre de eventuais interrupções temporárias decorrentes de manutenção técnica, falhas de conectividade de operadoras ou eventos de força maior.
                         </p>
                         <p>
                             A plataforma não será responsável por eventuais prejuízos decorrentes de decisões comerciais, fiscais ou financeiras tomadas exclusivamente com base em estimativas da plataforma sem prévia validação contábil formal.

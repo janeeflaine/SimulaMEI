@@ -62,7 +62,7 @@ export default function ResetPassword() {
                 <div className="auth-container">
                     <div className="auth-header">
                         <Link to="/" className="auth-logo">
-                            <span>📊</span> SimulaMEI
+                            <span>📊</span> EuSempreMEI
                         </Link>
                         <h1 className="auth-title">Criar Nova Senha</h1>
                         <p className="auth-subtitle">Digite sua nova senha abaixo</p>

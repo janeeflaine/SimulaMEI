@@ -1,5 +1,5 @@
 /**
- * Legal Info — dados institucionais e canais de contato do SimulaMEI.
+ * Legal Info — dados institucionais e canais de contato do EuSempreMEI.
  *
  * Fonte única para rodapé, páginas legais, contato e cadastro.
  * Ao alterar o texto da Política de Privacidade ou dos Termos, atualize
@@ -7,7 +7,7 @@
  */
 
 export const COMPANY = {
-    productName: 'SimulaMEI',
+    productName: 'EuSempreMEI',
     legalName: 'ESPETINHO DO NORDESTE',
     cnpj: '33.137.007/0001-09',
     domain: 'eusempremei.com.br',
