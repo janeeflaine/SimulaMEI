@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { CONTACT_EMAILS } from '../utils/legalInfo'
 import './UserLayout.css'
 
 export default function UserLayout() {
@@ -177,6 +178,9 @@ export default function UserLayout() {
                                     <Link to="/termos-de-servico">Termos de Serviço</Link>
                                 </li>
                                 <li>
+                                    <Link to="/exclusao-de-dados">Exclusão de Dados</Link>
+                                </li>
+                                <li>
                                     <Link to="/contato">Informações de Contato</Link>
                                 </li>
                             </ul>
@@ -188,11 +192,11 @@ export default function UserLayout() {
                             <div className="footer-contact-info">
                                 <p className="footer-contact-line">
                                     <span className="contact-icon">✉️</span>
-                                    <a href="mailto:contato@simulamei.com.br">contato@simulamei.com.br</a>
+                                    <a href={`mailto:${CONTACT_EMAILS.contato}`}>{CONTACT_EMAILS.contato}</a>
                                 </p>
                                 <p className="footer-contact-line">
                                     <span className="contact-icon">💬</span>
-                                    <a href="mailto:suporte@simulamei.com.br">suporte@simulamei.com.br</a>
+                                    <a href={`mailto:${CONTACT_EMAILS.suporte}`}>{CONTACT_EMAILS.suporte}</a>
                                 </p>
                                 <p className="footer-hours">
                                     🕒 Seg. a Sex. das 09h às 18h (Brasília)

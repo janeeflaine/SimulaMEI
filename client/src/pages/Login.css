@@ -82,3 +82,30 @@
 .auth-link:hover {
     text-decoration: underline;
 }
+
+/* Aceite de Termos e Política no cadastro */
+.auth-terms {
+    margin-top: 4px;
+}
+
+.auth-form .form-group .auth-terms-label {
+    display: flex;
+    margin-bottom: 0;
+    font-weight: 400;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+.auth-form .form-group .auth-terms-label input[type="checkbox"] {
+    margin-top: 3px;
+    padding: 0;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+}

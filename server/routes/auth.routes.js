@@ -3,9 +3,10 @@ const bcrypt = require('bcryptjs')
 const crypto = require('crypto')
 const rateLimit = require('express-rate-limit')
 const { db, pool } = require('../db')
-const { generateToken } = require('../middleware/auth')
+const { generateToken, authMiddleware } = require('../middleware/auth')
 const { sendPasswordResetEmail } = require('../utils/email')
 const auditLogger = require('../utils/auditLogger')
+const { deleteUserData, cancelStripeSubscriptionIfActive } = require('../utils/userDeletion')
 
 const router = express.Router()
 
@@ -98,10 +99,15 @@ async function handleSession(userId, context) {
 
 router.post('/register', authLimiter, async (req, res) => {
     try {
-        const { name, email, password } = req.body
+        const { name, email, password, acceptedTermsVersion } = req.body
 
         if (!name || !email || !password) {
             return res.status(400).json({ message: 'Nome, email e senha são obrigatórios' })
+        }
+
+        // LGPD / CDC: aceite expresso dos Termos e ciência da Política de Privacidade
+        if (typeof acceptedTermsVersion !== 'string' || !acceptedTermsVersion.trim()) {
+            return res.status(400).json({ message: 'É necessário aceitar os Termos de Serviço e a Política de Privacidade.' })
         }
 
         // FIX-6: Password policy
@@ -170,7 +176,12 @@ router.post('/register', authLimiter, async (req, res) => {
             actor: { user_id: userId, role: 'USER' },
             context: req.context || {},
             target: { resource_type: 'USER', resource_id: userId },
-            metadata: { name, email, planId: initialPlanId, subscriptionStatus, requiresPayment }
+            metadata: {
+                name, email, planId: initialPlanId, subscriptionStatus, requiresPayment,
+                termsAccepted: true,
+                termsVersion: acceptedTermsVersion.trim().substring(0, 32),
+                termsAcceptedAt: new Date().toISOString()
+            }
         })
 
         res.status(201).json({
@@ -440,8 +451,89 @@ router.post('/reset-password', async (req, res) => {
 
 // ─── Get Current User ─────────────────────────────────────────────────────────
 
-router.get('/me', require('../middleware/auth').authMiddleware, (req, res) => {
+router.get('/me', authMiddleware, (req, res) => {
     res.json(req.user)
+})
+
+// ─── Delete Own Account (LGPD art. 18, VI) ────────────────────────────────────
+
+const ACCOUNT_DELETION_CONFIRMATION = 'EXCLUIR'
+
+router.delete('/me', authMiddleware, authLimiter, async (req, res) => {
+    const { password, confirmation } = req.body || {}
+
+    if (confirmation !== ACCOUNT_DELETION_CONFIRMATION) {
+        return res.status(400).json({ message: `Digite ${ACCOUNT_DELETION_CONFIRMATION} para confirmar a exclusão.` })
+    }
+    if (!password) {
+        return res.status(400).json({ message: 'Informe sua senha para confirmar a exclusão.' })
+    }
+
+    let client
+    try {
+        const userResult = await db.query(
+            'SELECT id, email, role, password, "stripeSubscriptionId" FROM users WHERE id = $1 AND "deletedAt" IS NULL',
+            [req.user.id]
+        )
+        const user = userResult.rows[0]
+
+        if (!user) {
+            return res.status(404).json({ message: 'Usuário não encontrado.' })
+        }
+
+        if (user.role === 'ADMIN') {
+            return res.status(403).json({ message: 'Contas de administrador não podem ser excluídas por aqui.' })
+        }
+
+        const validPassword = await bcrypt.compare(password, user.password)
+        if (!validPassword) {
+            await auditLogger.log({
+                level: 'WARN',
+                event_type: 'ACCOUNT_DELETE_FAILED',
+                actor: { user_id: user.id, role: user.role },
+                context: req.context || {},
+                metadata: { reason: 'wrong_password' }
+            })
+            return res.status(401).json({ message: 'Senha incorreta.' })
+        }
+
+        // Garante que nenhuma cobrança recorrente continue depois da exclusão
+        try {
+            await cancelStripeSubscriptionIfActive(user.stripeSubscriptionId)
+        } catch (stripeErr) {
+            console.error('Account deletion: Stripe cancel failed:', stripeErr.message)
+            return res.status(502).json({
+                message: 'Não conseguimos cancelar sua assinatura agora, então nenhum dado foi excluído. Tente novamente em alguns minutos ou fale com o suporte.'
+            })
+        }
+
+        client = await pool.connect()
+        try {
+            await client.query('BEGIN')
+            await deleteUserData(client, user.id)
+            await client.query('COMMIT')
+        } catch (txError) {
+            await client.query('ROLLBACK')
+            throw txError
+        }
+
+        // Registro mínimo, sem dados identificáveis em claro (só o hash do e-mail)
+        await auditLogger.log({
+            level: 'WARN',
+            event_type: 'USER_SELF_DELETED',
+            actor: {},
+            context: req.context || {},
+            target: { resource_type: 'USER', resource_id: user.id },
+            metadata: { email_sha256: crypto.createHash('sha256').update(String(user.email).toLowerCase()).digest('hex') }
+        })
+
+        res.json({ message: 'Sua conta e todos os seus dados foram excluídos definitivamente.' })
+    } catch (error) {
+        console.error('Delete own account error:', error)
+        res.status(500).json({ message: 'Erro ao excluir a conta. Nenhum dado foi excluído; tente novamente.' })
+    } finally {
+        if (client) client.release()
+    }
 })
 
 module.exports = router

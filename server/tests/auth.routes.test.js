@@ -151,7 +151,8 @@ describe('Authentication Routes - Recuperação de Conta', () => {
                     name: 'Novo Cliente',
                     email: 'cliente@teste.com',
                     password: 'password123',
-                    planId: 2
+                    planId: 2,
+                    acceptedTermsVersion: '2026-11-06'
                 })
 
             expect(res.statusCode).toBe(201)
@@ -200,13 +201,28 @@ describe('Authentication Routes - Recuperação de Conta', () => {
                     name: 'Cliente Free',
                     email: 'free@teste.com',
                     password: 'password123',
-                    planId: 1
+                    planId: 1,
+                    acceptedTermsVersion: '2026-11-06'
                 })
 
             expect(res.statusCode).toBe(201)
             expect(res.body.user.planId).toBe(1)
             expect(res.body.user.subscriptionStatus).toBe('active')
             expect(res.body.user.requiresPayment).toBe(false)
+        })
+
+        test('Deve recusar cadastro sem aceite dos Termos e da Política (400)', async () => {
+            const res = await request(app)
+                .post('/api/auth/register')
+                .send({
+                    name: 'Sem Aceite',
+                    email: 'semaceite@teste.com',
+                    password: 'password123'
+                })
+
+            expect(res.statusCode).toBe(400)
+            expect(res.body.message).toMatch(/Termos de Serviço/)
+            expect(mockDb.query).not.toHaveBeenCalled()
         })
     })
 })

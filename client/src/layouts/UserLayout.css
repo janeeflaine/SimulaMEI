@@ -415,7 +415,9 @@
     .nav-links {
         position: fixed;
         top: 0;
-        right: -100%;
+        right: 0;
+        /* Fechado: recortado em vez de posicionado fora da tela (evita rolagem horizontal) */
+        clip-path: inset(0 0 0 100%);
         width: 80%;
         max-width: 300px;
         height: 100vh;
@@ -430,7 +432,8 @@
     }
 
     .nav-links.mobile-active {
-        right: 0;
+        /* Margem negativa à esquerda para não cortar a sombra */
+        clip-path: inset(0 0 0 -40px);
     }
 
     .nav-link {

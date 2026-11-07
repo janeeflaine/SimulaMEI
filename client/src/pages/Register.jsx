@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { LEGAL_VERSION } from '../utils/legalInfo'
 import './Login.css'
 
 export default function Register() {
@@ -10,6 +11,7 @@ export default function Register() {
 
     const { register } = useAuth()
     const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '' })
+    const [acceptedTerms, setAcceptedTerms] = useState(false)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [loadingStatus, setLoadingStatus] = useState('')
@@ -52,12 +54,17 @@ export default function Register() {
             return
         }
 
+        if (!acceptedTerms) {
+            setError('Para criar a conta, aceite os Termos de Serviço e a Política de Privacidade')
+            return
+        }
+
         setLoading(true)
         setLoadingStatus('Criando sua conta...')
 
         try {
             const targetPlanId = selectedPlan ? selectedPlan.id : (planIdParam ? Number(planIdParam) : null)
-            const user = await register(formData.name, formData.email, formData.password, targetPlanId)
+            const user = await register(formData.name, formData.email, formData.password, targetPlanId, LEGAL_VERSION)
 
             // If user requires payment (paid plan selected), immediately redirect to Stripe Checkout!
             if (user?.requiresPayment || (selectedPlan && Number(selectedPlan.price) > 0)) {
@@ -211,6 +218,24 @@ export default function Register() {
                                 required
                                 disabled={loading}
                             />
+                        </div>
+
+                        <div className="form-group auth-terms">
+                            <label className="auth-terms-label">
+                                <input
+                                    type="checkbox"
+                                    checked={acceptedTerms}
+                                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                    required
+                                    disabled={loading}
+                                />
+                                <span>
+                                    Tenho 18 anos ou mais, li e aceito os{' '}
+                                    <Link to="/termos-de-servico" target="_blank" className="auth-link">Termos de Serviço</Link>{' '}
+                                    e estou ciente da{' '}
+                                    <Link to="/politica-de-privacidade" target="_blank" className="auth-link">Política de Privacidade</Link>.
+                                </span>
+                            </label>
                         </div>
 
                         <button

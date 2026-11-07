@@ -12,6 +12,7 @@ import ResetPassword from './pages/ResetPassword'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import TermsOfService from './pages/TermsOfService'
 import Contact from './pages/Contact'
+import DataDeletion from './pages/DataDeletion'
 import Dashboard from './pages/Dashboard'
 import Comparison from './pages/Comparison'
 import Account from './pages/Account'
@@ -66,6 +67,7 @@ function App() {
                         <Route path="/termos-de-servico" element={<TermsOfService />} />
                         <Route path="/termos" element={<TermsOfService />} />
                         <Route path="/contato" element={<Contact />} />
+                        <Route path="/exclusao-de-dados" element={<DataDeletion />} />
 
                         {/* Protected User Routes */}
                         <Route element={<ProtectedRoute />}>

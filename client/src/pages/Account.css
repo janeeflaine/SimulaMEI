@@ -144,3 +144,57 @@
     margin: 0;
     font-size: var(--font-size-sm);
 }
+
+/* Exclusão de conta */
+.danger-actions-divider {
+    margin-top: var(--spacing-4);
+    padding-top: var(--spacing-4);
+    border-top: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.danger-link {
+    color: var(--color-danger);
+    font-weight: 600;
+}
+
+.btn-danger-outline {
+    background: transparent;
+    color: var(--color-danger);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.btn-danger-outline:hover {
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.btn.btn-danger {
+    background: var(--color-danger);
+    color: #fff;
+    border: 1px solid var(--color-danger);
+}
+
+.btn.btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+}
+
+.delete-account-form {
+    margin-top: var(--spacing-4);
+    padding: var(--spacing-4);
+    border-radius: 12px;
+    background: rgba(239, 68, 68, 0.04);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.delete-account-warning {
+    margin: 0 0 var(--spacing-4);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.delete-account-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-3);
+    flex-wrap: wrap;
+}
+

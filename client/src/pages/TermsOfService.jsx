@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { FileCheck, Building2, AlertTriangle, ShieldCheck, HelpCircle, ArrowLeft } from 'lucide-react'
+import { CONTACT_EMAILS, LEGAL_LAST_UPDATED } from '../utils/legalInfo'
 import './LegalPages.css'
 
 export default function TermsOfService() {
@@ -22,7 +23,7 @@ export default function TermsOfService() {
                         Regras, responsabilidades e diretrizes que regem o acesso e a utilização dos serviços do SimulaMEI.
                     </p>
                     <div className="legal-updated">
-                        Última atualização: {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                        Última atualização: {LEGAL_LAST_UPDATED}
                     </div>
                 </div>
 
@@ -47,6 +48,12 @@ export default function TermsOfService() {
                         <h2>1. Aceitação dos Termos</h2>
                         <p>
                             Ao acessar, navegar, simular ou criar uma conta na plataforma <strong>SimulaMEI</strong>, você (doravante denominado "Usuário") concorda expressamente e sem reservas com estes <strong>Termos de Serviço</strong> e com a nossa <Link to="/politica-de-privacidade" style={{ color: 'var(--color-primary-dark)', fontWeight: 600 }}>Política de Privacidade</Link>.
+                        </p>
+                        <p>
+                            Ao criar uma conta, o Usuário confirma expressamente o aceite destes Termos e declara ter lido a Política de Privacidade, por meio da caixa de seleção do formulário de cadastro.
+                        </p>
+                        <p>
+                            O uso da plataforma é permitido apenas a maiores de 18 anos.
                         </p>
                         <p>
                             Caso você não concorde com qualquer uma das disposições aqui estabelecidas, orientamos que interrompa imediatamente o uso do site e de suas funcionalidades.
@@ -150,8 +157,8 @@ export default function TermsOfService() {
                             <ul style={{ margin: '4px 0 0 16px' }}>
                                 <li><strong>Titular:</strong> ESPETINHO DO NORDESTE</li>
                                 <li><strong>CNPJ:</strong> 33.137.007/0001-09</li>
-                                <li><strong>E-mail de Suporte:</strong> suporte@simulamei.com.br</li>
-                                <li><strong>E-mail Comercial & Parcerias:</strong> contato@simulamei.com.br</li>
+                                <li><strong>E-mail de Suporte:</strong> {CONTACT_EMAILS.suporte}</li>
+                                <li><strong>E-mail Comercial & Parcerias:</strong> {CONTACT_EMAILS.contato}</li>
                                 <li><strong>Página de Atendimento:</strong> <Link to="/contato" style={{ color: 'var(--color-primary-dark)' }}>Central de Contato</Link></li>
                             </ul>
                         </div>

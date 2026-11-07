@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import './Account.css'
 
@@ -6,6 +7,11 @@ export default function Account() {
     const { user, logout } = useAuth()
     const [plans, setPlans] = useState([])
     const [loading, setLoading] = useState(true)
+    const navigate = useNavigate()
+    const [showDeleteForm, setShowDeleteForm] = useState(false)
+    const [deleteForm, setDeleteForm] = useState({ password: '', confirmation: '' })
+    const [deleteError, setDeleteError] = useState('')
+    const [deleting, setDeleting] = useState(false)
 
     useEffect(() => {
         fetchPlans()
@@ -49,6 +55,41 @@ export default function Account() {
             }
         } catch (e) {
             window.location.href = '/planos'
+        }
+    }
+
+    const handleDeleteAccount = async (e) => {
+        e.preventDefault()
+        setDeleteError('')
+
+        if (deleteForm.confirmation !== 'EXCLUIR') {
+            setDeleteError('Digite EXCLUIR (em letras maiúsculas) para confirmar.')
+            return
+        }
+
+        setDeleting(true)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/auth/me', {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(deleteForm)
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) {
+                setDeleteError(data.message || 'Não foi possível excluir a conta.')
+                setDeleting(false)
+                return
+            }
+            logout()
+            alert(data.message || 'Sua conta foi excluída.')
+            navigate('/')
+        } catch (err) {
+            setDeleteError('Erro de conexão. Nenhum dado foi excluído; tente novamente.')
+            setDeleting(false)
         }
     }
 
@@ -161,6 +202,74 @@ export default function Account() {
                             Sair
                         </button>
                     </div>
+
+                    <div className="danger-actions danger-actions-divider">
+                        <div>
+                            <h4>Excluir minha conta</h4>
+                            <p>
+                                Apaga definitivamente sua conta e todos os seus dados e cancela a assinatura, se houver.{' '}
+                                <Link to="/exclusao-de-dados" className="danger-link">Saiba o que é excluído</Link>.
+                            </p>
+                        </div>
+                        {!showDeleteForm && (
+                            <button className="btn btn-danger-outline" onClick={() => setShowDeleteForm(true)}>
+                                Excluir conta
+                            </button>
+                        )}
+                    </div>
+
+                    {showDeleteForm && (
+                        <form className="delete-account-form" onSubmit={handleDeleteAccount}>
+                            <p className="delete-account-warning">
+                                Esta ação é <strong>irreversível</strong>. Para confirmar, informe sua senha e digite <strong>EXCLUIR</strong>.
+                            </p>
+                            {deleteError && (
+                                <div className="alert alert-danger">
+                                    <span>⚠️</span> {deleteError}
+                                </div>
+                            )}
+                            <div className="profile-grid">
+                                <div className="form-group">
+                                    <label className="form-label">Senha</label>
+                                    <input
+                                        type="password"
+                                        className="form-input"
+                                        value={deleteForm.password}
+                                        onChange={(e) => setDeleteForm(prev => ({ ...prev, password: e.target.value }))}
+                                        autoComplete="current-password"
+                                        required
+                                        disabled={deleting}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Digite EXCLUIR</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value={deleteForm.confirmation}
+                                        onChange={(e) => setDeleteForm(prev => ({ ...prev, confirmation: e.target.value }))}
+                                        placeholder="EXCLUIR"
+                                        autoComplete="off"
+                                        required
+                                        disabled={deleting}
+                                    />
+                                </div>
+                            </div>
+                            <div className="delete-account-buttons">
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => { setShowDeleteForm(false); setDeleteForm({ password: '', confirmation: '' }); setDeleteError('') }}
+                                    disabled={deleting}
+                                >
+                                    Cancelar
+                                </button>
+                                <button type="submit" className="btn btn-danger" disabled={deleting}>
+                                    {deleting ? 'Excluindo...' : 'Excluir definitivamente'}
+                                </button>
+                            </div>
+                        </form>
+                    )}
                 </div>
             </div>
         </div>

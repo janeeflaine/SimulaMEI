@@ -12,7 +12,17 @@ import {
     Shield,
     MessageSquare
 } from 'lucide-react'
+import { CONTACT_EMAILS } from '../utils/legalInfo'
 import './LegalPages.css'
+
+// Assunto do formulário -> caixa de e-mail responsável
+const SUBJECT_ROUTING = {
+    duvida: { email: CONTACT_EMAILS.contato, label: 'Dúvida sobre o Simulador MEI' },
+    suporte: { email: CONTACT_EMAILS.suporte, label: 'Suporte Técnico / Acesso à Conta' },
+    planos: { email: CONTACT_EMAILS.suporte, label: 'Planos e Assinaturas' },
+    privacidade: { email: CONTACT_EMAILS.privacidade, label: 'Privacidade e Dados Pessoais (LGPD)' },
+    comercial: { email: CONTACT_EMAILS.contato, label: 'Parcerias e Outros Assuntos' }
+}
 
 export default function Contact() {
     const [formData, setFormData] = useState({
@@ -21,8 +31,7 @@ export default function Contact() {
         subject: 'duvida',
         message: ''
     })
-    const [submitted, setSubmitted] = useState(false)
-    const [submitting, setSubmitting] = useState(false)
+    const [submitted, setSubmitted] = useState(null)
     const [openFaq, setOpenFaq] = useState(null)
 
     useEffect(() => {
@@ -34,20 +43,19 @@ export default function Contact() {
         setFormData((prev) => ({ ...prev, [name]: value }))
     }
 
+    // Sem serviço de e-mail no backend: abre o app de e-mail do usuário com a mensagem pronta
     const handleSubmit = (e) => {
         e.preventDefault()
-        setSubmitting(true)
-        // Simulação de envio com timeout
-        setTimeout(() => {
-            setSubmitting(false)
-            setSubmitted(true)
-            setFormData({
-                name: '',
-                email: '',
-                subject: 'duvida',
-                message: ''
-            })
-        }, 800)
+        const route = SUBJECT_ROUTING[formData.subject] || SUBJECT_ROUTING.duvida
+        const body = [
+            formData.message,
+            '',
+            '---',
+            `Nome: ${formData.name}`,
+            `E-mail para resposta: ${formData.email}`
+        ].join('\n')
+        window.location.href = `mailto:${route.email}?subject=${encodeURIComponent(`[SimulaMEI] ${route.label}`)}&body=${encodeURIComponent(body)}`
+        setSubmitted(route.email)
     }
 
     const toggleFaq = (index) => {
@@ -111,8 +119,8 @@ export default function Contact() {
                         </div>
                         <h3>Suporte Técnico</h3>
                         <p>Dúvidas sobre a plataforma, ferramentas de finanças ou relatórios.</p>
-                        <a href="mailto:suporte@simulamei.com.br" className="contact-link">
-                            suporte@simulamei.com.br
+                        <a href={`mailto:${CONTACT_EMAILS.suporte}`} className="contact-link">
+                            {CONTACT_EMAILS.suporte}
                         </a>
                     </div>
 
@@ -122,8 +130,8 @@ export default function Contact() {
                         </div>
                         <h3>Contato Comercial & Geral</h3>
                         <p>Parcerias, planos corporativos, sugestões e informações institucionais.</p>
-                        <a href="mailto:contato@simulamei.com.br" className="contact-link">
-                            contato@simulamei.com.br
+                        <a href={`mailto:${CONTACT_EMAILS.contato}`} className="contact-link">
+                            {CONTACT_EMAILS.contato}
                         </a>
                     </div>
 
@@ -133,8 +141,8 @@ export default function Contact() {
                         </div>
                         <h3>Privacidade & LGPD</h3>
                         <p>Canal do Encarregado de Dados para direitos do titular e privacidade.</p>
-                        <a href="mailto:privacidade@simulamei.com.br" className="contact-link">
-                            privacidade@simulamei.com.br
+                        <a href={`mailto:${CONTACT_EMAILS.privacidade}`} className="contact-link">
+                            {CONTACT_EMAILS.privacidade}
                         </a>
                     </div>
 
@@ -155,16 +163,16 @@ export default function Contact() {
                 <div className="contact-form-container">
                     <h2 className="contact-form-title">Envie uma Mensagem</h2>
                     <p className="contact-form-subtitle">
-                        Preencha o formulário abaixo e nossa equipe retornará o contato diretamente em seu e-mail.
+                        Preencha o formulário e clique em enviar: abriremos o seu aplicativo de e-mail com a mensagem pronta, endereçada à equipe certa.
                     </p>
 
                     {submitted && (
                         <div className="contact-success-msg">
                             <CheckCircle size={22} />
                             <div>
-                                <strong>Mensagem enviada com sucesso!</strong>
+                                <strong>Seu aplicativo de e-mail foi aberto com a mensagem pronta.</strong>
                                 <p style={{ margin: '2px 0 0', fontSize: '0.9rem' }}>
-                                    Agradecemos pelo contato. Nossa equipe responderá em breve através do seu e-mail informado.
+                                    Confira e clique em enviar por lá. Se nada abriu, escreva diretamente para <strong>{submitted}</strong>.
                                 </p>
                             </div>
                         </div>
@@ -231,11 +239,10 @@ export default function Contact() {
                         <button
                             type="submit"
                             className="btn btn-primary"
-                            disabled={submitting}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                         >
                             <Send size={16} />
-                            {submitting ? 'Enviando...' : 'Enviar Mensagem'}
+                            Enviar Mensagem
                         </button>
                     </form>
                 </div>

@@ -69,7 +69,7 @@ export default function Home() {
                         </div>
                         <div className="hero-trust">
                             <div className="trust-icons">
-                                <ShieldCheck size={18} /> <span>100% Seguro</span>
+                                <ShieldCheck size={18} /> <span>Dados protegidos (LGPD)</span>
                                 <Star size={18} /> <span>Feito para Microempreendedores</span>
                             </div>
                         </div>
@@ -248,7 +248,7 @@ export default function Home() {
             <section className="final-cta container">
                 <div className="final-cta-card">
                     <h2>Não deixe sua gestão para amanhã.</h2>
-                    <p>Junte-se a milhares de microempreendedores que já simplificaram sua rotina financeira.</p>
+                    <p>Comece grátis e simplifique a rotina financeira do seu MEI em poucos minutos.</p>
                     <button onClick={() => navigate('/cadastro')} className="btn-main-lg">
                         Começar Agora - É Grátis
                     </button>
