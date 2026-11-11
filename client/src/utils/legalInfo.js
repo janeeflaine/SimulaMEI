@@ -15,8 +15,8 @@ export const COMPANY = {
     cnpj: '33.137.007/0001-09',
     domain: 'eusempremei.com.br',
     address: 'Rua Laureano Jose Ferreira, 65, Loja 1, Prata, Lajinha - MG, CEP 36.980-000',
-    phone: '(33) 9948-8193',
-    phoneHref: 'tel:+553399488193',
+    phone: '(33) 99948-8193',
+    phoneHref: 'tel:+5533999488193',
 }
 
 export const CONTACT_EMAILS = {
