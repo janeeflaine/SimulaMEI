@@ -12,7 +12,7 @@ import {
     Shield,
     MessageSquare
 } from 'lucide-react'
-import { CONTACT_EMAILS } from '../utils/legalInfo'
+import { COMPANY, CONTACT_EMAILS } from '../utils/legalInfo'
 import './LegalPages.css'
 
 // Assunto do formulário -> caixa de e-mail responsável
@@ -69,7 +69,7 @@ export default function Contact() {
         },
         {
             q: 'Quem é a empresa responsável pelo EuSempreMEI?',
-            a: 'O EuSempreMEI é um produto desenvolvido e administrado pela empresa ESPETINHO DO NORDESTE, inscrita no CNPJ sob o nº 33.137.007/0001-09.'
+            a: `O EuSempreMEI é um produto desenvolvido e mantido por ${COMPANY.legalName}, ${COMPANY.legalNature} inscrito no CNPJ sob o nº ${COMPANY.cnpj}, com sede em ${COMPANY.address}.`
         },
         {
             q: 'Como posso cancelar ou alterar meu plano de assinatura?',
@@ -105,8 +105,12 @@ export default function Contact() {
                         <h3>Informações Corporativas</h3>
                         <p>
                             <strong>EuSempreMEI</strong> é um produto desenvolvido e mantido por{' '}
-                            <strong>ESPETINHO DO NORDESTE</strong>, inscrita no CNPJ nº{' '}
-                            <strong>33.137.007/0001-09</strong>.
+                            <strong>{COMPANY.legalName}</strong>, {COMPANY.legalNature} inscrito no CNPJ nº{' '}
+                            <strong>{COMPANY.cnpj}</strong>.
+                        </p>
+                        <p>
+                            <strong>Endereço:</strong> {COMPANY.address}<br />
+                            <strong>Telefone:</strong> <a href={COMPANY.phoneHref}>{COMPANY.phone}</a>
                         </p>
                     </div>
                 </div>

@@ -39,8 +39,8 @@ export default function PrivacyPolicy() {
                         <h3>Identificação do Controlador</h3>
                         <p>
                             O <strong>{COMPANY.productName}</strong> é um produto pertencente e operado por{' '}
-                            <strong>{COMPANY.legalName}</strong>, pessoa jurídica de direito privado inscrita no CNPJ sob o{' '}
-                            <strong>nº {COMPANY.cnpj}</strong>, que atua como controladora dos dados pessoais tratados na plataforma.
+                            <strong>{COMPANY.legalName}</strong>, {COMPANY.legalNature} inscrito no CNPJ sob o{' '}
+                            <strong>nº {COMPANY.cnpj}</strong>, com sede em {COMPANY.address}, que atua como controlador dos dados pessoais tratados na plataforma.
                         </p>
                     </div>
                 </div>
@@ -108,7 +108,7 @@ export default function PrivacyPolicy() {
                             <li><strong>Atender solicitações e exercer direitos em processos:</strong> execução de contrato e exercício regular de direitos (art. 7º, V e VI).</li>
                         </ul>
                         <div className="legal-highlight-box">
-                            <strong>Não comercializamos dados:</strong> o {COMPANY.productName} e a {COMPANY.legalName} não vendem, alugam ou cedem dados pessoais para fins de marketing ou publicidade de terceiros.
+                            <strong>Não comercializamos dados:</strong> o {COMPANY.productName} e seu controlador não vendem, alugam ou cedem dados pessoais para fins de marketing ou publicidade de terceiros.
                         </div>
                     </section>
 
@@ -230,12 +230,14 @@ export default function PrivacyPolicy() {
                             12. Canal de Privacidade
                         </h2>
                         <p>
-                            Como agente de tratamento de pequeno porte, nos termos da Resolução CD/ANPD nº 2/2022, a {COMPANY.legalName} disponibiliza um canal de comunicação dedicado para titulares e para a ANPD:
+                            Como agente de tratamento de pequeno porte, nos termos da Resolução CD/ANPD nº 2/2022, o controlador disponibiliza um canal de comunicação dedicado para titulares e para a ANPD:
                         </p>
                         <div className="legal-highlight-box">
                             <ul style={{ margin: '4px 0 0 16px' }}>
                                 <li><strong>Controlador:</strong> {COMPANY.legalName}</li>
                                 <li><strong>CNPJ:</strong> {COMPANY.cnpj}</li>
+                                <li><strong>Endereço:</strong> {COMPANY.address}</li>
+                                <li><strong>Telefone:</strong> {COMPANY.phone}</li>
                                 <li><strong>Privacidade e LGPD:</strong> {CONTACT_EMAILS.privacidade}</li>
                                 <li><strong>Atendimento geral:</strong> {CONTACT_EMAILS.contato}</li>
                                 <li><strong>Página de atendimento:</strong> <Link to="/contato" style={{ color: 'var(--color-primary-dark)' }}>Fale Conosco</Link></li>

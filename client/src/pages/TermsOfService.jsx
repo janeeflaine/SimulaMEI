@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { FileCheck, Building2, AlertTriangle, ShieldCheck, HelpCircle, ArrowLeft } from 'lucide-react'
-import { CONTACT_EMAILS, LEGAL_LAST_UPDATED } from '../utils/legalInfo'
+import { COMPANY, CONTACT_EMAILS, LEGAL_LAST_UPDATED } from '../utils/legalInfo'
 import './LegalPages.css'
 
 export default function TermsOfService() {
@@ -35,9 +35,9 @@ export default function TermsOfService() {
                     <div className="legal-entity-body">
                         <h3>Identificação Institucional</h3>
                         <p>
-                            A plataforma <strong>EuSempreMEI</strong> é de titularidade e operada exclusivamente pela pessoa jurídica{' '}
-                            <strong>ESPETINHO DO NORDESTE</strong>, inscrita no CNPJ sob o nº{' '}
-                            <strong>33.137.007/0001-09</strong>.
+                            A plataforma <strong>EuSempreMEI</strong> é de titularidade e operada exclusivamente por{' '}
+                            <strong>{COMPANY.legalName}</strong>, {COMPANY.legalNature} inscrito no CNPJ sob o nº{' '}
+                            <strong>{COMPANY.cnpj}</strong>, com sede em {COMPANY.address}.
                         </p>
                     </div>
                 </div>
@@ -107,7 +107,7 @@ export default function TermsOfService() {
                             <li>Executar ataques de negação de serviço (DDoS), engenharia reversa, descompilação, scraping abusivo ou invasão de sistemas;</li>
                             <li>Inserir vírus, cavalos de troia ou qualquer código malicioso capaz de danificar a infraestrutura do EuSempreMEI ou de terceiros;</li>
                             <li>Tentar contornar travas de planos, limites de recursos ou privilégios de acesso sem a devida contratação;</li>
-                            <li>Reproduzir, duplicar, copiar ou revender o software e o modelo de negócios do EuSempreMEI sem consentimento prévio e expresso da empresa <strong>ESPETINHO DO NORDESTE</strong>.</li>
+                            <li>Reproduzir, duplicar, copiar ou revender o software e o modelo de negócios do EuSempreMEI sem consentimento prévio e expresso do titular <strong>{COMPANY.legalName}</strong>.</li>
                         </ol>
                     </section>
 
@@ -127,14 +127,14 @@ export default function TermsOfService() {
                     <section className="legal-section">
                         <h2>7. Propriedade Intelectual</h2>
                         <p>
-                            Todo o conteúdo disponibilizado na plataforma — incluindo mas não se limitando a marcas, logotipos, layouts, códigos-fonte, algoritmos de cálculo, textos, imagens e design — é de propriedade exclusiva da <strong>ESPETINHO DO NORDESTE (CNPJ 33.137.007/0001-09)</strong> ou de seus licenciadores, sendo protegido pela legislação brasileira de direitos autorais e propriedade industrial.
+                            Todo o conteúdo disponibilizado na plataforma — incluindo mas não se limitando a marcas, logotipos, layouts, códigos-fonte, algoritmos de cálculo, textos, imagens e design — é de propriedade exclusiva de <strong>{COMPANY.legalName} (CNPJ {COMPANY.cnpj})</strong> ou de seus licenciadores, sendo protegido pela legislação brasileira de direitos autorais e propriedade industrial.
                         </p>
                     </section>
 
                     <section className="legal-section">
                         <h2>8. Limitação de Responsabilidade</h2>
                         <p>
-                            A ESPETINHO DO NORDESTE empenha os melhores esforços técnicos para manter o EuSempreMEI disponível 24 horas por dia, 7 dias por semana. Entretanto, não garante operação livre de eventuais interrupções temporárias decorrentes de manutenção técnica, falhas de conectividade de operadoras ou eventos de força maior.
+                            O titular da plataforma empenha os melhores esforços técnicos para manter o EuSempreMEI disponível 24 horas por dia, 7 dias por semana. Entretanto, não garante operação livre de eventuais interrupções temporárias decorrentes de manutenção técnica, falhas de conectividade de operadoras ou eventos de força maior.
                         </p>
                         <p>
                             A plataforma não será responsável por eventuais prejuízos decorrentes de decisões comerciais, fiscais ou financeiras tomadas exclusivamente com base em estimativas da plataforma sem prévia validação contábil formal.
@@ -155,8 +155,10 @@ export default function TermsOfService() {
                         </p>
                         <div className="legal-highlight-box">
                             <ul style={{ margin: '4px 0 0 16px' }}>
-                                <li><strong>Titular:</strong> ESPETINHO DO NORDESTE</li>
-                                <li><strong>CNPJ:</strong> 33.137.007/0001-09</li>
+                                <li><strong>Titular:</strong> {COMPANY.legalName}</li>
+                                <li><strong>CNPJ:</strong> {COMPANY.cnpj}</li>
+                                <li><strong>Endereço:</strong> {COMPANY.address}</li>
+                                <li><strong>Telefone:</strong> {COMPANY.phone}</li>
                                 <li><strong>E-mail de Suporte:</strong> {CONTACT_EMAILS.suporte}</li>
                                 <li><strong>E-mail Comercial & Parcerias:</strong> {CONTACT_EMAILS.contato}</li>
                                 <li><strong>Página de Atendimento:</strong> <Link to="/contato" style={{ color: 'var(--color-primary-dark)' }}>Central de Contato</Link></li>

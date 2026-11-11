@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { CONTACT_EMAILS } from '../utils/legalInfo'
+import { COMPANY, CONTACT_EMAILS } from '../utils/legalInfo'
 import './UserLayout.css'
 
 export default function UserLayout() {
@@ -147,8 +147,9 @@ export default function UserLayout() {
                                 Plataforma inteligente de apoio à gestão financeira, controle de faturamento e simulação tributária para o Microempreendedor Individual (MEI).
                             </p>
                             <div className="footer-entity-pill">
-                                🏢 EuSempreMEI é um produto de <strong>ESPETINHO DO NORDESTE</strong>
-                                <div className="footer-cnpj">CNPJ: <strong>33.137.007/0001-09</strong></div>
+                                🏢 EuSempreMEI é um produto de <strong>{COMPANY.legalName}</strong>
+                                <div className="footer-cnpj">CNPJ: <strong>{COMPANY.cnpj}</strong></div>
+                                <div className="footer-cnpj">{COMPANY.address}</div>
                             </div>
                         </div>
 
@@ -198,6 +199,10 @@ export default function UserLayout() {
                                     <span className="contact-icon">💬</span>
                                     <a href={`mailto:${CONTACT_EMAILS.suporte}`}>{CONTACT_EMAILS.suporte}</a>
                                 </p>
+                                <p className="footer-contact-line">
+                                    <span className="contact-icon">📞</span>
+                                    <a href={COMPANY.phoneHref}>{COMPANY.phone}</a>
+                                </p>
                                 <p className="footer-hours">
                                     🕒 Seg. a Sex. das 09h às 18h (Brasília)
                                 </p>
@@ -218,7 +223,7 @@ export default function UserLayout() {
                                 © {new Date().getFullYear()} EuSempreMEI. Todos os direitos reservados.
                             </p>
                             <p className="footer-legal-mention">
-                                Desenvolvido e mantido por <strong>ESPETINHO DO NORDESTE</strong> • CNPJ: <strong>33.137.007/0001-09</strong>
+                                Desenvolvido e mantido por <strong>{COMPANY.legalName}</strong> • CNPJ: <strong>{COMPANY.cnpj}</strong>
                             </p>
                         </div>
                     </div>

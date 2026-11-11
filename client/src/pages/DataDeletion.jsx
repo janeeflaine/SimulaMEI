@@ -48,7 +48,7 @@ export default function DataDeletion() {
                     <div className="legal-entity-body">
                         <h3>Controlador dos Dados</h3>
                         <p>
-                            <strong>{COMPANY.legalName}</strong>, CNPJ <strong>{COMPANY.cnpj}</strong>, responsável pelo {COMPANY.productName}.
+                            <strong>{COMPANY.legalName}</strong>, CNPJ <strong>{COMPANY.cnpj}</strong>, responsável pelo {COMPANY.productName}. Endereço: {COMPANY.address}.
                         </p>
                     </div>
                 </div>

@@ -8,9 +8,15 @@
 
 export const COMPANY = {
     productName: 'EuSempreMEI',
-    legalName: 'ESPETINHO DO NORDESTE',
+    // Exatamente como no Comprovante de Inscrição do CNPJ (campo "Nome empresarial").
+    // A verificação da Meta compara este nome, o endereço e o telefone com o documento.
+    legalName: '33.137.007 JHONNY EFLAINY CAVALCANTE DA SILVA',
+    legalNature: 'empresário individual',
     cnpj: '33.137.007/0001-09',
     domain: 'eusempremei.com.br',
+    address: 'Rua Laureano Jose Ferreira, 65, Loja 1, Prata, Lajinha - MG, CEP 36.980-000',
+    phone: '(33) 9948-8193',
+    phoneHref: 'tel:+553399488193',
 }
 
 export const CONTACT_EMAILS = {
@@ -19,5 +25,5 @@ export const CONTACT_EMAILS = {
     privacidade: 'privacidade@eusempremei.com.br',
 }
 
-export const LEGAL_LAST_UPDATED = '6 de novembro de 2026'
-export const LEGAL_VERSION = '2026-11-06'
+export const LEGAL_LAST_UPDATED = '11 de novembro de 2026'
+export const LEGAL_VERSION = '2026-11-11'

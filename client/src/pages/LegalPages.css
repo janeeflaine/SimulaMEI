@@ -62,7 +62,7 @@
     color: var(--color-text-muted, #94a3b8);
 }
 
-/* Callout Box com a menção de ESPETINHO DO NORDESTE e CNPJ */
+/* Callout Box com a identificação do titular (nome empresarial) e CNPJ */
 .legal-entity-card {
     background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%);
     border: 1px solid #bbf7d0;
