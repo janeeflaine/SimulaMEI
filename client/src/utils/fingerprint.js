@@ -28,6 +28,9 @@ function buildComponents() {
   }
 }
 
+// Formato gerado abaixo: 8 hex do hash + '-' + sufixo aleatório em base 36 (0-9, a-z)
+const FINGERPRINT_PATTERN = /^[a-f0-9]{8}-[a-z0-9]{6}$/
+
 function djb2Hash(str) {
   let hash = 5381
   for (let i = 0; i < str.length; i++) {
@@ -48,12 +51,12 @@ export function getDeviceFingerprint() {
         stored = legacy
       }
     }
-    if (stored && /^[a-f0-9]{8}-[a-f0-9]+$/.test(stored)) return stored
+    if (stored && FINGERPRINT_PATTERN.test(stored)) return stored
 
     const components = buildComponents()
     const hash = djb2Hash(components)
     // Append a random suffix so two identical machines get different fingerprints
-    const salt = Math.random().toString(36).substring(2, 8)
+    const salt = Math.random().toString(36).substring(2, 8).padEnd(6, '0')
     const fingerprint = `${hash}-${salt}`
 
     localStorage.setItem(STORAGE_KEY, fingerprint)
