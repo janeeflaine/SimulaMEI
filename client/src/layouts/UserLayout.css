@@ -166,7 +166,9 @@
     gap: 12px;
 }
 
-.user-name {
+/* Seletor mais específico: o AdminLayout.css tem um .user-name quase branco
+   (para o menu escuro do admin) que, carregado junto, apagava o nome no topo */
+.user-menu .user-name {
     font-weight: 600;
     color: var(--color-text);
     font-size: 14px;
