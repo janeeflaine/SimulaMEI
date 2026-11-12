@@ -352,10 +352,13 @@
     padding: var(--spacing-4) 0;
 }
 
+/* text-align/cor explícitos: uma regra global de h3 (FinanceQuickActionModal.css) centralizava estes títulos */
 .exit-row h3 {
     font-size: 1rem;
     font-weight: 600;
     margin: 0 0 var(--spacing-1);
+    text-align: left;
+    color: var(--color-text);
 }
 
 .exit-row p {

@@ -31,7 +31,7 @@ export default function Plans() {
     const { user, refreshUser } = useAuth()
     const [plans, setPlans] = useState([])
     const [loading, setLoading] = useState(true)
-    const { busy: checkoutLoading, checkout: handleCheckout, actionFor: planAction } = usePlanActions({ onChanged: () => navigate('/dashboard') })
+    const { busy: checkoutLoading, checkout: handleCheckout, actionFor: planAction, notify, dialog: planDialog } = usePlanActions({ onChanged: () => navigate('/dashboard') })
     const [verificationState, setVerificationState] = useState({
         loading: false,
         success: false,
@@ -64,8 +64,8 @@ export default function Plans() {
         }
 
         if (canceled) {
-            alert('A transação foi cancelada no Stripe. Nenhuma cobrança foi efetuada.')
             window.history.replaceState(null, '', window.location.pathname)
+            notify({ title: 'Pagamento cancelado', message: 'Você saiu do pagamento do Stripe. Nenhuma cobrança foi feita.' })
         }
     }, [])
 
@@ -389,6 +389,7 @@ export default function Plans() {
                     ))}
                 </section>
             </div>
+            {planDialog}
         </div>
     )
 }

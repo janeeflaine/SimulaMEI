@@ -50,7 +50,7 @@ export default function Account() {
     const [deleteError, setDeleteError] = useState('')
     const [deleting, setDeleting] = useState(false)
     const photo = useAccountPhoto(user?.id)
-    const { busy: planBusy, actionFor: planAction } = usePlanActions()
+    const { busy: planBusy, actionFor: planAction, dialog: planDialog } = usePlanActions()
 
     useEffect(() => {
         fetchPlans()
@@ -314,6 +314,7 @@ export default function Account() {
                     )}
                 </section>
             </div>
+            {planDialog}
         </div>
     )
 }

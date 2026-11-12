@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useConfirmDialog } from '../components/ui/ConfirmDialog'
 
 const brlFromCents = (cents) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((Number(cents) || 0) / 100)
@@ -10,6 +11,8 @@ const shortDate = (value) => {
     return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR')
 }
 
+const CONNECTION_ERROR = 'Erro de comunicação com o servidor. Nada foi alterado. Tente de novo em instantes.'
+
 /**
  * Assinar, trocar e cancelar plano — a mesma regra em Planos e em Minha conta.
  *
@@ -17,19 +20,25 @@ const shortDate = (value) => {
  *  - plano mais caro: libera na hora e o Stripe cobra a diferença proporcional;
  *  - plano mais barato: troca na hora e a diferença vira crédito na próxima fatura;
  *  - cancelar: mantém o plano até o fim do período pago, sem nova cobrança.
+ *
+ * As confirmações e avisos aparecem na janela do site (ConfirmDialog):
+ * a página que usa este hook precisa renderizar o `dialog` devolvido.
  */
 export default function usePlanActions({ onChanged } = {}) {
     const { user, refreshUser } = useAuth()
     const [busy, setBusy] = useState(false)
+    const { confirm, notify, dialog } = useConfirmDialog()
 
     const authHeaders = () => ({
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
         'Content-Type': 'application/json'
     })
 
-    const finish = async (message) => {
+    const showError = (title, message) => notify({ tone: 'error', title, message })
+
+    const finish = async (success) => {
         await refreshUser()
-        if (message) alert(message)
+        if (success) await notify({ tone: 'success', ...success })
         if (onChanged) onChanged()
     }
 
@@ -51,11 +60,12 @@ export default function usePlanActions({ onChanged } = {}) {
                 setBusy(false)
                 return changePlan(plan)
             }
-            alert(body.message || 'Não foi possível abrir o pagamento. Tente de novo.')
+            setBusy(false)
+            return showError('Não foi possível abrir o pagamento', body.message || 'Tente de novo em instantes.')
         } catch (_) {
-            alert('Erro de comunicação com o servidor. Tente novamente mais tarde.')
+            setBusy(false)
+            return showError('Não foi possível abrir o pagamento', CONNECTION_ERROR)
         }
-        setBusy(false)
     }
 
     /** Pede ao servidor quanto a troca custa (ou quanto vira crédito). Não muda nada. */
@@ -75,9 +85,13 @@ export default function usePlanActions({ onChanged } = {}) {
      * o mesmo instante do cálculo, então o valor cobrado é o que apareceu.
      */
     const changePlan = async (plan, { reactivate = false } = {}) => {
-        let question = `Manter a assinatura do ${plan.name}? A cobrança continua normalmente na renovação.`
+        let question = {
+            title: `Manter a assinatura do ${plan.name}?`,
+            message: 'A cobrança continua normalmente na renovação.',
+            confirmLabel: 'Manter assinatura'
+        }
+        let success = { title: `Pronto! Sua assinatura do ${plan.name} continua ativa` }
         let prorationDate = null
-        let summary = null
 
         if (!reactivate) {
             setBusy(true)
@@ -86,8 +100,7 @@ export default function usePlanActions({ onChanged } = {}) {
                 preview = await previewChange(plan)
             } catch (_) {
                 setBusy(false)
-                alert('Erro de comunicação com o servidor. Nada foi alterado.')
-                return
+                return showError('Não foi possível trocar de plano', CONNECTION_ERROR)
             }
             setBusy(false)
             const { res, body } = preview
@@ -96,27 +109,46 @@ export default function usePlanActions({ onChanged } = {}) {
                 return checkout(plan)
             }
             if (!res.ok) {
-                alert(body.message || 'Não foi possível calcular o valor da troca. Nada foi alterado.')
-                return
+                return showError('Não foi possível calcular a troca', body.message || 'Nada foi alterado. Tente de novo em instantes.')
             }
             prorationDate = body.prorationDate
-            const monthly = brlFromCents(body.monthlyPrice)
+            const monthly = `${brlFromCents(body.monthlyPrice)} por mês`
             const nextDate = shortDate(body.nextBillingDate)
             if (body.upgrade) {
                 const now = brlFromCents(body.chargeNow)
-                question = `Mudar para o ${plan.name} agora?\n\n` +
-                    `Hoje será cobrado ${now} no cartão da assinatura (diferença proporcional${nextDate ? ` até ${nextDate}` : ''}).\n` +
-                    `Depois, ${monthly} por mês.`
-                summary = `Foram cobrados ${now}.`
+                question = {
+                    title: `Mudar para o ${plan.name}`,
+                    message: 'O plano é liberado na hora e a diferença é cobrada no cartão da assinatura.',
+                    details: [
+                        { label: 'Cobrado hoje no cartão', value: now, strong: true },
+                        ...(nextDate ? [{ label: 'Diferença proporcional até', value: nextDate }] : []),
+                        { label: 'Depois', value: monthly }
+                    ],
+                    confirmLabel: `Mudar para o ${plan.name}`
+                }
+                success = {
+                    title: `Pronto! Você agora está no ${plan.name}`,
+                    details: [{ label: 'Cobrado hoje', value: now }]
+                }
             } else {
                 const credit = brlFromCents(body.credit)
-                question = `Mudar para o ${plan.name} agora?\n\n` +
-                    `Você fica com ${credit} de crédito, descontado na próxima fatura${nextDate ? ` (${nextDate})` : ''}.\n` +
-                    `Depois, ${monthly} por mês.`
-                summary = `${credit} de crédito na próxima fatura.`
+                question = {
+                    title: `Mudar para o ${plan.name}`,
+                    message: 'A troca é imediata. O que você já pagou a mais vira desconto.',
+                    details: [
+                        { label: 'Crédito na próxima fatura', value: credit, strong: true },
+                        ...(nextDate ? [{ label: 'Próxima fatura', value: nextDate }] : []),
+                        { label: 'Depois', value: monthly }
+                    ],
+                    confirmLabel: `Mudar para o ${plan.name}`
+                }
+                success = {
+                    title: `Pronto! Você agora está no ${plan.name}`,
+                    details: [{ label: 'Crédito na próxima fatura', value: credit }]
+                }
             }
         }
-        if (!window.confirm(question)) return
+        if (!(await confirm(question))) return
 
         setBusy(true)
         try {
@@ -126,39 +158,48 @@ export default function usePlanActions({ onChanged } = {}) {
                 body: JSON.stringify({ planId: plan.id, ...(prorationDate ? { prorationDate } : {}) })
             })
             const body = await res.json().catch(() => ({}))
-            if (res.ok) {
-                setBusy(false)
-                return finish(reactivate
-                    ? `Pronto! Sua assinatura do ${plan.name} continua ativa.`
-                    : `Pronto! Você agora está no ${plan.name}. ${summary}`)
-            }
-            if (res.status === 409 && body.code === 'NO_SUBSCRIPTION') {
-                setBusy(false)
-                return checkout(plan)
-            }
-            alert(body.message || 'Não foi possível trocar de plano. Nada foi alterado.')
+            setBusy(false)
+            if (res.ok) return finish(success)
+            if (res.status === 409 && body.code === 'NO_SUBSCRIPTION') return checkout(plan)
+            return showError('Não foi possível trocar de plano', body.message || 'Nada foi alterado. Tente de novo em instantes.')
         } catch (_) {
-            alert('Erro de comunicação com o servidor. Nada foi alterado.')
+            setBusy(false)
+            return showError('Não foi possível trocar de plano', CONNECTION_ERROR)
         }
-        setBusy(false)
     }
 
     /** Cancela a assinatura: o plano vale até o fim do período já pago. */
     const cancel = async () => {
+        const currentName = user?.plan || 'plano atual'
+        const endsOn = shortDate(user?.planExpiresAt)
         const question = user?.hasSubscription
-            ? 'Cancelar a assinatura? Você continua com o plano até o fim do período já pago e não haverá nova cobrança.'
-            : 'Voltar para o plano Gratuito? Os recursos do plano atual deixam de valer agora.'
-        if (!window.confirm(question)) return
+            ? {
+                title: 'Cancelar a assinatura?',
+                message: `Você continua com o ${currentName} ${endsOn ? `até ${endsOn}` : 'até o fim do período já pago'} e não haverá nova cobrança. Depois, sua conta volta para o Gratuito.`,
+                confirmLabel: 'Cancelar assinatura'
+            }
+            : {
+                title: 'Voltar para o Gratuito?',
+                message: `Os recursos do ${currentName} deixam de valer agora.`,
+                confirmLabel: 'Voltar ao Gratuito'
+            }
+        if (!(await confirm({ ...question, tone: 'danger', cancelLabel: 'Manter meu plano' }))) return
+
         setBusy(true)
         try {
             const res = await fetch('/api/plans/downgrade', { method: 'POST', headers: authHeaders() })
             const body = await res.json().catch(() => ({}))
             setBusy(false)
-            if (res.ok) return finish(body.message || 'Assinatura cancelada.')
-            alert(body.message || 'Não foi possível cancelar. Nada foi alterado.')
+            if (res.ok) {
+                return finish({
+                    title: user?.hasSubscription ? 'Assinatura cancelada' : 'Pronto! Você está no Gratuito',
+                    message: body.message
+                })
+            }
+            return showError('Não foi possível cancelar', body.message || 'Nada foi alterado. Tente de novo em instantes.')
         } catch (_) {
             setBusy(false)
-            alert('Erro de comunicação com o servidor. Nada foi alterado.')
+            return showError('Não foi possível cancelar', CONNECTION_ERROR)
         }
     }
 
@@ -198,5 +239,5 @@ export default function usePlanActions({ onChanged } = {}) {
         return { label: `Assinar ${plan.name}`, short: 'Assinar', up: true, run: () => checkout(plan) }
     }
 
-    return { busy, checkout, changePlan, cancel, actionFor }
+    return { busy, checkout, changePlan, cancel, actionFor, notify, dialog }
 }

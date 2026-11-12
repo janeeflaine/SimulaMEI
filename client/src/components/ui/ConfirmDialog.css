@@ -1,0 +1,208 @@
+/* Janela de confirmação no padrão do site (azul da logo, verde da marca) */
+
+.cd-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(12, 28, 54, 0.55);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    animation: cd-fade 140ms ease-out;
+}
+
+.cd-box {
+    width: 100%;
+    max-width: 440px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 28px 28px 24px;
+    border-radius: 18px;
+    background: #fff;
+    color: #0f172a;
+    box-shadow: 0 30px 60px -20px rgba(12, 28, 54, 0.45), 0 2px 8px rgba(12, 28, 54, 0.12);
+    animation: cd-rise 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    text-align: left;
+}
+
+.cd-icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    margin-bottom: 14px;
+}
+
+.cd-icon svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.cd-icon--success { background: #d1fae5; }
+.cd-icon--success svg { stroke: #047857; }
+.cd-icon--error { background: #fee2e2; }
+.cd-icon--error svg { stroke: #b91c1c; }
+
+.cd-box .cd-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+    margin: 0 0 6px;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    color: #0f172a;
+}
+
+.cd-message {
+    margin: 0;
+    color: #5b6b80;
+    font-size: 0.9375rem;
+    line-height: 1.55;
+}
+
+/* Valores da operação, como um recibo */
+.cd-details {
+    margin: 18px 0 0;
+    padding: 4px 16px;
+    border-radius: 12px;
+    background: #f6f8fa;
+    border: 1px solid #e3e8ef;
+}
+
+.cd-details > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px dashed #dbe2ea;
+    font-size: 0.9375rem;
+}
+
+.cd-details > div:last-child {
+    border-bottom: 0;
+}
+
+.cd-details dt {
+    color: #5b6b80;
+}
+
+.cd-details dd {
+    margin: 0;
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cd-details .is-strong dt {
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.cd-details .is-strong dd {
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #12284a;
+}
+
+.cd-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 24px;
+}
+
+.cd-btn {
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    border: 1.5px solid #e3e8ef;
+    background: #fff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.cd-btn:hover {
+    border-color: #12284a;
+}
+
+.cd-btn--primary {
+    background: #12284a;
+    border-color: #12284a;
+    color: #fff;
+}
+
+.cd-btn--primary:hover {
+    background: #1f3d6b;
+}
+
+.cd-btn--danger {
+    background: #dc2626;
+    border-color: #dc2626;
+}
+
+.cd-btn--danger:hover {
+    background: #b91c1c;
+    border-color: #b91c1c;
+}
+
+.cd-btn:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 3px;
+}
+
+@keyframes cd-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes cd-rise {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cd-overlay,
+    .cd-box {
+        animation: none;
+    }
+}
+
+/* Celular: a janela sobe de baixo, com botões grandes um embaixo do outro */
+@media (max-width: 520px) {
+    .cd-overlay {
+        place-items: end stretch;
+        padding: 0;
+    }
+
+    .cd-box {
+        max-width: none;
+        border-radius: 20px 20px 0 0;
+        padding: 24px 20px calc(20px + env(safe-area-inset-bottom));
+        max-height: 90vh;
+    }
+
+    .cd-actions {
+        flex-direction: column-reverse;
+    }
+
+    .cd-btn {
+        width: 100%;
+        min-height: 48px;
+    }
+}
