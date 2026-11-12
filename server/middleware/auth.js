@@ -96,7 +96,9 @@ const authMiddleware = async (req, res, next) => {
             isInTrial,
             trialExpired,
             planFeatures,
-            stripeCustomerId: user.stripeCustomerId
+            stripeCustomerId: user.stripeCustomerId,
+            // Plano pago comprado pelo Stripe (troca/cancela lá) ou liberado pelo admin
+            hasSubscription: !!user.stripeSubscriptionId
         }
         next()
     } catch (error) {

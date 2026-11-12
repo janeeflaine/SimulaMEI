@@ -54,13 +54,10 @@ router.post('/create-checkout-session', authMiddleware, async (req, res) => {
             } catch (_) {}
         }
 
+        // Sem payment_method_types: o Stripe oferece só as formas ativas no painel que
+        // aceitam assinatura (cartão; boleto se estiver ligado). Pix não aceita assinatura
+        // e, pedido aqui, fazia o Stripe recusar o checkout inteiro.
         const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card', 'boleto', 'pix'],
-            payment_method_options: {
-                pix: {
-                    expires_after_seconds: 3600 // 1 hour expiration for Pix
-                }
-            },
             line_items: [
                 {
                     price: priceId,

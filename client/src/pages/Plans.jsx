@@ -10,11 +10,11 @@ import './Plans.css'
 const FAQ = [
     {
         q: 'Como eu pago?',
-        a: 'Ao escolher o plano, você vai para a página segura do Stripe e paga com Pix (QR Code ou copia e cola) ou cartão de crédito.'
+        a: 'Ao escolher o plano, você vai para a página segura do Stripe e paga com cartão de crédito. A assinatura renova sozinha todo mês até você cancelar.'
     },
     {
         q: 'Quando o plano é liberado?',
-        a: 'Assim que o Stripe confirmar o Pix ou aprovar o cartão. Normalmente leva poucos segundos.'
+        a: 'Assim que o Stripe aprovar o pagamento. Normalmente leva poucos segundos.'
     },
     {
         q: 'Posso cancelar quando quiser?',
@@ -100,7 +100,7 @@ export default function Plans() {
                 setVerificationState({
                     loading: false,
                     success: false,
-                    message: data.message || 'Pagamento ainda não foi concluído no Stripe. Se você pagou via Pix, aguarde alguns instantes pela confirmação.'
+                    message: data.message || 'Pagamento ainda não foi concluído no Stripe. Aguarde alguns instantes pela confirmação.'
                 })
                 window.history.replaceState(null, '', window.location.pathname)
             }
@@ -109,7 +109,7 @@ export default function Plans() {
             setVerificationState({
                 loading: false,
                 success: false,
-                message: 'Não foi possível verificar automaticamente. Se o Pix foi pago, seu plano será liberado em instantes.'
+                message: 'Não foi possível verificar automaticamente. Se o pagamento foi aprovado, seu plano será liberado em instantes.'
             })
             window.history.replaceState(null, '', window.location.pathname)
         }
@@ -215,7 +215,7 @@ export default function Plans() {
                     <div className="pricing-alert pricing-alert--pending" role="alert">
                         <div>
                             <strong>Falta concluir o pagamento</strong>
-                            <p>Os recursos do plano são liberados quando o Stripe confirmar o Pix ou o cartão.</p>
+                            <p>Os recursos do plano são liberados quando o Stripe confirmar o pagamento.</p>
                         </div>
                         {pendingPlan && (
                             <button
@@ -232,7 +232,7 @@ export default function Plans() {
 
                 <header className="pricing-header">
                     <h1>Escolha o plano do seu MEI</h1>
-                    <p>Comece grátis e assine quando precisar. Pague com Pix ou cartão e cancele quando quiser, sem multa.</p>
+                    <p>Comece grátis e assine quando precisar. Pague no cartão e cancele quando quiser, sem multa.</p>
                 </header>
 
                 {loading ? (
@@ -279,7 +279,7 @@ export default function Plans() {
                                             }
                                             footer={
                                                 <span className="member-card__note">
-                                                    {isPaid ? 'Pix ou cartão, sem fidelidade' : 'Sem pagamento'}
+                                                    {isPaid ? 'No cartão, sem fidelidade' : 'Sem pagamento'}
                                                 </span>
                                             }
                                         />

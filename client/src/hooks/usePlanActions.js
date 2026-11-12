@@ -85,7 +85,10 @@ export default function usePlanActions({ onChanged } = {}) {
 
     /** Cancela a assinatura: o plano vale até o fim do período já pago. */
     const cancel = async () => {
-        if (!window.confirm('Cancelar a assinatura? Você continua com o plano até o fim do período já pago e não haverá nova cobrança.')) return
+        const question = user?.hasSubscription
+            ? 'Cancelar a assinatura? Você continua com o plano até o fim do período já pago e não haverá nova cobrança.'
+            : 'Voltar para o plano Gratuito? Os recursos do plano atual deixam de valer agora.'
+        if (!window.confirm(question)) return
         setBusy(true)
         try {
             const res = await fetch('/api/plans/downgrade', { method: 'POST', headers: authHeaders() })
@@ -114,7 +117,7 @@ export default function usePlanActions({ onChanged } = {}) {
             if (status === 'pending_payment' && isPaid) {
                 return { label: 'Pagar agora', short: 'Pagar', up: true, run: () => checkout(plan) }
             }
-            if (status === 'canceling' && isPaid) {
+            if (status === 'canceling' && isPaid && user.hasSubscription) {
                 return { label: 'Manter assinatura', short: 'Manter', up: true, run: () => changePlan(plan, { currentPrice, reactivate: true }) }
             }
             return null
@@ -122,9 +125,10 @@ export default function usePlanActions({ onChanged } = {}) {
         if (!isPaid) {
             // Gratuito: para quem paga, é cancelar; quem já cancelou só espera a data
             if (status === 'canceling') return null
+            if (!user.hasSubscription) return { label: 'Voltar ao Gratuito', short: 'Voltar', up: false, run: cancel }
             return { label: 'Cancelar assinatura', short: 'Cancelar', up: false, run: cancel }
         }
-        const hasPaidPlan = currentPrice > 0 && ['active', 'canceling'].includes(status)
+        const hasPaidPlan = currentPrice > 0 && ['active', 'canceling'].includes(status) && !!user.hasSubscription
         const up = Number(plan.price) > currentPrice
         if (hasPaidPlan) {
             return up

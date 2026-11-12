@@ -163,6 +163,15 @@ describe('Checkout não cria assinatura dupla', () => {
         expect(mockStripe.checkout.sessions.create.mock.calls[0][0].line_items[0].price).toBe('price_ouro')
     })
 
+    test('Checkout de assinatura não pede Pix (o Stripe recusa Pix em modo assinatura)', async () => {
+        state.user.stripeSubscriptionId = null
+        await request(app).post('/api/stripe/create-checkout-session').send({ planId: 2 })
+        const params = mockStripe.checkout.sessions.create.mock.calls[0][0]
+        expect(params.mode).toBe('subscription')
+        expect(params.payment_method_types).toBeUndefined()
+        expect(JSON.stringify(params)).not.toMatch(/pix/i)
+    })
+
     test('Assinatura antiga que não existe mais no Stripe não bloqueia o checkout', async () => {
         mockStripe.subscriptions.retrieve.mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'resource_missing' }))
         const res = await request(app).post('/api/stripe/create-checkout-session').send({ planId: 2 })

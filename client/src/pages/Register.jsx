@@ -68,7 +68,7 @@ export default function Register() {
 
             // If user requires payment (paid plan selected), immediately redirect to Stripe Checkout!
             if (user?.requiresPayment || (selectedPlan && Number(selectedPlan.price) > 0)) {
-                setLoadingStatus('Conectando ao Stripe para pagamento via Pix / Cartão...')
+                setLoadingStatus('Conectando ao Stripe para o pagamento...')
                 sessionStorage.removeItem('selectedPlanId')
                 const token = localStorage.getItem('token')
                 try {
@@ -121,7 +121,7 @@ export default function Register() {
                         </h1>
                         <p className="auth-subtitle">
                             {isPaidPlan
-                                ? 'Cadastre-se abaixo para ir direto ao pagamento seguro via Pix ou Cartão'
+                                ? 'Cadastre-se abaixo para ir direto ao pagamento seguro no cartão'
                                 : 'Comece a gerenciar seus impostos gratuitamente'}
                         </p>
                     </div>
@@ -145,7 +145,7 @@ export default function Register() {
                                     Plano {selectedPlan.name}
                                 </h3>
                                 <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#4b5563' }}>
-                                    {isPaidPlan ? 'Pagamento seguro no Stripe via Pix ou Cartão' : 'Acesso Grátis'}
+                                    {isPaidPlan ? 'Pagamento seguro no Stripe com cartão' : 'Acesso Grátis'}
                                 </p>
                             </div>
                             <div style={{ textAlign: 'right' }}>
