@@ -2,11 +2,11 @@ const express = require('express')
 const router = express.Router()
 const { db } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
+const { getStripe, resolvePriceId, planIdForPrice, periodEnd, toDate, getLiveSubscription } = require('../utils/billing')
 
-const getStripe = () => {
-    const key = process.env.STRIPE_SECRET_KEY
-    if (!key) return null
-    return require('stripe')(key)
+const userSubscriptionId = async (userId) => {
+    const { rows: [row] } = await db.query('SELECT "stripeSubscriptionId", "planId" FROM users WHERE id = $1', [userId])
+    return row || {}
 }
 
 // 1. Create Checkout Session (Protected Route)
@@ -30,14 +30,18 @@ router.post('/create-checkout-session', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Plano gratuito não requer pagamento.' })
         }
 
-        let priceId = plan.stripePriceId
-        if (!priceId) {
-            if (plan.name.toLowerCase().includes('ouro')) priceId = process.env.STRIPE_PRICE_GOLD
-            else if (plan.name.toLowerCase().includes('prata')) priceId = process.env.STRIPE_PRICE_SILVER
-        }
-
+        const priceId = resolvePriceId(plan)
         if (!priceId) {
             return res.status(400).json({ message: 'Este plano não possui um Price ID configurado na Stripe.' })
+        }
+
+        // Quem já tem assinatura valendo troca de plano nela; um novo checkout criaria uma segunda cobrança
+        const { stripeSubscriptionId } = await userSubscriptionId(req.user.id)
+        if (await getLiveSubscription(stripe, stripeSubscriptionId)) {
+            return res.status(409).json({
+                code: 'HAS_SUBSCRIPTION',
+                message: 'Você já tem uma assinatura ativa. Use a troca de plano para mudar para este plano.'
+            })
         }
 
         // Dynamically resolve domain
@@ -79,6 +83,85 @@ router.post('/create-checkout-session', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Stripe Checkout Error:', err)
         res.status(500).json({ message: 'Erro ao gerar checkout', error: err.message })
+    }
+})
+
+// 1b. Trocar de plano na assinatura que já existe (Prata ↔ Ouro)
+// Mais caro: libera na hora e cobra a diferença proporcional agora.
+// Mais barato: troca na hora e a diferença vira crédito na próxima fatura.
+router.post('/change-plan', authMiddleware, async (req, res) => {
+    try {
+        const stripe = getStripe()
+        if (!stripe) {
+            return res.status(500).json({ message: 'Stripe não está configurado neste servidor.' })
+        }
+
+        const { planId } = req.body || {}
+        if (!planId) return res.status(400).json({ message: 'O ID do plano é obrigatório.' })
+
+        const { rows: [plan] } = await db.query('SELECT id, name, price, "stripePriceId" FROM plans WHERE id = $1', [planId])
+        if (!plan) return res.status(404).json({ message: 'Plano não encontrado' })
+        if (Number(plan.price) <= 0) {
+            return res.status(400).json({ message: 'Para voltar ao plano gratuito, cancele a assinatura.' })
+        }
+
+        const priceId = resolvePriceId(plan)
+        if (!priceId) {
+            return res.status(400).json({ message: 'Este plano não possui um Price ID configurado na Stripe.' })
+        }
+
+        const current = await userSubscriptionId(req.user.id)
+        const subscription = await getLiveSubscription(stripe, current.stripeSubscriptionId)
+        if (!subscription) {
+            return res.status(409).json({ code: 'NO_SUBSCRIPTION', message: 'Você não tem uma assinatura ativa para trocar. Assine o plano pelo pagamento.' })
+        }
+
+        const item = subscription.items?.data?.[0]
+        if (!item) return res.status(409).json({ code: 'NO_SUBSCRIPTION', message: 'Assinatura sem item de cobrança.' })
+
+        const { rows: [currentPlan] } = await db.query('SELECT price FROM plans WHERE id = $1', [current.planId])
+        const isUpgrade = Number(plan.price) > Number(currentPlan?.price ?? 0)
+
+        if (item.price?.id !== priceId || subscription.cancel_at_period_end) {
+            try {
+                await stripe.subscriptions.update(subscription.id, {
+                    items: [{ id: item.id, price: priceId }],
+                    proration_behavior: isUpgrade ? 'always_invoice' : 'create_prorations',
+                    // Upgrade só vale se a diferença for cobrada; se não der, nada muda
+                    ...(isUpgrade ? { payment_behavior: 'error_if_incomplete' } : {}),
+                    cancel_at_period_end: false,
+                    metadata: { ...(subscription.metadata || {}), userId: String(req.user.id), planId: String(plan.id) }
+                })
+            } catch (err) {
+                if (err && (err.type === 'StripeCardError' || err.code === 'card_declined' || err.code === 'subscription_payment_intent_requires_action')) {
+                    return res.status(402).json({
+                        code: 'PAYMENT_FAILED',
+                        message: 'Não foi possível cobrar a diferença do plano. Nada foi alterado. Confira o cartão da assinatura e tente de novo.'
+                    })
+                }
+                throw err
+            }
+        }
+
+        await db.query(`
+            UPDATE users
+            SET "planId" = $1, "stripePriceId" = $2, "subscriptionStatus" = 'active',
+                "planExpiresAt" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+            WHERE id = $3
+        `, [plan.id, priceId, req.user.id])
+
+        res.json({
+            changed: true,
+            upgrade: isUpgrade,
+            planId: plan.id,
+            planName: plan.name,
+            message: isUpgrade
+                ? `Pronto! Você agora está no ${plan.name}. A diferença proporcional foi cobrada na assinatura.`
+                : `Pronto! Você agora está no ${plan.name}. A diferença vira crédito na sua próxima fatura.`
+        })
+    } catch (err) {
+        console.error('Stripe change-plan error:', err)
+        res.status(500).json({ message: 'Erro ao trocar de plano. Nada foi alterado.' })
     }
 })
 
@@ -228,12 +311,20 @@ const webhookHandler = async (req, res) => {
                 {
                     const subscription = event.data.object
                     if (subscription.status === 'active' || subscription.status === 'trialing') {
+                        // Plano segue o preço da assinatura (troca feita no site ou no painel do Stripe)
+                        const priceId = subscription.items?.data?.[0]?.price?.id || null
+                        const planId = await planIdForPrice(priceId)
+                        // Cancelada para o fim do período: continua no plano até essa data
+                        const canceling = !!subscription.cancel_at_period_end
                         await db.query(`
-                            UPDATE users 
-                            SET "subscriptionStatus" = 'active',
+                            UPDATE users
+                            SET "subscriptionStatus" = $2,
+                                "planExpiresAt" = $3,
+                                "planId" = COALESCE($4, "planId"),
+                                "stripePriceId" = COALESCE($5, "stripePriceId"),
                                 "updatedAt" = CURRENT_TIMESTAMP
                             WHERE "stripeSubscriptionId" = $1
-                        `, [subscription.id])
+                        `, [subscription.id, canceling ? 'canceling' : 'active', canceling ? toDate(periodEnd(subscription)) : null, planId, planId ? priceId : null])
                     }
                 }
                 break;
