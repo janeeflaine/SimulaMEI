@@ -402,3 +402,458 @@
         transform: translateY(-4px);
     }
 }
+/* ===== Planos (2026-11): cartões do plano, WhatsApp, comparação e perguntas =====
+   Tudo abaixo fica restrito a .pricing-page. As regras antigas acima continuam
+   porque Contato e Admin reaproveitam algumas classes (.faq-item, .plan-features). */
+
+.pricing-page {
+    --pr-ink: #12284a;
+    --pr-ink-2: #1f3d6b;
+    --pr-paper: #f6f8fa;
+    --pr-line: #e3e8ef;
+    --pr-text: #0f172a;
+    --pr-muted: #5b6b80;
+    --pr-brand: var(--color-primary);
+    background: var(--pr-paper);
+    color: var(--pr-text);
+    padding: var(--spacing-12) 0 var(--spacing-20);
+    min-height: calc(100vh - 64px);
+}
+
+.pricing-page .pricing-container {
+    max-width: 1120px;
+}
+
+/* ── Avisos do pagamento ── */
+
+.pricing-alert {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--spacing-4);
+    padding: 14px 18px;
+    margin-bottom: var(--spacing-6);
+    border-radius: 12px;
+    border: 1px solid var(--pr-line);
+    border-left-width: 4px;
+    background: #fff;
+    font-weight: 500;
+}
+
+.pricing-alert--info { border-left-color: #3b82f6; justify-content: flex-start; }
+.pricing-alert--ok { border-left-color: var(--pr-brand); }
+.pricing-alert--warn { border-left-color: #f59e0b; }
+.pricing-alert--pending { border-left-color: #f59e0b; background: #fffbeb; }
+
+.pricing-alert p {
+    margin: 2px 0 0;
+    color: var(--pr-muted);
+    font-weight: 400;
+    font-size: 0.9375rem;
+}
+
+.pricing-alert .pricing-alert__loader {
+    width: 22px;
+    height: 22px;
+}
+
+/* ── Título ── */
+
+.pricing-header {
+    max-width: 640px;
+    margin-bottom: var(--spacing-12);
+}
+
+.pricing-header h1 {
+    font-size: 2.75rem;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    margin: 0 0 var(--spacing-4);
+    color: var(--pr-text);
+}
+
+.pricing-header p {
+    font-size: 1.125rem;
+    line-height: 1.55;
+    color: var(--pr-muted);
+    margin: 0;
+}
+
+/* ── Escolha do plano ── */
+
+.pricing-choices {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--spacing-8);
+    align-items: stretch;
+}
+
+.pricing-choice {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.pricing-choice__tag {
+    position: absolute;
+    top: -12px;
+    right: 18px;
+    z-index: 2;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid var(--pr-line);
+    color: var(--pr-ink);
+    font-size: 0.75rem;
+    font-weight: 700;
+    box-shadow: 0 4px 10px -4px rgba(18, 40, 74, 0.25);
+}
+
+.pricing-choice__tag--current {
+    background: var(--pr-brand);
+    border-color: var(--pr-brand);
+    color: #fff;
+}
+
+.pricing-choice__tag--current.is-pending {
+    background: #f59e0b;
+    border-color: #f59e0b;
+}
+
+.pricing-choice__body {
+    flex: 1;
+    padding: var(--spacing-6) 4px var(--spacing-5);
+}
+
+.pricing-choice__lead {
+    margin: 0 0 var(--spacing-3);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--pr-muted);
+}
+
+.pricing-choice__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.pricing-choice__list li {
+    position: relative;
+    padding-left: 28px;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    color: var(--pr-text);
+}
+
+/* Visto verde desenhado em CSS */
+.pricing-choice__list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 1px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--pr-brand);
+}
+
+.pricing-choice__list li::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 5px;
+    width: 5px;
+    height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.pricing-choice__list li.pricing-choice__more::before,
+.pricing-choice__list li.pricing-choice__more::after {
+    display: none;
+}
+
+.pricing-choice__more a {
+    color: var(--color-primary-dark);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.pricing-choice__current {
+    margin: 0;
+    padding: 13px 0;
+    text-align: center;
+    font-weight: 600;
+    color: var(--color-primary-dark);
+    border: 1.5px dashed rgba(16, 185, 129, 0.45);
+    border-radius: 999px;
+}
+
+.pricing-cta {
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 20px;
+    border-radius: 999px;
+    border: 1.5px solid var(--pr-line);
+    background: #fff;
+    color: var(--pr-text);
+    font: inherit;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.pricing-cta:hover:not(:disabled) {
+    border-color: var(--pr-ink);
+}
+
+.pricing-cta--up {
+    background: var(--pr-ink);
+    border-color: var(--pr-ink);
+    color: #fff;
+}
+
+.pricing-cta--up:hover:not(:disabled) {
+    background: var(--pr-ink-2);
+}
+
+.pricing-cta:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.pricing-cta:focus-visible,
+.pricing-faq summary:focus-visible,
+.pricing-choice__more a:focus-visible {
+    outline: 2px solid var(--pr-brand);
+    outline-offset: 3px;
+}
+
+.pricing-alert--pending .pricing-cta {
+    width: auto;
+}
+
+/* ── WhatsApp ── */
+
+.pricing-whatsapp {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+    gap: var(--spacing-12);
+    align-items: center;
+    margin-top: var(--spacing-16);
+    padding-top: var(--spacing-12);
+    border-top: 1px solid var(--pr-line);
+}
+
+.pricing-whatsapp h2,
+.pricing-compare h2,
+.pricing-faq h2 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+    margin: 0 0 var(--spacing-4);
+    color: var(--pr-text);
+}
+
+.pricing-whatsapp__text > p {
+    color: var(--pr-muted);
+    font-size: 1.0625rem;
+    line-height: 1.55;
+    max-width: 52ch;
+    margin: 0 0 var(--spacing-5);
+}
+
+.pricing-whatsapp__text ul {
+    margin: 0;
+    padding-left: 1.2em;
+    display: grid;
+    gap: 8px;
+    line-height: 1.45;
+}
+
+.pricing-whatsapp__text li::marker {
+    color: var(--pr-brand);
+}
+
+.pricing-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 22px 18px;
+    border-radius: 22px;
+    background: #e9eef3;
+    border: 1px solid var(--pr-line);
+}
+
+.pricing-chat__bubble {
+    align-self: flex-start;
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 14px 14px 14px 4px;
+    background: #fff;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pricing-chat__bubble--me {
+    align-self: flex-end;
+    border-radius: 14px 14px 4px 14px;
+    background: #d5f5e3;
+}
+
+.pricing-chat__buttons {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.pricing-chat__buttons i {
+    flex: 1;
+    font-style: normal;
+    text-align: center;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: var(--color-primary-dark);
+    font-weight: 600;
+    font-size: 0.8125rem;
+}
+
+/* ── Comparação e perguntas ── */
+
+.pricing-compare,
+.pricing-faq {
+    margin-top: var(--spacing-16);
+    padding-top: var(--spacing-12);
+    border-top: 1px solid var(--pr-line);
+}
+
+.pricing-faq {
+    max-width: 760px;
+}
+
+.pricing-faq__item {
+    border-bottom: 1px solid var(--pr-line);
+}
+
+.pricing-faq__item summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 18px 40px 18px 0;
+    position: relative;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--pr-text);
+}
+
+.pricing-faq__item summary::-webkit-details-marker {
+    display: none;
+}
+
+.pricing-faq__item summary::after {
+    content: '+';
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.5rem;
+    font-weight: 400;
+    color: var(--pr-muted);
+}
+
+.pricing-faq__item[open] summary::after {
+    content: '–';
+}
+
+.pricing-faq__item p {
+    margin: 0 0 18px;
+    color: var(--pr-muted);
+    line-height: 1.6;
+    max-width: 62ch;
+}
+
+/* ── Tablet e celular ── */
+
+@media (max-width: 960px) {
+    .pricing-choices {
+        grid-template-columns: minmax(0, 1fr);
+        max-width: 460px;
+        gap: var(--spacing-12);
+    }
+
+    .pricing-whatsapp {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--spacing-8);
+    }
+
+    .pricing-chat {
+        max-width: 460px;
+    }
+}
+
+/* No celular os cartões ficam um embaixo do outro, cada um com o seu botão:
+   o rodapé de botões da tabela só repetiria e não caberia nas colunas */
+@media (max-width: 760px) {
+    .pricing-compare .plan-table tfoot {
+        display: none;
+    }
+}
+
+@media (max-width: 600px) {
+    .pricing-page {
+        padding-top: var(--spacing-8);
+    }
+
+    .pricing-header {
+        margin-bottom: var(--spacing-10);
+    }
+
+    .pricing-header h1 {
+        font-size: 2rem;
+    }
+
+    .pricing-header p {
+        font-size: 1rem;
+    }
+
+    .pricing-whatsapp,
+    .pricing-compare,
+    .pricing-faq {
+        margin-top: var(--spacing-12);
+        padding-top: var(--spacing-10);
+    }
+
+    .pricing-whatsapp h2,
+    .pricing-compare h2,
+    .pricing-faq h2 {
+        font-size: 1.5rem;
+    }
+
+    .member-card__price strong {
+        font-size: 2.125rem;
+    }
+}
+
+.pricing-choice__notice {
+    margin: 0 0 var(--spacing-3);
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    font-size: 0.875rem;
+    line-height: 1.45;
+}

@@ -1,0 +1,220 @@
+/* Cartão de assinante do EuSempreMEI (Minha conta e Planos) */
+
+.member-card {
+    --mc-ink: #12284a;      /* azul-marinho do quadro da logo */
+    --mc-ink-2: #1f3d6b;
+    --foil: linear-gradient(100deg, #10b981, #6ee7b7 48%, #059669);
+    --foil-solid: #34d399;
+    position: relative;
+    aspect-ratio: 1.586;               /* proporção de um cartão de verdade */
+    border-radius: 18px;
+    padding: 22px 24px;
+    color: #fff;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background:
+        radial-gradient(120% 90% at 100% 0%, rgba(255, 255, 255, 0.10), transparent 55%),
+        linear-gradient(155deg, var(--mc-ink-2) 0%, var(--mc-ink) 60%, #0c1c36 100%);
+    box-shadow: 0 18px 40px -18px rgba(18, 40, 74, 0.55), 0 2px 6px rgba(18, 40, 74, 0.18);
+    isolation: isolate;
+}
+
+.member-card--ouro {
+    --foil: linear-gradient(100deg, #a8791a, #f6dc86 46%, #c9952b 70%, #8f6512);
+    --foil-solid: #e7c25d;
+}
+
+.member-card--prata {
+    --foil: linear-gradient(100deg, #8a96a8, #f1f4f8 46%, #aab5c4 70%, #7d8899);
+    --foil-solid: #cfd6e0;
+}
+
+/* Faixa metálica do plano na borda inferior */
+.member-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 6px;
+    background: var(--foil);
+    z-index: -1;
+}
+
+/* Um único brilho ao aparecer (só quando pedido) */
+.member-card--shine::after {
+    content: '';
+    position: absolute;
+    inset: -40% auto -40% -60%;
+    width: 45%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+    transform: skewX(-18deg);
+    animation: member-card-sheen 1.6s ease-out 0.3s 1 both;
+    pointer-events: none;
+}
+
+@keyframes member-card-sheen {
+    from { left: -60%; }
+    to { left: 130%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .member-card--shine::after { animation: none; display: none; }
+}
+
+.member-card__top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* As três barras da logo */
+.member-card__mark {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 18px;
+}
+
+.member-card__mark i {
+    display: block;
+    width: 5px;
+    border-radius: 1.5px;
+}
+
+.member-card__mark i:nth-child(1) { height: 9px; background: #4cc417; }
+.member-card__mark i:nth-child(2) { height: 13px; background: #ff8c1a; }
+.member-card__mark i:nth-child(3) { height: 18px; background: #2f8cff; }
+
+.member-card__brand {
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: -0.01em;
+    opacity: 0.85;
+}
+
+.member-card__tier {
+    margin-left: auto;
+    font-weight: 800;
+    font-size: 1.05rem;
+    letter-spacing: 0.01em;
+    background: var(--foil);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.member-card__holder {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.member-card__photo {
+    flex-shrink: 0;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 0 0 2px var(--foil-solid), 0 0 0 5px rgba(255, 255, 255, 0.06);
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+.member-card__photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.member-card__name {
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.member-card__bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.8125rem;
+    padding-bottom: 4px;
+}
+
+.member-card__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 600;
+}
+
+.member-card__status::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #34d399;
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.22);
+}
+
+.member-card__status--warn::before { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.25); }
+.member-card__status--info::before { background: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25); }
+
+.member-card__renewal {
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+    .member-card {
+        max-width: 420px;
+        padding: 18px 20px;
+    }
+
+    .member-card__photo {
+        width: 48px;
+        height: 48px;
+    }
+
+    .member-card__name {
+        font-size: 1.2rem;
+    }
+}
+
+/* Preço no cartão (página de Planos) */
+.member-card__price {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+}
+
+.member-card__price strong {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.member-card__price span {
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    opacity: 0.75;
+}
+
+.member-card__note {
+    font-size: 0.8125rem;
+    opacity: 0.8;
+}

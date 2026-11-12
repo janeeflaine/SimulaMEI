@@ -1,0 +1,276 @@
+/* Tabela de comparação de planos (Minha conta e Planos) */
+
+/* Texto só para leitores de tela */
+.plan-table__caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.plan-table-wrap {
+    --pt-ink: #12284a;
+    --pt-ink-2: #1f3d6b;
+    --pt-line: #e3e8ef;
+    --pt-text: #0f172a;
+    --pt-muted: #5b6b80;
+    --pt-brand: var(--color-primary);
+    --pt-current: rgba(16, 185, 129, 0.07);
+    background: #fff;
+    border: 1px solid var(--pt-line);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.plan-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 0.9375rem;
+}
+
+.plan-table .plan-table__feature-head {
+    width: 40%;
+}
+
+.plan-table th,
+.plan-table td {
+    padding: 12px 16px;
+    text-align: center;
+    border-bottom: 1px solid var(--pt-line);
+    vertical-align: middle;
+}
+
+.plan-table tbody th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--pt-text);
+}
+
+.plan-table thead th {
+    padding-top: 22px;
+    padding-bottom: 18px;
+    vertical-align: bottom;
+}
+
+.plan-table tfoot th,
+.plan-table tfoot td {
+    border-bottom: 0;
+    padding-top: 18px;
+    padding-bottom: 22px;
+}
+
+.plan-table .is-current {
+    background: var(--pt-current);
+}
+
+.plan-table thead .is-current {
+    box-shadow: inset 0 3px 0 var(--pt-brand);
+}
+
+.plan-table__yours {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-primary-dark);
+    margin-bottom: 4px;
+}
+
+.plan-table__name {
+    display: block;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--pt-text);
+}
+
+.plan-table__price {
+    display: block;
+    margin-top: 2px;
+    font-weight: 600;
+    color: var(--pt-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.plan-table__price small {
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-left: 1px;
+}
+
+.plan-check {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+}
+
+.plan-check circle { fill: var(--pt-brand); }
+.plan-check path { fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.plan-dash {
+    color: #b6c0cc;
+    font-weight: 600;
+}
+
+.plan-table__current-note {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-primary-dark);
+}
+
+.plan-table__action {
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 9px 14px;
+    border-radius: 999px;
+    border: 1.5px solid var(--pt-line);
+    background: #fff;
+    color: var(--pt-text);
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+    max-width: 100%;
+}
+
+.plan-table__label-short {
+    display: none;
+}
+
+.plan-table__action:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.plan-table__action:hover:not(:disabled) {
+    border-color: var(--pt-ink);
+}
+
+.plan-table__action.is-up {
+    background: var(--pt-ink);
+    border-color: var(--pt-ink);
+    color: #fff;
+}
+
+.plan-table__action.is-up:hover:not(:disabled) {
+    background: var(--pt-ink-2);
+}
+
+.plan-table__action:focus-visible {
+    outline: 2px solid var(--pt-brand);
+    outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+    .plan-table {
+        font-size: 0.8125rem;
+    }
+
+    .plan-table th,
+    .plan-table td {
+        padding: 10px 6px;
+    }
+
+    .plan-table tbody th {
+        padding-left: 12px;
+    }
+
+    .plan-table .plan-table__feature-head {
+        width: 40%;
+    }
+
+    /* No celular o botão mostra só o verbo; a coluna já diz qual é o plano */
+    .plan-table__action-target,
+    .plan-table__label-full {
+        display: none;
+    }
+
+    .plan-table__label-short {
+        display: inline;
+    }
+
+    .plan-table__name {
+        font-size: 0.9375rem;
+    }
+
+    .plan-table__price {
+        font-size: 0.75rem;
+    }
+
+    .plan-table__price small {
+        display: block;
+    }
+
+    .plan-table__action {
+        padding: 7px 12px;
+        font-size: 0.8125rem;
+    }
+}
+
+/* Celulares bem estreitos (iPhone SE, 320px): colunas dos planos mais largas e textos menores */
+@media (max-width: 400px) {
+    .plan-table .plan-table__feature-head {
+        width: 30%;
+    }
+
+    .plan-table th,
+    .plan-table td {
+        padding-left: 3px;
+        padding-right: 3px;
+    }
+
+    .plan-table tbody th {
+        padding-left: 10px;
+        font-size: 0.75rem;
+        hyphens: auto;
+        -webkit-hyphens: auto;
+        overflow-wrap: anywhere;
+    }
+
+    .plan-table__name {
+        font-size: 0.8125rem;
+    }
+
+    .plan-table__price,
+    .plan-table__yours {
+        font-size: 0.6875rem;
+    }
+
+    .plan-table__action {
+        padding: 6px 9px;
+        font-size: 0.75rem;
+    }
+}
+
+/* Botões um por linha abaixo da tabela (só no celular, quando pedido) */
+.plan-table__stacked-actions {
+    display: none;
+}
+
+@media (max-width: 760px) {
+    .plan-table-wrap--stack .plan-table tfoot {
+        display: none;
+    }
+
+    .plan-table__stacked-actions {
+        display: grid;
+        gap: var(--spacing-3);
+        margin-top: var(--spacing-4);
+    }
+
+    .plan-table__stacked-actions .plan-table__action {
+        width: 100%;
+        min-height: 44px;
+        font-size: 0.9375rem;
+        padding: 10px 16px;
+    }
+
+    .plan-table__stacked-actions .plan-table__current-note {
+        display: block;
+        text-align: center;
+        padding: 8px 0;
+    }
+}

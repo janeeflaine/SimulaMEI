@@ -2,36 +2,16 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import WhatsAppSection from '../components/WhatsAppSection'
+import MemberCard from '../components/plans/MemberCard'
+import PlanComparison, { PlanTableButton } from '../components/plans/PlanComparison'
+import { tierOf, sortPlans } from '../components/plans/planFeatures'
+import usePlanActions from '../hooks/usePlanActions'
 import './Account.css'
-
-// Nome que o usuário entende para cada recurso do plano (as chaves vêm do painel admin).
-// Recursos fora desta lista não aparecem na comparação.
-const FEATURE_LABELS = [
-    ['whatsapp', 'Assistente no WhatsApp'],
-    ['whatsapp_midia', 'Áudio, foto e PDF no WhatsApp'],
-    ['contas_pagar', 'Contas a pagar com lembrete'],
-    ['upload_faturas', 'Leitura de faturas com IA'],
-    ['multi_carteiras', 'Várias carteiras (PF e MEI)'],
-    ['transferencias', 'Transferência entre carteiras'],
-    ['pdf', 'Relatórios em PDF'],
-    ['historico', 'Histórico de simulações'],
-    ['cartoes', 'Cartões de crédito'],
-    ['categorias', 'Categorias personalizadas'],
-    ['alertas', 'Alerta do limite anual do MEI'],
-    ['comparativo', 'Comparativo MEI x ME']
-]
 
 const brDate = (value) => {
     if (!value) return null
     const d = new Date(value)
     return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('pt-BR')
-}
-
-const tierOf = (planName) => {
-    const name = String(planName || '').toLowerCase()
-    if (name.includes('ouro')) return 'ouro'
-    if (name.includes('prata')) return 'prata'
-    return 'gratuito'
 }
 
 /** Foto da conta: logo da primeira carteira criada (a mesma do avatar no topo). */
@@ -60,17 +40,6 @@ function useAccountPhoto(userId) {
     return photo
 }
 
-function Check({ on }) {
-    return on ? (
-        <svg className="plan-check" viewBox="0 0 20 20" aria-label="Incluído" role="img">
-            <circle cx="10" cy="10" r="9" />
-            <path d="M6 10.4l2.6 2.6L14 7.6" />
-        </svg>
-    ) : (
-        <span className="plan-dash" aria-label="Não incluído" role="img">–</span>
-    )
-}
-
 export default function Account() {
     const { user, logout } = useAuth()
     const [plans, setPlans] = useState([])
@@ -81,6 +50,7 @@ export default function Account() {
     const [deleteError, setDeleteError] = useState('')
     const [deleting, setDeleting] = useState(false)
     const photo = useAccountPhoto(user?.id)
+    const { busy: planBusy, actionFor: planAction } = usePlanActions()
 
     useEffect(() => {
         fetchPlans()
@@ -90,7 +60,7 @@ export default function Account() {
         try {
             const res = await fetch('/api/plans')
             const data = await res.json()
-            setPlans(data.filter(p => p.isActive).sort((a, b) => Number(a.price) - Number(b.price)))
+            setPlans(sortPlans(data))
         } catch (error) {
             console.error('Erro ao carregar planos:', error)
         } finally {
@@ -103,28 +73,6 @@ export default function Account() {
             style: 'currency',
             currency: 'BRL'
         }).format(value)
-    }
-
-    const handleUpgrade = async (planId) => {
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/stripe/create-checkout-session', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ planId })
-            })
-            const data = await res.json()
-            if (res.ok && data.url) {
-                window.location.href = data.url
-            } else {
-                alert(data.message || 'Erro ao iniciar pagamento com Stripe')
-            }
-        } catch (e) {
-            window.location.href = '/planos'
-        }
     }
 
     const handleDeleteAccount = async (e) => {
@@ -175,6 +123,7 @@ export default function Account() {
     if (user?.role === 'ADMIN') status = { label: 'Administrador', tone: 'ok' }
     else if (user?.isInTrial) status = { label: expiresOn ? `Teste grátis até ${expiresOn}` : 'Teste grátis', tone: 'info' }
     else if (user?.subscriptionStatus === 'pending_payment') status = { label: 'Pagamento pendente', tone: 'warn' }
+    else if (user?.subscriptionStatus === 'canceling') status = { label: expiresOn ? `Cancelado, vale até ${expiresOn}` : 'Cancelado', tone: 'warn' }
 
     const renewal = !user?.isInTrial && user?.subscriptionStatus === 'active' && expiresOn && tier !== 'gratuito'
         ? `Renova em ${expiresOn}` : null
@@ -185,7 +134,6 @@ export default function Account() {
         ouro: 'Você tem todos os recursos do EuSempreMEI liberados.'
     }[tier]
 
-    const featureRows = FEATURE_LABELS.filter(([key]) => plans.some(p => p.features && key in p.features))
 
     return (
         <div className="account-page">
@@ -194,25 +142,25 @@ export default function Account() {
 
                 {/* Cartão do plano + dados da conta */}
                 <section className="account-hero" aria-label="Seu plano e seus dados">
-                    <div className={`member-card member-card--${tier}`}>
-                        <div className="member-card__top">
-                            <span className="member-card__mark" aria-hidden="true">
-                                <i /><i /><i />
-                            </span>
-                            <span className="member-card__brand">EuSempreMEI</span>
-                            <span className="member-card__tier">{planName}</span>
-                        </div>
-                        <div className="member-card__holder">
-                            <span className="member-card__photo">
-                                {photo ? <img src={photo} alt="" /> : <span aria-hidden="true">{initial}</span>}
-                            </span>
-                            <span className="member-card__name">{cardName}</span>
-                        </div>
-                        <div className="member-card__bottom">
-                            <span className={`member-card__status member-card__status--${status.tone}`}>{status.label}</span>
-                            {renewal && <span className="member-card__renewal">{renewal}</span>}
-                        </div>
-                    </div>
+                    <MemberCard
+                        tier={tier}
+                        label={planName}
+                        shine
+                        body={
+                            <div className="member-card__holder">
+                                <span className="member-card__photo">
+                                    {photo ? <img src={photo} alt="" /> : <span aria-hidden="true">{initial}</span>}
+                                </span>
+                                <span className="member-card__name">{cardName}</span>
+                            </div>
+                        }
+                        footer={
+                            <>
+                                <span className={`member-card__status member-card__status--${status.tone}`}>{status.label}</span>
+                                {renewal && <span className="member-card__renewal">{renewal}</span>}
+                            </>
+                        }
+                    />
 
                     <div className="account-summary">
                         <dl className="account-facts">
@@ -253,70 +201,31 @@ export default function Account() {
                             <div className="loader"></div>
                         </div>
                     ) : (
-                        <div className="plan-table-wrap">
-                            <table className="plan-table">
-                                <caption className="sr-only">Comparação dos planos do EuSempreMEI</caption>
-                                <thead>
-                                    <tr>
-                                        <th scope="col" className="plan-table__feature-head"><span className="sr-only">Recurso</span></th>
-                                        {plans.map(plan => {
-                                            const isCurrent = user?.planId === plan.id
-                                            return (
-                                                <th key={plan.id} scope="col" className={isCurrent ? 'is-current' : ''}>
-                                                    {isCurrent && <span className="plan-table__yours">Seu plano</span>}
-                                                    <span className="plan-table__name">{plan.name}</span>
-                                                    <span className="plan-table__price">
-                                                        {Number(plan.price) === 0
-                                                            ? 'Grátis'
-                                                            : <>{formatCurrency(plan.price)}<small>/mês</small></>}
-                                                    </span>
-                                                </th>
-                                            )
-                                        })}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {featureRows.map(([key, label]) => (
-                                        <tr key={key}>
-                                            <th scope="row">{label}</th>
-                                            {plans.map(plan => (
-                                                <td key={plan.id} className={user?.planId === plan.id ? 'is-current' : ''}>
-                                                    <Check on={!!plan.features?.[key]} />
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <th scope="row"><span className="sr-only">Ação</span></th>
-                                        {plans.map(plan => {
-                                            const isCurrent = user?.planId === plan.id
-                                            const isUp = Number(plan.price) > currentPrice
-                                            return (
-                                                <td key={plan.id} className={isCurrent ? 'is-current' : ''}>
-                                                    {isCurrent ? (
-                                                        <span className="plan-table__current-note">Plano atual</span>
-                                                    ) : (
-                                                        <button
-                                                            type="button"
-                                                            className={`plan-table__action ${isUp ? 'is-up' : ''}`}
-                                                            onClick={() => handleUpgrade(plan.id)}
-                                                            aria-label={isUp ? `Assinar o plano ${plan.name}` : `Mudar para o plano ${plan.name}`}
-                                                        >
-                                                            {isUp ? 'Assinar' : 'Mudar'}
-                                                            <span className="plan-table__action-target">
-                                                                {isUp ? ` ${plan.name}` : ` para ${plan.name}`}
-                                                            </span>
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            )
-                                        })}
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
+                        <PlanComparison
+                            plans={plans}
+                            currentPlanId={user?.planId}
+                            currentLabel={user?.subscriptionStatus === 'canceling' && expiresOn ? `Vale até ${expiresOn}` : 'Seu plano'}
+                            stackActionsOnMobile
+                            renderAction={(plan, { isCurrent, stacked }) => {
+                                const action = planAction(plan, currentPlan)
+                                if (!action) {
+                                    // Na lista do celular não repete "Plano atual": a tabela já mostra
+                                    if (stacked) return null
+                                    return <span className="plan-table__current-note">{isCurrent ? 'Plano atual' : 'A partir do fim do período'}</span>
+                                }
+                                return (
+                                    <PlanTableButton
+                                        planName={plan.name}
+                                        up={action.up}
+                                        onClick={action.run}
+                                        disabled={planBusy}
+                                        shortLabel={stacked ? undefined : action.short}
+                                    >
+                                        {action.label}
+                                    </PlanTableButton>
+                                )
+                            }}
+                        />
                     )}
                 </section>
 

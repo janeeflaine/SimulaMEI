@@ -1,14 +1,37 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import MemberCard from '../components/plans/MemberCard'
+import PlanComparison, { PlanTableButton } from '../components/plans/PlanComparison'
+import { FEATURE_LABELS, tierOf, formatBRL, sortPlans } from '../components/plans/planFeatures'
+import usePlanActions from '../hooks/usePlanActions'
 import './Plans.css'
+
+const FAQ = [
+    {
+        q: 'Como eu pago?',
+        a: 'Ao escolher o plano, você vai para a página segura do Stripe e paga com Pix (QR Code ou copia e cola) ou cartão de crédito.'
+    },
+    {
+        q: 'Quando o plano é liberado?',
+        a: 'Assim que o Stripe confirmar o Pix ou aprovar o cartão. Normalmente leva poucos segundos.'
+    },
+    {
+        q: 'Posso cancelar quando quiser?',
+        a: 'Sim, sem multa e sem fidelidade. Você continua com o plano até o fim do período já pago e não há nova cobrança.'
+    },
+    {
+        q: 'Como funciona o assistente no WhatsApp?',
+        a: 'Você conecta seu número em Minha conta e manda mensagens como "gastei 50 no mercado no pix". O assistente mostra um resumo e só salva depois que você confirma.'
+    }
+]
 
 export default function Plans() {
     const navigate = useNavigate()
     const { user, refreshUser } = useAuth()
     const [plans, setPlans] = useState([])
     const [loading, setLoading] = useState(true)
-    const [checkoutLoading, setCheckoutLoading] = useState(false)
+    const { busy: checkoutLoading, checkout: handleCheckout, actionFor: planAction } = usePlanActions({ onChanged: () => navigate('/dashboard') })
     const [verificationState, setVerificationState] = useState({
         loading: false,
         success: false,
@@ -67,7 +90,7 @@ export default function Plans() {
                 setVerificationState({
                     loading: false,
                     success: true,
-                    message: '✅ Pagamento aprovado no Stripe! Liberando acesso ao seu painel...'
+                    message: 'Pagamento aprovado! Liberando acesso ao seu painel...'
                 })
                 window.history.replaceState(null, '', window.location.pathname)
                 setTimeout(() => {
@@ -96,7 +119,7 @@ export default function Plans() {
         try {
             const res = await fetch('/api/plans')
             const data = await res.json()
-            const activePlans = data.filter(p => p.isActive)
+            const activePlans = sortPlans(data)
             setPlans(activePlans)
 
             // Auto checkout if requested (e.g. from login redirect)
@@ -117,328 +140,254 @@ export default function Plans() {
         }
     }
 
-    const handleDowngrade = async () => {
-        if (!confirm('Tem certeza que deseja cancelar seu plano atual e voltar para o gratuito? Todos os benefícios serão perdidos imediatamente.')) return
-
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/plans/downgrade', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            if (res.ok) {
-                await refreshUser()
-                alert('Plano cancelado com sucesso.')
-                navigate('/dashboard')
-            } else {
-                alert('Erro ao cancelar plano.')
-            }
-        } catch (error) {
-            console.error(error)
-            alert('Erro ao processar solicitação.')
-        }
-    }
-
-    const handleCheckout = async (plan) => {
-        setCheckoutLoading(true)
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/stripe/create-checkout-session', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ planId: plan.id })
-            })
-            const body = await res.json()
-
-            if (res.ok && body.url) {
-                // Redirect user to Stripe hosted checkout (Pix, Cartão, Boleto)
-                window.location.href = body.url
-            } else {
-                alert(body.message || 'Erro ao iniciar o checkout seguro.')
-                setCheckoutLoading(false)
-            }
-        } catch (error) {
-            console.error('Checkout error:', error)
-            alert('Erro de comunicação com o servidor. Tente novamente mais tarde.')
-            setCheckoutLoading(false)
-        }
-    }
-
-    const featureLabels = {
-        historico: 'Histórico de simulações',
-        pdf: 'Exportar relatórios em PDF',
-        comparativo: 'Comparativo MEI x ME',
-        alertas: 'Alertas de limite personalizados',
-        contas_pagar: 'Contas a pagar e receber',
-        upload_faturas: 'Leitura de faturas com IA'
-    }
-
     const isPendingPayment = user?.subscriptionStatus === 'pending_payment'
     const query = new URLSearchParams(window.location.search)
     const showPendingAlert = isPendingPayment || query.get('pending')
 
-    return (
-        <div className="plans-page">
-            <div className="container">
+    const userCurrentPlan = plans.find(p => Number(p.id) === Number(user?.planId)) || plans.find(p => p.name === user?.plan)
+    const isCurrentPlan = (plan) => !!user && (Number(user?.planId) === Number(plan.id) || user?.plan === plan.name)
+    const pendingPlan = plans.find(p => Number(p.id) === Number(user?.planId)) ||
+        plans.find(p => Number(p.id) === Number(query.get('retryPlan')))
+    const mostComplete = plans.length > 1 ? plans[plans.length - 1] : null
+    const mediaPlan = plans.find(p => p.features?.whatsapp_midia)
+    const hasWhatsapp = plans.some(p => p.features?.whatsapp)
 
-                {/* Verification Overlay / Alert */}
+    /** O que o plano tem a mais que o plano anterior (o mais barato mostra o que já inclui). */
+    const highlightsOf = (plan, index) => {
+        const has = (p, key) => !!p?.features?.[key]
+        const previous = index > 0 ? plans[index - 1] : null
+        const keys = FEATURE_LABELS.filter(([key]) => has(plan, key) && !has(previous, key))
+        return { previous, items: keys.map(([, label]) => label) }
+    }
+
+    /** Ação de cada plano (cartão e tabela). Visitante vai para o cadastro; logado usa a regra de cobrança. */
+    const actionFor = (plan) => {
+        if (!user) {
+            const isPaid = Number(plan.price) > 0
+            return {
+                label: isPaid ? `Assinar ${plan.name}` : 'Começar grátis',
+                short: isPaid ? 'Assinar' : 'Começar',
+                up: isPaid,
+                onClick: () => {
+                    sessionStorage.setItem('selectedPlanId', String(plan.id))
+                    navigate(`/cadastro?planId=${plan.id}`)
+                }
+            }
+        }
+        const action = planAction(plan, userCurrentPlan)
+        if (!action) return null
+        return {
+            ...action,
+            label: checkoutLoading ? 'Aguarde...' : action.label,
+            onClick: action.run,
+            disabled: checkoutLoading
+        }
+    }
+
+    const isCanceling = !!user && user.subscriptionStatus === 'canceling'
+    const endsOn = user?.planExpiresAt ? new Date(user.planExpiresAt).toLocaleDateString('pt-BR') : null
+
+    return (
+        <div className="pricing-page">
+            <div className="container pricing-container">
+
+                {/* Avisos do pagamento */}
                 {verificationState.loading && (
-                    <div className="alert alert-info" style={{
-                        background: '#eff6ff',
-                        border: '1px solid #3b82f6',
-                        padding: '16px 20px',
-                        borderRadius: '12px',
-                        marginBottom: '24px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px'
-                    }}>
-                        <div className="loader" style={{ width: '24px', height: '24px' }}></div>
-                        <span style={{ color: '#1e40af', fontWeight: '500' }}>{verificationState.message}</span>
+                    <div className="pricing-alert pricing-alert--info" role="status">
+                        <div className="loader pricing-alert__loader"></div>
+                        <span>{verificationState.message}</span>
                     </div>
                 )}
 
                 {verificationState.success && (
-                    <div className="alert alert-success" style={{
-                        background: '#ecfdf5',
-                        border: '1px solid #10b981',
-                        padding: '16px 20px',
-                        borderRadius: '12px',
-                        marginBottom: '24px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px'
-                    }}>
-                        <span style={{ fontSize: '20px' }}>🎉</span>
-                        <span style={{ color: '#065f46', fontWeight: '600' }}>{verificationState.message}</span>
+                    <div className="pricing-alert pricing-alert--ok" role="status">
+                        <span>{verificationState.message}</span>
                     </div>
                 )}
 
                 {verificationState.message && !verificationState.loading && !verificationState.success && (
-                    <div className="alert alert-warning" style={{
-                        background: '#fffbeb',
-                        border: '1px solid #f59e0b',
-                        padding: '16px 20px',
-                        borderRadius: '12px',
-                        marginBottom: '24px'
-                    }}>
-                        <span style={{ color: '#92400e', fontWeight: '500' }}>{verificationState.message}</span>
+                    <div className="pricing-alert pricing-alert--warn" role="status">
+                        <span>{verificationState.message}</span>
                     </div>
                 )}
 
                 {showPendingAlert && !verificationState.loading && (
-                    <div style={{
-                        background: '#fef2f2',
-                        border: '2px solid #ef4444',
-                        padding: '18px 24px',
-                        borderRadius: '12px',
-                        marginBottom: '28px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: '16px'
-                    }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <span style={{ fontSize: '28px' }}>⚠️</span>
-                                <div>
-                                    <h3 style={{ margin: 0, color: '#991b1b', fontSize: '17px' }}>
-                                        Pagamento Pendente no Stripe
-                                    </h3>
-                                    <p style={{ margin: '4px 0 0 0', color: '#b91c1c', fontSize: '14px' }}>
-                                        O seu acesso aos recursos exclusivos requer a confirmação do pagamento via Pix ou Cartão junto ao Stripe.
-                                    </p>
-                                </div>
-                            </div>
-                            {(() => {
-                                const pendingPlan = plans.find(p => Number(p.id) === Number(user?.planId)) ||
-                                                    plans.find(p => Number(p.id) === Number(query.get('retryPlan')))
-                                if (pendingPlan) {
-                                    return (
-                                        <button
-                                            className="btn btn-primary"
-                                            style={{ background: '#ef4444', borderColor: '#dc2626', fontWeight: 'bold' }}
-                                            onClick={() => handleCheckout(pendingPlan)}
-                                            disabled={checkoutLoading}
-                                        >
-                                            {checkoutLoading ? 'Conectando...' : `💳 Concluir Pagamento (${pendingPlan.name})`}
-                                        </button>
-                                    )
-                                }
-                                return null
-                            })()}
+                    <div className="pricing-alert pricing-alert--pending" role="alert">
+                        <div>
+                            <strong>Falta concluir o pagamento</strong>
+                            <p>Os recursos do plano são liberados quando o Stripe confirmar o Pix ou o cartão.</p>
                         </div>
-                    )}
+                        {pendingPlan && (
+                            <button
+                                type="button"
+                                className="pricing-cta pricing-cta--up"
+                                onClick={() => handleCheckout(pendingPlan)}
+                                disabled={checkoutLoading}
+                            >
+                                {checkoutLoading ? 'Abrindo pagamento...' : `Pagar o ${pendingPlan.name}`}
+                            </button>
+                        )}
+                    </div>
+                )}
 
-                {/* Header */}
-                <div className="plans-header">
-                    <span className="plans-badge">💎 Escolha seu plano</span>
-                    <h1>Planos que cabem no seu bolso</h1>
-                    <p>Comece grátis ou turbine seu negócio com os planos profissionais com pagamento via Pix ou Cartão</p>
-                </div>
+                <header className="pricing-header">
+                    <h1>Escolha o plano do seu MEI</h1>
+                    <p>Comece grátis e assine quando precisar. Pague com Pix ou cartão e cancele quando quiser, sem multa.</p>
+                </header>
 
-                {/* Plans Grid */}
                 {loading ? (
                     <div className="flex items-center justify-center" style={{ padding: 'var(--spacing-8)' }}>
                         <div className="loader"></div>
                     </div>
                 ) : (
-                    <div className="plans-grid">
-                        {plans.map((plan) => {
-                            const isCurrentPlan = Number(user?.planId) === Number(plan.id) || user?.plan === plan.name
-                            const userCurrentPlan = plans.find(p => Number(p.id) === Number(user?.planId)) || plans.find(p => p.name === user?.plan)
-                            const isDowngrade = userCurrentPlan && Number(plan.price) < Number(userCurrentPlan.price)
-                            const isPopular = plan.name === 'Ouro'
-                            const isPaid = Number(plan.price) > 0
-
-                            return (
-                                <div
-                                    key={plan.id}
-                                    className={`plan-card ${isPopular ? 'featured' : ''} ${isCurrentPlan ? 'current' : ''}`}
-                                >
-                                    {isPopular && <span className="featured-badge">Mais Popular</span>}
-                                    {isCurrentPlan && (
-                                        <span className={`current-badge ${isPendingPayment ? 'pending' : ''}`} style={isPendingPayment ? { background: '#f59e0b', color: '#fff' } : {}}>
-                                            {isPendingPayment ? 'Pagamento Pendente' : 'Seu Plano'}
-                                        </span>
-                                    )}
-
-                                    <h2 className="plan-name">{plan.name}</h2>
-
-                                    <div className="plan-price">
-                                        {!isPaid ? (
-                                            <span className="price-free">Grátis</span>
-                                        ) : (
-                                            <>
-                                                <span className="price-currency">R$</span>
-                                                <span className="price-value">{Number(plan.price).toFixed(2).replace('.', ',')}</span>
-                                                <span className="price-period">/mês</span>
-                                            </>
+                    <>
+                        <div className="pricing-choices">
+                            {plans.map((plan, index) => {
+                                const tier = tierOf(plan.name)
+                                const isPaid = Number(plan.price) > 0
+                                const current = isCurrentPlan(plan)
+                                const action = actionFor(plan)
+                                const { previous, items } = highlightsOf(plan, index)
+                                const [reais, centavos] = Number(plan.price).toFixed(2).split('.')
+                                return (
+                                    <article
+                                        key={plan.id}
+                                        className={`pricing-choice ${current ? 'is-current' : ''}`}
+                                        aria-label={`Plano ${plan.name}`}
+                                    >
+                                        {mostComplete && plan.id === mostComplete.id && !current && (
+                                            <span className="pricing-choice__tag">Mais completo</span>
                                         )}
-                                    </div>
+                                        {current && (
+                                            <span className={`pricing-choice__tag pricing-choice__tag--current ${isPendingPayment || isCanceling ? 'is-pending' : ''}`}>
+                                                {isPendingPayment ? 'Pagamento pendente' : isCanceling ? 'Cancelado' : 'Seu plano'}
+                                            </span>
+                                        )}
+                                        <MemberCard
+                                            tier={tier}
+                                            label={plan.name}
+                                            body={
+                                                isPaid ? (
+                                                    <span className="member-card__price" aria-label={`${formatBRL(plan.price)} por mês`}>
+                                                        <span>R$</span>
+                                                        <strong>{reais},{centavos}</strong>
+                                                        <span>/mês</span>
+                                                    </span>
+                                                ) : (
+                                                    <span className="member-card__price"><strong>Grátis</strong></span>
+                                                )
+                                            }
+                                            footer={
+                                                <span className="member-card__note">
+                                                    {isPaid ? 'Pix ou cartão, sem fidelidade' : 'Sem pagamento'}
+                                                </span>
+                                            }
+                                        />
 
-                                    {isPaid && (
-                                        <div style={{ fontSize: '13px', color: '#059669', fontWeight: '500', marginBottom: '16px' }}>
-                                            ⚡ Pix Instantâneo ou Cartão via Stripe
+                                        <div className="pricing-choice__body">
+                                            <p className="pricing-choice__lead">
+                                                {previous ? `Tudo do ${previous.name}, e mais:` : 'Para começar:'}
+                                            </p>
+                                            <ul className="pricing-choice__list">
+                                                {items.slice(0, 5).map(item => <li key={item}>{item}</li>)}
+                                                {items.length > 5 && (
+                                                    <li className="pricing-choice__more">
+                                                        <a href="#comparar">e mais {items.length - 5} na comparação</a>
+                                                    </li>
+                                                )}
+                                            </ul>
                                         </div>
-                                    )}
 
-                                    <ul className="plan-features">
-                                        <li className="feature included">
-                                            <svg className="feature-icon included" viewBox="0 0 20 20" fill="currentColor">
-                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                            </svg>
-                                            Simulações ilimitadas
-                                        </li>
-                                        {Object.entries(featureLabels).map(([key, label]) => {
-                                            const isIncluded = plan.features?.[key]
-                                            return (
-                                                <li key={key} className={`feature ${isIncluded ? 'included' : 'excluded'}`}>
-                                                    {isIncluded ? (
-                                                        <svg className="feature-icon included" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                                        </svg>
-                                                    ) : (
-                                                        <svg className="feature-icon excluded" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                                        </svg>
-                                                    )}
-                                                    {label}
-                                                </li>
-                                            )
-                                        })}
-                                    </ul>
-
-                                    {user ? (
-                                        isCurrentPlan ? (
-                                            isPendingPayment ? (
-                                                <button
-                                                    className="btn btn-warning btn-lg"
-                                                    style={{ background: '#f59e0b', borderColor: '#f59e0b', color: '#fff', fontWeight: 'bold' }}
-                                                    onClick={() => handleCheckout(plan)}
-                                                    disabled={checkoutLoading}
-                                                >
-                                                    {checkoutLoading ? 'Conectando ao Stripe...' : '💳 Pagar no Stripe (Pix)'}
-                                                </button>
-                                            ) : (
-                                                <button className="btn btn-secondary btn-lg" disabled>
-                                                    Plano Atual
-                                                </button>
-                                            )
-                                        ) : (
+                                        {current && isCanceling && (
+                                            <p className="pricing-choice__notice">
+                                                {endsOn ? `Seu plano vale até ${endsOn} e não será renovado.` : 'Seu plano não será renovado.'}
+                                            </p>
+                                        )}
+                                        {action ? (
                                             <button
-                                                className="btn btn-primary btn-lg"
-                                                onClick={() => isDowngrade ? handleDowngrade() : handleCheckout(plan)}
-                                                disabled={checkoutLoading}
+                                                type="button"
+                                                className={`pricing-cta ${action.up ? 'pricing-cta--up' : ''}`}
+                                                onClick={action.onClick}
+                                                disabled={action.disabled}
                                             >
-                                                {checkoutLoading ? 'Conectando ao Stripe...' : (isDowngrade ? 'Cancelar Assinatura' : 'Fazer Upgrade')}
+                                                {action.label}
                                             </button>
-                                        )
-                                    ) : (
-                                        <button
-                                            onClick={() => {
-                                                sessionStorage.setItem('selectedPlanId', String(plan.id))
-                                                navigate(`/cadastro?planId=${plan.id}`)
-                                            }}
-                                            className="btn btn-primary btn-lg"
-                                        >
-                                            {isPaid ? `Escolher Plano ${plan.name}` : 'Começar Grátis'}
-                                        </button>
-                                    )}
+                                        ) : (
+                                            <p className="pricing-choice__current">
+                                                {current
+                                                    ? 'Este é o seu plano atual'
+                                                    : (endsOn ? `Você volta para este plano em ${endsOn}` : 'Você volta para este plano no fim do período')}
+                                            </p>
+                                        )}
+                                    </article>
+                                )
+                            })}
+                        </div>
+
+                        {hasWhatsapp && (
+                            <section className="pricing-whatsapp" aria-labelledby="whatsapp-titulo">
+                                <div className="pricing-whatsapp__text">
+                                    <h2 id="whatsapp-titulo">Lance e pague contas pelo WhatsApp</h2>
+                                    <p>Mande uma mensagem do seu jeito. O assistente entende, mostra o resumo e só salva quando você confirma.</p>
+                                    <ul>
+                                        <li>Despesas, receitas e contas a pagar por texto</li>
+                                        <li>Lança na carteira certa: sua, da empresa ou de outra pessoa da conta</li>
+                                        <li>Lembrete às 8h quando tem conta vencendo</li>
+                                        {mediaPlan && <li>No {mediaPlan.name}, também por áudio e foto do boleto</li>}
+                                    </ul>
                                 </div>
-                            )
-                        })}
-                    </div>
+                                <div className="pricing-chat" aria-label="Exemplo de conversa com o assistente">
+                                    <div className="pricing-chat__bubble pricing-chat__bubble--me">gastei 50 no mercado no pix</div>
+                                    <div className="pricing-chat__bubble">
+                                        <span>Confere?</span>
+                                        <span><b>Despesa:</b> Mercado</span>
+                                        <span><b>Valor:</b> R$ 50,00</span>
+                                        <span><b>Pagamento:</b> PIX</span>
+                                        <span className="pricing-chat__buttons" aria-hidden="true">
+                                            <i>Confirmar</i><i>Cancelar</i>
+                                        </span>
+                                    </div>
+                                    <div className="pricing-chat__bubble pricing-chat__bubble--me">Confirmar</div>
+                                    <div className="pricing-chat__bubble">Registrado! Já aparece no seu extrato.</div>
+                                </div>
+                            </section>
+                        )}
+
+                        <section className="pricing-compare" id="comparar" aria-labelledby="comparar-titulo">
+                            <h2 id="comparar-titulo">Compare os planos</h2>
+                            <PlanComparison
+                                plans={plans}
+                                currentPlanId={user ? userCurrentPlan?.id : null}
+                                currentLabel={isPendingPayment ? 'Pagamento pendente' : isCanceling && endsOn ? `Vale até ${endsOn}` : 'Seu plano'}
+                                renderAction={(plan) => {
+                                    const action = actionFor(plan)
+                                    if (!action) return <span className="plan-table__current-note">Plano atual</span>
+                                    return (
+                                        <PlanTableButton
+                                            planName={plan.name}
+                                            up={action.up}
+                                            onClick={action.onClick}
+                                            disabled={action.disabled}
+                                            shortLabel={action.short}
+                                        >
+                                            {action.label}
+                                        </PlanTableButton>
+                                    )
+                                }}
+                            />
+                        </section>
+                    </>
                 )}
 
-                {/* Benefits Section */}
-                <div className="plans-benefits">
-                    <h2>Por que escolher o EuSempreMEI Premium?</h2>
-                    <div className="benefits-grid">
-                        <div className="benefit-item">
-                            <span className="benefit-icon">📊</span>
-                            <h3>Histórico Completo</h3>
-                            <p>Acompanhe todas as suas simulações e veja a evolução do seu negócio ao longo do tempo.</p>
-                        </div>
-                        <div className="benefit-item">
-                            <span className="benefit-icon">📄</span>
-                            <h3>Relatórios em PDF</h3>
-                            <p>Exporte relatórios profissionais para compartilhar com seu contador ou para seus registros.</p>
-                        </div>
-                        <div className="benefit-item">
-                            <span className="benefit-icon">⚖️</span>
-                            <h3>Comparativo MEI x ME</h3>
-                            <p>Descubra quando vale a pena migrar para Microempresa com análise detalhada de custos.</p>
-                        </div>
-                        <div className="benefit-item">
-                            <span className="benefit-icon">🔔</span>
-                            <h3>Alertas Personalizados</h3>
-                            <p>Receba notificações quando estiver próximo do limite de faturamento do MEI.</p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* FAQ */}
-                <div className="plans-faq">
-                    <h2>Perguntas Frequentes</h2>
-                    <div className="faq-list">
-                        <div className="faq-item">
-                            <h4>Como funciona o pagamento via Pix com o Stripe?</h4>
-                            <p>Ao selecionar seu plano, você é direcionado para a página segura do Stripe, onde pode escolher pagar por Pix (com QR Code instantâneo e código Copia e Cola) ou Cartão de Crédito.</p>
-                        </div>
-                        <div className="faq-item">
-                            <h4>Posso cancelar a qualquer momento?</h4>
-                            <p>Sim! Você pode fazer downgrade ou cancelar seu plano a qualquer momento, sem multas ou fidelidade.</p>
-                        </div>
-                        <div className="faq-item">
-                            <h4>Quando meu acesso é liberado?</h4>
-                            <p>Assim que o Stripe confirmar o pagamento do Pix ou aprovação do cartão, seu plano é liberado automaticamente.</p>
-                        </div>
-                    </div>
-                </div>
+                <section className="pricing-faq" aria-labelledby="faq-titulo">
+                    <h2 id="faq-titulo">Perguntas frequentes</h2>
+                    {FAQ.map(item => (
+                        <details key={item.q} className="pricing-faq__item">
+                            <summary>{item.q}</summary>
+                            <p>{item.a}</p>
+                        </details>
+                    ))}
+                </section>
             </div>
         </div>
     )
