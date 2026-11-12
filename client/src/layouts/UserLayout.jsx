@@ -9,7 +9,38 @@ export default function UserLayout() {
     const location = useLocation()
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isFinanceOpen, setIsFinanceOpen] = useState(false)
+    const [avatarUrl, setAvatarUrl] = useState('')
     const lastRefresh = useRef(0)
+
+    // Foto do avatar: logo da primeira carteira criada na conta.
+    // Recarrega ao entrar/sair de Gerenciar Carteiras, onde a foto pode mudar.
+    const onWalletsPage = location.pathname === '/financas/gerenciar-contas'
+    useEffect(() => {
+        if (!user) {
+            setAvatarUrl('')
+            return
+        }
+        let cancelled = false
+        const loadAvatar = async () => {
+            try {
+                const token = localStorage.getItem('token')
+                const res = await fetch('/api/finance/business-units', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+                if (!res.ok) return
+                const data = await res.json()
+                const first = [...data].sort((a, b) => {
+                    const byDate = new Date(a.createdAt) - new Date(b.createdAt)
+                    return byDate !== 0 && !Number.isNaN(byDate) ? byDate : a.id - b.id
+                })[0]
+                if (!cancelled) setAvatarUrl(first?.logo_url || '')
+            } catch (error) {
+                console.error('Erro ao carregar avatar:', error)
+            }
+        }
+        loadAvatar()
+        return () => { cancelled = true }
+    }, [user?.id, onWalletsPage])
 
     // Refresh user data on every route change and when tab regains focus
     // This ensures plan changes made by admin take effect without requiring re-login
@@ -106,6 +137,20 @@ export default function UserLayout() {
 
                                     <div className="user-menu">
                                         <span className="user-name">{user.name}</span>
+                                        <Link
+                                            to="/conta"
+                                            className={`user-avatar-link ${location.pathname === '/conta' ? 'active' : ''}`}
+                                            title="Minha Conta"
+                                            aria-label="Minha Conta"
+                                        >
+                                            {avatarUrl ? (
+                                                <img src={avatarUrl} alt={user.name} className="user-avatar-img" />
+                                            ) : (
+                                                <span className="user-avatar-initial">
+                                                    {(user.name || '?').trim().charAt(0).toUpperCase()}
+                                                </span>
+                                            )}
+                                        </Link>
                                         <button onClick={logout} className="btn btn-secondary btn-sm">
                                             Sair
                                         </button>
