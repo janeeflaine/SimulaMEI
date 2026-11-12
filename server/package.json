@@ -21,6 +21,7 @@
   "description": "",
   "dependencies": {
     "@google/genai": "^2.32.0",
+    "@vercel/functions": "^3.11.1",
     "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",

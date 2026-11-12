@@ -85,7 +85,7 @@ export default function PrivacyPolicy() {
                                 <strong>Dados técnicos e de segurança:</strong> endereço IP, data e hora de acesso, navegador (user agent) e um identificador técnico do dispositivo, usados para manter a sessão segura e impedir acessos simultâneos indevidos.
                             </li>
                             <li>
-                                <strong>Dados do canal WhatsApp (opcional):</strong> se você vincular seu número, tratamos o número de telefone e as mensagens de texto, áudio e imagem que você enviar ao nosso número oficial.
+                                <strong>Dados do canal WhatsApp (opcional):</strong> se você vincular seu número, tratamos o número de telefone, a data em que você autorizou o contato e as mensagens de texto, áudio, imagem ou PDF que você enviar ao nosso número oficial.
                             </li>
                         </ul>
                         <p>
@@ -148,6 +148,7 @@ export default function PrivacyPolicy() {
                             <li><strong>Dados da conta e financeiros:</strong> enquanto sua conta estiver ativa. Após a exclusão da conta, são apagados definitivamente.</li>
                             <li><strong>Registros de acesso e de segurança (IP, data, hora e evento):</strong> no mínimo 6 meses, conforme exige o art. 15 do Marco Civil da Internet, mesmo após a exclusão da conta.</li>
                             <li><strong>Registros de pagamentos:</strong> apagados da nossa base junto com a conta. Os processadores de pagamento (Stripe e Mercado Pago) mantêm os próprios registros das transações pelos prazos legais que se aplicam a eles.</li>
+                            <li><strong>Canal WhatsApp:</strong> o número vinculado e a data da autorização ficam guardados enquanto o canal estiver ativo e são apagados ao desconectar o número ou excluir a conta. O conteúdo das mensagens não é armazenado; guardamos por 30 dias apenas o identificador técnico de cada mensagem recebida, para evitar processamento em duplicidade e abusos.</li>
                             <li><strong>Arquivos de fatura e mensagens de áudio:</strong> são processados em memória e não ficam armazenados como arquivo. Guardamos apenas o nome e o tamanho do arquivo e os dados extraídos dele (itens, valores e datas), que seguem o prazo dos dados da conta.</li>
                         </ul>
                     </section>
@@ -178,7 +179,10 @@ export default function PrivacyPolicy() {
                             O atendimento pelo WhatsApp é opcional e só é ativado quando você vincula seu número na área da conta. Por ele, você pode registrar movimentações, consultar contas a vencer e marcar contas como pagas, e receber lembretes de vencimento.
                         </p>
                         <ul>
-                            <li>Você pode desativar o canal a qualquer momento enviando <strong>PARAR</strong> ou desvinculando o número na sua conta;</li>
+                            <li>O número é vinculado por um código de uso único, gerado na sua conta e enviado do seu próprio WhatsApp;</li>
+                            <li>O assistente usa inteligência artificial (Google Gemini) apenas para entender o seu pedido e responde somente sobre as suas finanças no {COMPANY.productName};</li>
+                            <li>Nenhum lançamento é gravado sem a sua confirmação no próprio WhatsApp;</li>
+                            <li>Você pode desligar o lembrete diário enviando <strong>PARAR</strong> e desconectar o número enviando <strong>DESVINCULAR</strong> ou pela sua conta;</li>
                             <li>As mensagens trafegam pela infraestrutura da Meta (WhatsApp Business) e estão sujeitas também à política de privacidade do WhatsApp;</li>
                             <li>Áudios e imagens são usados apenas para interpretar o seu pedido e não são armazenados como arquivo.</li>
                         </ul>

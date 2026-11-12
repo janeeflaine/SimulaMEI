@@ -303,6 +303,46 @@ const init = async () => {
       );
     `)
 
+    // WhatsApp: número vinculado a cada usuário (opt-in) e ação aguardando confirmação
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_links (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        phone TEXT NOT NULL UNIQUE,
+        "optInAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "reminderEnabled" BOOLEAN DEFAULT TRUE,
+        "lastReminderOn" DATE,
+        "lastMessageAt" TIMESTAMP,
+        "pendingNonce" TEXT,
+        "pendingAction" TEXT,
+        "pendingExpiresAt" TIMESTAMP,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    // WhatsApp: códigos de vínculo (só o hash é guardado; expiram em 15 minutos)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_link_codes (
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        "codeHash" TEXT NOT NULL UNIQUE,
+        "expiresAt" TIMESTAMP NOT NULL,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    // WhatsApp: ids das mensagens recebidas (evita reprocessar reenvios e limita por hora).
+    // Não guarda o conteúdo das mensagens. Apagado após 30 dias.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_events (
+        id SERIAL PRIMARY KEY,
+        wamid TEXT NOT NULL UNIQUE,
+        phone TEXT NOT NULL,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_whatsapp_events_phone_created ON whatsapp_events (phone, "createdAt")')
+
     // Ensure status and dueDate columns exist (migration for existing tables)
     try {
       await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'PAID\'')
@@ -367,7 +407,8 @@ const init = async () => {
         'admin_logs', 'audit_logs', 'user_sessions', 'payments', 'system_settings', 'user_alerts',
         'business_units', 'invoice_uploads', 'credit_cards',
         'finance_categories', 'card_invoices', 'invoice_items',
-        'finance_transactions', 'bills_to_pay'
+        'finance_transactions', 'bills_to_pay',
+        'whatsapp_links', 'whatsapp_link_codes', 'whatsapp_events'
       ]
 
       for (const table of tablesToLock) {
@@ -569,6 +610,29 @@ VALUES('Administrador', 'admin@eusempremei.com.br', $1, 'ADMIN')
       await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Ouro'`,     [ouroFeatures])
       await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v2', 'done')`)
       console.log('✅ Migration v2: comparativo e alertas liberados para Gratuito')
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ─── Migration WhatsApp: canal WhatsApp ───────────────────────────────────────────
+    // Adiciona as features do WhatsApp sem sobrescrever o que o admin já configurou.
+    const migWhatsapp = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_whatsapp_v1'")
+    if (migWhatsapp.rows.length === 0) {
+      const whatsappDefaults = {
+        Gratuito: { whatsapp: false, whatsapp_midia: false },
+        Prata:    { whatsapp: true,  whatsapp_midia: false },
+        Ouro:     { whatsapp: true,  whatsapp_midia: true }
+      }
+      const plansV4 = await pool.query(`SELECT id, name, features FROM plans WHERE name IN ('Gratuito','Prata','Ouro')`)
+      for (const plan of plansV4.rows) {
+        let f = {}
+        try { f = JSON.parse(plan.features || '{}') } catch (_) {}
+        for (const [key, value] of Object.entries(whatsappDefaults[plan.name])) {
+          if (typeof f[key] !== 'boolean') f[key] = value
+        }
+        await pool.query(`UPDATE plans SET features = $1 WHERE id = $2`, [JSON.stringify(f), plan.id])
+      }
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_whatsapp_v1', 'done') ON CONFLICT (key) DO NOTHING`)
+      console.log('✅ Migration WhatsApp: features do WhatsApp adicionadas aos planos')
     }
     // ─────────────────────────────────────────────────────────────────────────
 

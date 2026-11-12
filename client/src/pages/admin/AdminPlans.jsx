@@ -13,6 +13,8 @@ const ALL_FEATURES = [
     { key: 'transferencias', name: 'Transferências entre Carteiras', group: 'Prata' },
     { key: 'multi_carteiras',name: 'Multi-Carteiras',                group: 'Prata' },
     { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     group: 'Prata' },
+    { key: 'whatsapp',       name: 'Assistente no WhatsApp',        group: 'Prata' },
+    { key: 'whatsapp_midia', name: 'WhatsApp: Áudio e Foto',        group: 'Ouro' },
 ]
 
 export default function AdminPlans() {

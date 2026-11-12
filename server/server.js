@@ -18,12 +18,15 @@ const alertRoutes = require('./routes/alert.routes')
 const financeRoutes = require('./routes/finance.routes')
 const invoiceRoutes = require('./routes/invoice.routes')
 const stripeRoutes = require('./routes/stripe.routes')
+const whatsappRoutes = require('./routes/whatsapp.routes')
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
 // Stripe Webhook: must be mounted BEFORE express.json() to preserve raw body signature
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeRoutes.webhookHandler)
+// WhatsApp Webhook: também precisa do corpo bruto para validar a assinatura da Meta
+app.post('/api/whatsapp/webhook', express.raw({ type: '*/*', limit: '1mb' }), whatsappRoutes.webhookHandler)
 
 // Middleware
 app.use(cors())
@@ -43,6 +46,7 @@ app.use('/api/alerts', alertRoutes)
 app.use('/api/finance', financeRoutes)
 app.use('/api/finance/invoices', invoiceRoutes)
 app.use('/api/stripe', stripeRoutes.router)
+app.use('/api/whatsapp', whatsappRoutes.router)
 
 
 

@@ -20,6 +20,10 @@ const USER_DATA_STATEMENTS = [
     'DELETE FROM simulations WHERE "userId" = $1',
     'DELETE FROM user_sessions WHERE user_id = $1',
     'DELETE FROM admin_logs WHERE "userId" = $1',
+    // WhatsApp: ids de mensagens do número, códigos e o vínculo
+    'DELETE FROM whatsapp_events WHERE phone IN (SELECT phone FROM whatsapp_links WHERE "userId" = $1)',
+    'DELETE FROM whatsapp_link_codes WHERE "userId" = $1',
+    'DELETE FROM whatsapp_links WHERE "userId" = $1',
     // Desvincula referências que não pertencem ao usuário
     'UPDATE calculation_rules SET "updatedBy" = NULL WHERE "updatedBy" = $1',
     'UPDATE mei_limits SET "updatedBy" = NULL WHERE "updatedBy" = $1',

@@ -9,6 +9,12 @@
             "maxDuration": 30
         }
     },
+    "crons": [
+        {
+            "path": "/api/whatsapp/cron/daily-reminders",
+            "schedule": "0 11 * * *"
+        }
+    ],
     "rewrites": [
         {
             "source": "/api/(.*)",

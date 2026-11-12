@@ -19,7 +19,9 @@ export default function AdminFeatures() {
         { key: 'transferencias', name: 'Transferências entre Carteiras', description: 'Mover saldo entre carteiras PF e PJ',                  group: 'Prata'  },
         { key: 'multi_carteiras',name: 'Multi-Carteiras',                description: 'Criar e gerenciar múltiplas carteiras',                group: 'Prata'  },
         { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     description: 'Upload de PDF/foto e extração inteligente via Gemini',  group: 'Prata'  },
+        { key: 'whatsapp',       name: 'Assistente no WhatsApp',        description: 'Lançar, consultar e pagar contas por mensagem de texto', group: 'Prata'  },
         // ── Ouro ─────────────────────────────────────────────────────────────
+        { key: 'whatsapp_midia', name: 'WhatsApp: Áudio e Foto',        description: 'Lançamentos por áudio, foto ou PDF lidos pelo Gemini',   group: 'Ouro'   },
     ]
 
     useEffect(() => {
