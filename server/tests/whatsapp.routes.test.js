@@ -119,21 +119,69 @@ describe('Área do usuário', () => {
         expect(mockBot.createLinkCode).not.toHaveBeenCalled()
     })
 
-    test('Gera código com link wa.me para o número do EuSempreMEI', async () => {
+    test('Gera código com link wa.me e repassa as carteiras escolhidas', async () => {
+        mockDb.query.mockResolvedValue({ rows: [{ count: 0 }] })
         mockBot.createLinkCode.mockResolvedValue({ code: '123456', expiresAt: '2026-11-12T12:15:00Z' })
-        const res = await request(app).post('/api/whatsapp/link-code')
+        const res = await request(app).post('/api/whatsapp/link-code').send({ personalWalletId: 21, businessWalletId: 22 })
         expect(res.statusCode).toBe(200)
-        expect(mockBot.createLinkCode).toHaveBeenCalledWith(42)
+        expect(mockBot.createLinkCode).toHaveBeenCalledWith(42, { personalWalletId: 21, businessWalletId: 22 })
         expect(res.body.message).toBe('VINCULAR 123456')
         expect(res.body.waLink).toBe('https://wa.me/5533999990000?text=VINCULAR%20123456')
     })
 
-    test('Status mostra só os 4 últimos dígitos do número', async () => {
-        mockDb.query.mockResolvedValue({ rows: [{ phone: '553399998193', reminderEnabled: true, optInAt: '2026-11-12' }] })
+    test('No limite de números do plano não gera código (403)', async () => {
+        mockDb.query.mockResolvedValue({ rows: [{ count: 3 }] }) // Prata = 3 números
+        const res = await request(app).post('/api/whatsapp/link-code')
+        expect(res.statusCode).toBe(403)
+        expect(res.body.message).toContain('3 número(s)')
+        expect(mockBot.createLinkCode).not.toHaveBeenCalled()
+    })
+
+    test('Limite de números: Gratuito 1, Prata 3, Ouro 4; admin e trial 4', () => {
+        const { maxWhatsappNumbers } = jest.requireActual('../utils/financeActions')
+        expect(maxWhatsappNumbers({ role: 'USER', planId: 1, planFeatures: {} })).toBe(1)
+        expect(maxWhatsappNumbers({ role: 'USER', planId: 2, planFeatures: {} })).toBe(3)
+        expect(maxWhatsappNumbers({ role: 'USER', planId: 3, planFeatures: {} })).toBe(4)
+        expect(maxWhatsappNumbers({ role: 'ADMIN', planId: 1, planFeatures: {} })).toBe(4)
+        expect(maxWhatsappNumbers({ role: 'USER', planId: 1, isInTrial: true, planFeatures: {} })).toBe(4)
+        expect(maxWhatsappNumbers({ role: 'USER', planId: 2, planFeatures: { whatsapp_numeros: 5 } })).toBe(5)
+    })
+
+    test('Status lista os números (só 4 últimos dígitos), as carteiras e o limite', async () => {
+        mockDb.query.mockImplementation(async (sql) => {
+            if (sql.includes('FROM whatsapp_links l')) {
+                return { rows: [{ id: 7, phone: '553399998193', reminderEnabled: true, optInAt: '2026-11-12', personalWalletId: 21, personalWalletName: 'Miriam Cristina (PF)', businessWalletId: null, businessWalletName: null }] }
+            }
+            if (sql.includes('FROM business_units')) return { rows: [{ id: 21, name: 'Miriam Cristina (PF)', accountType: 'PF' }] }
+            return { rows: [] }
+        })
         const res = await request(app).get('/api/whatsapp/status')
         expect(res.statusCode).toBe(200)
-        expect(res.body).toMatchObject({ available: true, mediaAvailable: false, linked: true, phone: '•••• 8193', reminderEnabled: true })
+        expect(res.body).toMatchObject({ available: true, mediaAvailable: false, maxNumbers: 3, linked: true, phone: '•••• 8193', reminderEnabled: true })
+        expect(res.body.links).toEqual([{
+            id: 7, phone: '•••• 8193', reminderEnabled: true, linkedAt: '2026-11-12',
+            personalWallet: { id: 21, name: 'Miriam Cristina (PF)' }, businessWallet: null
+        }])
+        expect(res.body.wallets).toEqual([{ id: 21, name: 'Miriam Cristina (PF)', accountType: 'PF' }])
         expect(JSON.stringify(res.body)).not.toContain('553399998193')
+    })
+
+    test('Lembrete com linkId altera só aquele número do usuário', async () => {
+        mockDb.query.mockResolvedValue({ rows: [{ reminderEnabled: false }] })
+        const res = await request(app).put('/api/whatsapp/settings').send({ linkId: 8, reminderEnabled: false })
+        expect(res.statusCode).toBe(200)
+        const [sql, params] = mockDb.query.mock.calls[0]
+        expect(sql).toContain('AND id = $2')
+        expect(params).toEqual([42, 8, false])
+    })
+
+    test('Desconectar um número só apaga se for do usuário', async () => {
+        mockDb.query.mockResolvedValue({ rows: [], rowCount: 0 })
+        const res = await request(app).delete('/api/whatsapp/link/8')
+        expect(res.statusCode).toBe(404)
+        const [sql, params] = mockDb.query.mock.calls[0]
+        expect(sql).toContain('"userId" = $2')
+        expect(params).toEqual([8, 42])
     })
 
     test('Settings exige booleano (400)', async () => {
@@ -181,6 +229,16 @@ describe('Agente Gemini', () => {
         expect(request.config.systemInstruction).toContain('Vendas')
         expect(request.config.tools[0].functionDeclarations.map(f => f.name))
             .toEqual(['registrar_lancamento', 'listar_contas', 'marcar_conta_paga', 'resumo_do_mes'])
+    })
+
+    test('O prompt lista as carteiras do usuário e pede para não adivinhar a forma de pagamento', async () => {
+        mockGenerate.mockResolvedValue({ text: 'ok' })
+        await agent.interpret({ ...base, text: 'oi', wallets: [{ name: 'Miriam Cristina MEI', accountType: 'PJ' }] })
+        const prompt = mockGenerate.mock.calls[0][0].config.systemInstruction
+        expect(prompt).toContain('Miriam Cristina MEI')
+        expect(prompt).toContain('Forma de pagamento: só preencha se a pessoa disse')
+        const props = agent.FUNCTION_DECLARATIONS[0].parameters.properties
+        expect(Object.keys(props)).toEqual(expect.arrayContaining(['carteira', 'categoria_pedida', 'forma_pagamento']))
     })
 
     test('Nenhuma função recebe ou escolhe o usuário', () => {

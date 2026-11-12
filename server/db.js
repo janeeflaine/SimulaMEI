@@ -303,11 +303,12 @@ const init = async () => {
       );
     `)
 
-    // WhatsApp: número vinculado a cada usuário (opt-in) e ação aguardando confirmação
+    // WhatsApp: números vinculados à conta (opt-in), carteiras padrão de cada número
+    // e ação aguardando confirmação. Uma conta pode ter vários números (limite por plano).
     await pool.query(`
       CREATE TABLE IF NOT EXISTS whatsapp_links (
         id SERIAL PRIMARY KEY,
-        "userId" INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        "userId" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         phone TEXT NOT NULL UNIQUE,
         "optInAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         "reminderEnabled" BOOLEAN DEFAULT TRUE,
@@ -342,6 +343,32 @@ const init = async () => {
       );
     `)
     await pool.query('CREATE INDEX IF NOT EXISTS idx_whatsapp_events_phone_created ON whatsapp_events (phone, "createdAt")')
+
+    // WhatsApp v2: vários números por conta, cada um com carteira pessoal e MEI padrão.
+    // Bancos criados antes tinham UNIQUE em "userId"; o vínculo existente continua valendo.
+    try {
+      await pool.query(`
+        DO $$
+        DECLARE c RECORD;
+        BEGIN
+          FOR c IN
+            SELECT con.conname FROM pg_constraint con
+            JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ANY(con.conkey)
+            WHERE con.conrelid = 'whatsapp_links'::regclass AND con.contype = 'u'
+              AND att.attname = 'userId' AND array_length(con.conkey, 1) = 1
+          LOOP
+            EXECUTE format('ALTER TABLE whatsapp_links DROP CONSTRAINT %I', c.conname);
+          END LOOP;
+        END $$;
+      `)
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_whatsapp_links_user ON whatsapp_links ("userId")')
+      await pool.query('ALTER TABLE whatsapp_links ADD COLUMN IF NOT EXISTS "personalWalletId" INTEGER REFERENCES business_units(id) ON DELETE SET NULL')
+      await pool.query('ALTER TABLE whatsapp_links ADD COLUMN IF NOT EXISTS "businessWalletId" INTEGER REFERENCES business_units(id) ON DELETE SET NULL')
+      await pool.query('ALTER TABLE whatsapp_link_codes ADD COLUMN IF NOT EXISTS "personalWalletId" INTEGER')
+      await pool.query('ALTER TABLE whatsapp_link_codes ADD COLUMN IF NOT EXISTS "businessWalletId" INTEGER')
+    } catch (waMigErr) {
+      console.log('Migration note (whatsapp v2):', waMigErr.message)
+    }
 
     // Ensure status and dueDate columns exist (migration for existing tables)
     try {

@@ -9,6 +9,9 @@ const { db } = require('../db')
 
 const TIME_ZONE = 'America/Sao_Paulo'
 const PLAN_FALLBACK = { whatsapp: 2, whatsapp_midia: 3, contas_pagar: 2 }
+// Quantos números de WhatsApp cada plano pode vincular (Gratuito, Prata, Ouro).
+// O plano pode sobrescrever com a feature numérica "whatsapp_numeros".
+const WHATSAPP_NUMBERS_BY_PLAN = { 1: 1, 2: 3, 3: 4 }
 
 // ─── Datas (sempre no fuso de Brasília) ──────────────────────────────────────
 
@@ -97,6 +100,16 @@ function hasFeature(ctx, key) {
     return (Number(ctx.planId) || 1) >= (PLAN_FALLBACK[key] || 2)
 }
 
+/** Limite de números de WhatsApp da conta. Admin e trial têm o limite do Ouro. */
+function maxWhatsappNumbers(ctx) {
+    if (!ctx) return 0
+    const custom = ctx.planFeatures ? Number(ctx.planFeatures.whatsapp_numeros) : NaN
+    if (Number.isInteger(custom) && custom >= 0) return custom
+    if (ctx.role === 'ADMIN' || ctx.isInTrial) return WHATSAPP_NUMBERS_BY_PLAN[3]
+    const planId = Math.min(Math.max(Number(ctx.planId) || 1, 1), 3)
+    return WHATSAPP_NUMBERS_BY_PLAN[planId]
+}
+
 /** Mesma regra do checkTransactionLimit das rotas de finanças. */
 async function checkTransactionLimit(ctx) {
     if (ctx.role === 'ADMIN' || ctx.isInTrial) return { allowed: true }
@@ -131,16 +144,57 @@ function categoryTypeFor(type, target) {
     return target === 'BUSINESS' ? 'DESPESA_MEI' : 'DESPESA_PESSOAL'
 }
 
-async function resolveCategoryId(userId, categoryName, type, target) {
-    if (!categoryName) return null
+/** Categoria do usuário com esse nome (sem diferenciar maiúsculas) no tipo certo. */
+async function findCategory(userId, categoryName, type, target) {
+    const clean = String(categoryName || '').trim()
+    if (!clean) return null
     const { rows: [row] } = await db.query(
-        `SELECT id FROM finance_categories
+        `SELECT id, name FROM finance_categories
          WHERE "userId" = $1 AND type = $2 AND LOWER(name) = LOWER($3)
          LIMIT 1`,
-        [userId, categoryTypeFor(type, target), String(categoryName).trim()]
+        [userId, categoryTypeFor(type, target), clean]
     )
-    return row ? row.id : null
+    return row || null
 }
+
+/** Usa a categoria existente; se não existir e create = true, cria (como POST /categories). */
+async function resolveCategoryId(userId, categoryName, type, target, create = false) {
+    if (!categoryName) return null
+    const found = await findCategory(userId, categoryName, type, target)
+    if (found) return found.id
+    if (!create) return null
+    const { rows: [created] } = await db.query(
+        'INSERT INTO finance_categories ("userId", name, type) VALUES ($1, $2, $3) RETURNING id',
+        [userId, String(categoryName).trim().slice(0, 60), categoryTypeFor(type, target)]
+    )
+    return created ? created.id : null
+}
+
+/** Carteiras do usuário (PF = pessoal, PJ = MEI), da mais antiga para a mais nova. */
+async function listWallets(userId) {
+    const { rows } = await db.query(
+        `SELECT id, name, "account_type" AS "accountType", "isPrimary"
+         FROM business_units
+         WHERE "ownerId" = $1
+         ORDER BY "createdAt" ASC NULLS LAST, id ASC`,
+        [userId]
+    )
+    return rows
+}
+
+/** Carteira do usuário pelo id (null se não for dele). */
+async function getWallet(userId, walletId) {
+    const id = parseInt(walletId, 10)
+    if (!Number.isInteger(id)) return null
+    const { rows: [row] } = await db.query(
+        `SELECT id, name, "account_type" AS "accountType" FROM business_units
+         WHERE id = $1 AND "ownerId" = $2`,
+        [id, userId]
+    )
+    return row || null
+}
+
+const walletTarget = (wallet) => (wallet && wallet.accountType === 'PJ' ? 'BUSINESS' : 'PERSONAL')
 
 /** Carteira PJ para lançamentos do MEI e PF para os pessoais, priorizando a principal. */
 async function findWalletId(userId, target) {
@@ -154,19 +208,31 @@ async function findWalletId(userId, target) {
     return row ? row.id : null
 }
 
+/** Carteira escolhida, se for do usuário e do tipo certo; senão a padrão do tipo. */
+async function resolveWalletId(userId, walletId, target) {
+    if (walletId) {
+        const wallet = await getWallet(userId, walletId)
+        if (wallet && walletTarget(wallet) === target) return wallet.id
+    }
+    return findWalletId(userId, target)
+}
+
 // ─── Lançamentos ─────────────────────────────────────────────────────────────
 
 /**
  * Cria um lançamento. Contas a pagar entram como PENDING com forma "Boleto",
- * igual ao fluxo do site. Não trata cartão de crédito (exige fatura e cartão).
+ * igual ao fluxo do site. Despesa no cartão de crédito não passa por aqui
+ * (exige cartão e fatura); receita no crédito (maquininha) sim.
+ * tx.walletId é conferido de novo: só vale se a carteira for do usuário.
+ * tx.createCategory = true cria a categoria citada se ela ainda não existir.
  */
 async function createTransaction(ctx, tx) {
     const today = todayISO()
     const isBill = !!tx.isBill
     const date = isBill ? today : (tx.date || today)
     const [categoryId, walletId] = await Promise.all([
-        resolveCategoryId(ctx.id, tx.categoryName, tx.type, tx.target),
-        findWalletId(ctx.id, tx.target)
+        resolveCategoryId(ctx.id, tx.categoryName, tx.type, tx.target, !!tx.createCategory),
+        resolveWalletId(ctx.id, tx.walletId, tx.target)
     ])
 
     const { rows: [created] } = await db.query(
@@ -290,8 +356,14 @@ module.exports = {
     toISODate,
     getUserContext,
     hasFeature,
+    maxWhatsappNumbers,
     checkTransactionLimit,
     listCategories,
+    findCategory,
+    listWallets,
+    getWallet,
+    walletTarget,
+    findWalletId,
     createTransaction,
     listPendingBills,
     searchPendingBills,

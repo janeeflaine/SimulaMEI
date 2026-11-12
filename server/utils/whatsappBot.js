@@ -4,7 +4,8 @@
  * Fluxo de uma mensagem recebida:
  *   1. ignora reenvios da Meta (id da mensagem já visto);
  *   2. limita 30 mensagens por hora por número;
- *   3. "VINCULAR 123456" liga o número à conta que gerou o código;
+ *   3. "VINCULAR 123456" liga o número à conta que gerou o código, com as
+ *      carteiras padrão escolhidas no site (uma conta pode ter vários números);
  *   4. número não vinculado recebe instruções; plano sem WhatsApp recebe aviso;
  *   5. botões e listas executam a ação pendente;
  *   6. texto, áudio, foto ou PDF passam pelo Gemini, que escolhe a ação.
@@ -42,7 +43,9 @@ const hashCode = (code) => crypto.createHash('sha256').update(String(code)).dige
 
 const HELP_TEXT = () => [
     'Posso te ajudar com:',
-    '• *Registrar gastos e receitas*: "gastei 50 no mercado", "recebi 300 do cliente Ana"',
+    '• *Registrar gastos e receitas*: "gastei 50 no mercado no pix", "recebi 300 do cliente Ana"',
+    '• *Em outra carteira*: "comprei 10 de peixe carteira Maria pix"',
+    '• *Com categoria*: "recebi 3500 da maquininha categoria maquininha"',
     '• *Contas a pagar*: "boleto da luz de 180 vence dia 20"',
     '• *Ver contas*: "contas de hoje", "contas da semana"',
     '• *Marcar como paga*: "paguei a conta de luz"',
@@ -110,6 +113,16 @@ async function consumePending(linkId, nonce) {
 
 // ─── Validação do que o Gemini devolveu ──────────────────────────────────────
 
+const CREDIT_CARD_EXPENSE_TEXT = 'Compras no cartão de crédito precisam do cartão e da fatura. Por enquanto, lance pelo site ou envie a fatura na área de Cartões.'
+
+// Formas de pagamento oferecidas na lista (id curto no botão → valor gravado)
+const PAYMENT_OPTIONS = [
+    { code: 'PIX', value: 'PIX', title: 'PIX' },
+    { code: 'DIN', value: 'Dinheiro', title: 'Dinheiro' },
+    { code: 'DEB', value: 'Cartão de Débito', title: 'Cartão de Débito' },
+    { code: 'CRE', value: 'Cartão de Crédito', title: 'Cartão de Crédito' }
+]
+
 function normalizeTransactionArgs(args) {
     const type = args.tipo === 'RECEITA' ? 'RECEITA' : args.tipo === 'DESPESA' ? 'DESPESA' : null
     const amount = Math.round(Number(args.valor) * 100) / 100
@@ -120,6 +133,7 @@ function normalizeTransactionArgs(args) {
     const date = fa.isValidISODate(args.data) ? args.data : null
     const method = ['PIX', 'Dinheiro', 'Cartão de Débito', 'Cartão de Crédito', 'Boleto'].includes(args.forma_pagamento)
         ? args.forma_pagamento : null
+    const walletQuery = String(args.carteira || '').trim().slice(0, 60)
 
     if (!type) return { error: 'Não entendi se é uma despesa ou uma receita. Pode repetir?' }
     if (!Number.isFinite(amount) || amount <= 0 || amount > 10000000) {
@@ -127,8 +141,9 @@ function normalizeTransactionArgs(args) {
     }
     if (!description) return { error: 'Qual a descrição desse lançamento?' }
     if (isBill && !dueDate) return { error: 'Qual é a data de vencimento dessa conta?' }
-    if (!isBill && method === 'Cartão de Crédito') {
-        return { error: 'Compras no cartão de crédito precisam do cartão e da fatura. Por enquanto, lance pelo site ou envie a fatura na área de Cartões.' }
+    // Receita no crédito (maquininha) é aceita; despesa no crédito depende do cartão e da fatura
+    if (!isBill && type === 'DESPESA' && method === 'Cartão de Crédito') {
+        return { error: CREDIT_CARD_EXPENSE_TEXT }
     }
     if (!isBill && date && date > fa.todayISO()) {
         return { error: 'Essa data está no futuro. Se for uma conta a pagar, me diga o vencimento: "boleto de 100 vence dia 20".' }
@@ -138,8 +153,12 @@ function normalizeTransactionArgs(args) {
         tx: {
             type, amount, description, target, isBill, dueDate,
             date: isBill ? null : date,
-            categoryName: args.categoria ? String(args.categoria).slice(0, 60) : null,
-            paymentMethod: isBill ? 'Boleto' : (method === 'Boleto' ? null : method)
+            categoryName: args.categoria ? String(args.categoria).trim().slice(0, 60) || null : null,
+            categoryRequested: args.categoria_pedida === true,
+            paymentMethod: isBill ? 'Boleto' : (method === 'Boleto' ? null : method),
+            walletQuery: walletQuery || null,
+            walletId: null,
+            walletName: null
         }
     }
 }
@@ -149,9 +168,61 @@ function describeTransaction(tx) {
     const lines = [`*${what[0].toUpperCase()}${what.slice(1)}*: ${tx.description}`, `Valor: *${brl(tx.amount)}*`]
     if (tx.isBill) lines.push(`Vencimento: ${brDate(tx.dueDate)}`)
     else lines.push(`Data: ${brDate(tx.date || fa.todayISO())}`)
-    if (tx.target) lines.push(`Carteira: ${targetLabel(tx.target)}`)
-    if (tx.categoryName) lines.push(`Categoria: ${tx.categoryName}`)
+    if (tx.walletName) lines.push(`Carteira: ${tx.walletName}`)
+    else if (tx.target) lines.push(`Carteira: ${targetLabel(tx.target)}`)
+    if (!tx.isBill && tx.paymentMethod) lines.push(`Pagamento: ${tx.paymentMethod}`)
+    if (tx.categoryName) lines.push(`Categoria: ${tx.categoryName}${tx.createCategory ? ' (nova)' : ''}`)
     return lines.join('\n')
+}
+
+// ─── Carteiras citadas na mensagem ───────────────────────────────────────────
+
+const normalizeText = (value) => String(value || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+
+const BUSINESS_WORDS = ['mei', 'pj', 'empresa', 'cnpj']
+const PERSONAL_WORDS = ['pf', 'pessoal', 'cpf']
+const FILLER_WORDS = ['carteira', 'conta', 'da', 'do', 'de', 'na', 'no']
+
+/**
+ * Carteiras que combinam com o que a pessoa citou ("miriam", "Jhonny MEI").
+ * Palavras como "mei"/"pessoal" filtram o tipo; as demais precisam aparecer no nome.
+ */
+function matchWallets(wallets, query, target) {
+    const q = normalizeText(query)
+    if (!q) return []
+    const exact = wallets.filter(w => normalizeText(w.name) === q)
+    if (exact.length) return exact
+
+    const words = q.split(' ')
+    let typeFilter = target === 'BUSINESS' ? 'PJ' : target === 'PERSONAL' ? 'PF' : null
+    if (words.some(w => BUSINESS_WORDS.includes(w))) typeFilter = 'PJ'
+    else if (words.some(w => PERSONAL_WORDS.includes(w))) typeFilter = 'PF'
+    const ignored = [...BUSINESS_WORDS, ...PERSONAL_WORDS, ...FILLER_WORDS]
+    const nameWords = words.filter(w => w.length >= 2 && !ignored.includes(w))
+    if (!nameWords.length) return []
+
+    const byName = wallets.filter(w => {
+        const parts = normalizeText(w.name).split(' ')
+        return nameWords.every(word => parts.some(part => part.startsWith(word)))
+    })
+    const byType = typeFilter ? byName.filter(w => w.accountType === typeFilter) : byName
+    // Se o tipo veio só do palpite da IA e eliminou tudo, fica com o que bateu pelo nome
+    return byType.length ? byType : byName
+}
+
+function applyWallet(tx, wallet) {
+    tx.walletId = wallet.id
+    tx.walletName = wallet.name
+    tx.target = fa.walletTarget(wallet)
+    tx.walletQuery = null
+    tx.walletChecked = true
+}
+
+/** Primeiro nome do dono do número: da carteira pessoal padrão, senão o nome da conta. */
+function ownerFirstName(ctx, personalWalletName) {
+    return firstName(String(personalWalletName || '').replace(/\(.*?\)/g, '')) || firstName(ctx && ctx.name)
 }
 
 // ─── Execução das ações ──────────────────────────────────────────────────────
@@ -162,15 +233,105 @@ async function askToConfirmTransaction(ctx, link, phone, args) {
     if (tx.isBill && !fa.hasFeature(ctx, 'contas_pagar')) {
         return wa.sendText(phone, 'Contas a pagar fazem parte do plano Prata. Veja os planos em ' + `${siteUrl()}/planos`)
     }
+    return advanceTransaction(ctx, link, phone, tx)
+}
 
-    const nonce = await savePending(link.id, { kind: 'CREATE', tx })
+/** Pede ao usuário que escolha entre carteiras (botões até 2, lista acima disso). */
+async function askWallet(link, phone, tx, options, intro) {
+    const nonce = await savePending(link.id, { kind: 'CREATE', tx, walletOptions: options.map(w => w.id) })
+    const body = `${describeTransaction(tx)}\n\n${intro}`
+    if (options.length <= 2) {
+        return wa.sendButtons(phone, body, [
+            ...options.map(w => ({ id: `wal:${w.id}:${nonce}`, title: w.name })),
+            { id: `no:${nonce}`, title: 'Cancelar' }
+        ])
+    }
+    return wa.sendList(phone, body, 'Escolher carteira',
+        options.slice(0, 10).map(w => ({
+            id: `wal:${w.id}:${nonce}`,
+            title: w.name,
+            description: w.accountType === 'PJ' ? 'MEI' : 'Pessoal'
+        })), 'Carteiras')
+}
+
+/**
+ * Completa o lançamento uma etapa por vez, nesta ordem:
+ * carteira citada → MEI ou pessoal → carteira padrão do número → forma de
+ * pagamento → categoria citada → resumo com Confirmar/Cancelar.
+ * Cada pergunta grava a ação pendente com um nonce novo.
+ */
+async function advanceTransaction(ctx, link, phone, tx) {
+    // 1. Carteira citada ("carteira miriam")
+    if (tx.walletQuery && !tx.walletChecked) {
+        const wallets = await fa.listWallets(ctx.id)
+        const matches = matchWallets(wallets, tx.walletQuery, tx.target)
+        if (matches.length === 1) {
+            applyWallet(tx, matches[0])
+        } else if (matches.length > 1) {
+            return askWallet(link, phone, tx, matches, 'Em qual carteira?')
+        } else if (wallets.length) {
+            const sameType = tx.target ? wallets.filter(w => fa.walletTarget(w) === tx.target) : []
+            const query = tx.walletQuery
+            return askWallet(link, phone, tx, sameType.length ? sameType : wallets,
+                `Não achei a carteira "${query}". Em qual carteira?`)
+        } else {
+            tx.walletQuery = null
+            tx.walletChecked = true
+        }
+    }
+
+    // 2. MEI ou pessoal
     if (!tx.target) {
+        const nonce = await savePending(link.id, { kind: 'CREATE', tx })
         return wa.sendButtons(phone, `${describeTransaction(tx)}\n\nÉ do *MEI* ou *pessoal*?`, [
             { id: `tgt:BUSINESS:${nonce}`, title: 'MEI' },
             { id: `tgt:PERSONAL:${nonce}`, title: 'Pessoal' },
             { id: `no:${nonce}`, title: 'Cancelar' }
         ])
     }
+
+    // 3. Carteira padrão do número (escolhida no site) ou a padrão da conta
+    if (!tx.walletId) {
+        const preferredId = tx.target === 'BUSINESS' ? link.businessWalletId : link.personalWalletId
+        let wallet = preferredId ? await fa.getWallet(ctx.id, preferredId) : null
+        if (!wallet || fa.walletTarget(wallet) !== tx.target) {
+            const fallbackId = await fa.findWalletId(ctx.id, tx.target)
+            wallet = fallbackId ? await fa.getWallet(ctx.id, fallbackId) : null
+        }
+        if (wallet) applyWallet(tx, wallet)
+        tx.walletChecked = true
+    }
+
+    // 4. Forma de pagamento (obrigatória; conta a pagar já é Boleto)
+    if (!tx.isBill && !tx.paymentMethod) {
+        const nonce = await savePending(link.id, { kind: 'CREATE', tx })
+        const question = tx.type === 'RECEITA' ? 'Como você recebeu?' : 'Como você pagou?'
+        return wa.sendList(phone, `${describeTransaction(tx)}\n\n${question}`, 'Forma de pagamento',
+            PAYMENT_OPTIONS.map(o => ({ id: `pm:${o.code}:${nonce}`, title: o.title })), 'Formas de pagamento')
+    }
+
+    // 5. Categoria citada: usa a existente; se a pessoa pediu uma que não existe, oferece criar
+    if (tx.categoryName && !tx.categoryChecked) {
+        const found = await fa.findCategory(ctx.id, tx.categoryName, tx.type, tx.target)
+        if (found) {
+            tx.categoryName = found.name
+            tx.categoryChecked = true
+        } else if (tx.categoryRequested && fa.hasFeature(ctx, 'categorias')) {
+            const nonce = await savePending(link.id, { kind: 'CREATE', tx })
+            return wa.sendButtons(phone,
+                `${describeTransaction({ ...tx, categoryName: null })}\n\nA categoria *${tx.categoryName}* ainda não existe. Quer criar?`, [
+                    { id: `cat:new:${nonce}`, title: 'Criar categoria' },
+                    { id: `cat:none:${nonce}`, title: 'Sem categoria' },
+                    { id: `no:${nonce}`, title: 'Cancelar' }
+                ])
+        } else {
+            tx.categoryName = null
+            tx.categoryChecked = true
+        }
+    }
+
+    // 6. Resumo final
+    const nonce = await savePending(link.id, { kind: 'CREATE', tx, ready: true })
     return wa.sendButtons(phone, `Confere?\n\n${describeTransaction(tx)}`, [
         { id: `ok:${nonce}`, title: 'Confirmar' },
         { id: `no:${nonce}`, title: 'Cancelar' }
@@ -297,10 +458,34 @@ async function handleReply(ctx, link, phone, replyId) {
 
     if (pending.kind === 'CREATE') {
         const tx = { ...pending.tx }
-        if (kind === 'tgt') tx.target = rest[0] === 'BUSINESS' ? 'BUSINESS' : 'PERSONAL'
-        else if (kind !== 'ok') return wa.sendText(phone, 'Não entendi a resposta. Pode mandar de novo?')
-        if (!tx.target) return wa.sendText(phone, 'Faltou dizer se é do MEI ou pessoal. Pode mandar de novo?')
-        return createConfirmedTransaction(ctx, phone, tx)
+        if (kind === 'ok') {
+            // Só grava a partir do resumo final; qualquer outro "ok" retoma as etapas
+            if (pending.ready) return createConfirmedTransaction(ctx, phone, tx)
+            return advanceTransaction(ctx, link, phone, tx)
+        }
+        if (kind === 'tgt') {
+            tx.target = rest[0] === 'BUSINESS' ? 'BUSINESS' : 'PERSONAL'
+        } else if (kind === 'wal') {
+            const walletId = parseInt(rest[0], 10)
+            const allowed = Array.isArray(pending.walletOptions) && pending.walletOptions.includes(walletId)
+            const wallet = allowed ? await fa.getWallet(ctx.id, walletId) : null
+            if (!wallet) return wa.sendText(phone, 'Não achei essa carteira. Pode mandar de novo?')
+            applyWallet(tx, wallet)
+        } else if (kind === 'pm') {
+            const option = PAYMENT_OPTIONS.find(o => o.code === rest[0])
+            if (!option) return wa.sendText(phone, 'Não entendi a resposta. Pode mandar de novo?')
+            if (option.value === 'Cartão de Crédito' && tx.type === 'DESPESA') {
+                return wa.sendText(phone, `${CREDIT_CARD_EXPENSE_TEXT}\n\nNada foi registrado.`)
+            }
+            tx.paymentMethod = option.value
+        } else if (kind === 'cat') {
+            if (rest[0] === 'new') tx.createCategory = true
+            else tx.categoryName = null
+            tx.categoryChecked = true
+        } else {
+            return wa.sendText(phone, 'Não entendi a resposta. Pode mandar de novo?')
+        }
+        return advanceTransaction(ctx, link, phone, tx)
     }
     if (pending.kind === 'PAY' && kind === 'ok') return payBill(ctx, phone, pending.transactionId)
     return wa.sendText(phone, 'Não entendi a resposta. Pode mandar de novo?')
@@ -308,16 +493,30 @@ async function handleReply(ctx, link, phone, replyId) {
 
 // ─── Vínculo do número ───────────────────────────────────────────────────────
 
-/** Gera um código de 6 dígitos para o usuário vincular o número. Substitui códigos anteriores. */
-async function createLinkCode(userId) {
+/** Carteira do usuário, se for dele e do tipo esperado (PF ou PJ); senão null. */
+async function ownWalletOfType(userId, walletId, accountType) {
+    if (!walletId) return null
+    const wallet = await fa.getWallet(userId, walletId)
+    return wallet && wallet.accountType === accountType ? wallet : null
+}
+
+/**
+ * Gera um código de 6 dígitos para vincular um número. Substitui códigos
+ * anteriores do usuário. As carteiras escolhidas no site vão junto com o código.
+ */
+async function createLinkCode(userId, wallets = {}) {
+    const [personal, business] = await Promise.all([
+        ownWalletOfType(userId, wallets.personalWalletId, 'PF'),
+        ownWalletOfType(userId, wallets.businessWalletId, 'PJ')
+    ])
     await db.query('DELETE FROM whatsapp_link_codes WHERE "userId" = $1 OR "expiresAt" < NOW()', [userId])
     for (let attempt = 0; attempt < 5; attempt++) {
         const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0')
         const { rowCount } = await db.query(
-            `INSERT INTO whatsapp_link_codes ("userId", "codeHash", "expiresAt")
-             VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval)
+            `INSERT INTO whatsapp_link_codes ("userId", "codeHash", "expiresAt", "personalWalletId", "businessWalletId")
+             VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval, $4, $5)
              ON CONFLICT ("codeHash") DO NOTHING`,
-            [userId, hashCode(code), String(LINK_CODE_TTL_MINUTES)]
+            [userId, hashCode(code), String(LINK_CODE_TTL_MINUTES), personal ? personal.id : null, business ? business.id : null]
         )
         if (rowCount === 1) {
             return { code, expiresAt: new Date(Date.now() + LINK_CODE_TTL_MINUTES * 60000).toISOString() }
@@ -326,9 +525,15 @@ async function createLinkCode(userId) {
     throw new Error('Não foi possível gerar o código')
 }
 
+async function countLinks(userId) {
+    const { rows: [row] } = await db.query('SELECT COUNT(*)::int AS count FROM whatsapp_links WHERE "userId" = $1', [userId])
+    return row ? Number(row.count) : 0
+}
+
 async function handleLinkCommand(phone, code) {
     const { rows: [row] } = await db.query(
-        'DELETE FROM whatsapp_link_codes WHERE "codeHash" = $1 AND "expiresAt" > NOW() RETURNING "userId"',
+        `DELETE FROM whatsapp_link_codes WHERE "codeHash" = $1 AND "expiresAt" > NOW()
+         RETURNING "userId", "personalWalletId", "businessWalletId"`,
         [hashCode(code)]
     )
     if (!row) {
@@ -337,18 +542,47 @@ async function handleLinkCommand(phone, code) {
     const ctx = await fa.getUserContext(row.userId)
     if (!ctx) return wa.sendText(phone, 'Não foi possível vincular esta conta.')
 
+    // Número novo na conta respeita o limite do plano; o mesmo número só atualiza as carteiras
+    const { rows: [sameAccount] } = await db.query(
+        'SELECT id FROM whatsapp_links WHERE phone = $1 AND "userId" = $2', [phone, ctx.id]
+    )
+    if (!sameAccount) {
+        const max = fa.maxWhatsappNumbers(ctx)
+        if (await countLinks(ctx.id) >= max) {
+            return wa.sendText(phone, `Sua conta já tem ${max} número(s) de WhatsApp, o limite do seu plano. Desconecte um em ${siteUrl()}/conta para conectar este.`)
+        }
+    }
+
+    const [personal, business] = await Promise.all([
+        ownWalletOfType(ctx.id, row.personalWalletId, 'PF'),
+        ownWalletOfType(ctx.id, row.businessWalletId, 'PJ')
+    ])
+
     // O número passa a valer só para a conta que provou ter acesso a ele agora
     await db.query('DELETE FROM whatsapp_links WHERE phone = $1 AND "userId" <> $2', [phone, ctx.id])
     await db.query(
-        `INSERT INTO whatsapp_links ("userId", phone, "optInAt", "reminderEnabled")
-         VALUES ($1, $2, NOW(), TRUE)
-         ON CONFLICT ("userId") DO UPDATE
-         SET phone = EXCLUDED.phone, "optInAt" = NOW(), "reminderEnabled" = TRUE,
+        `INSERT INTO whatsapp_links ("userId", phone, "optInAt", "reminderEnabled", "personalWalletId", "businessWalletId")
+         VALUES ($1, $2, NOW(), TRUE, $3, $4)
+         ON CONFLICT (phone) DO UPDATE
+         SET "userId" = EXCLUDED."userId", "optInAt" = NOW(), "reminderEnabled" = TRUE,
+             "personalWalletId" = EXCLUDED."personalWalletId", "businessWalletId" = EXCLUDED."businessWalletId",
              "pendingNonce" = NULL, "pendingAction" = NULL, "pendingExpiresAt" = NULL`,
-        [ctx.id, phone]
+        [ctx.id, phone, personal ? personal.id : null, business ? business.id : null]
     )
-    const name = firstName(ctx.name)
-    return wa.sendText(phone, `✅ Pronto${name ? `, ${name}` : ''}! Este número está conectado à sua conta do EuSempreMEI.\nO lembrete diário de contas está ligado.\n\n${HELP_TEXT()}`)
+    const name = ownerFirstName(ctx, personal && personal.name)
+    const walletLines = [
+        personal ? `• Pessoal: *${personal.name}*` : null,
+        business ? `• MEI: *${business.name}*` : null
+    ].filter(Boolean)
+    let walletText = ''
+    if (walletLines.length) {
+        const wallets = await fa.listWallets(ctx.id)
+        const other = wallets.find(w => w.id !== personal?.id && w.id !== business?.id)
+        const example = other ? firstName(String(other.name).replace(/\(.*?\)/g, '')) : ''
+        walletText = `\n\nO que você lançar por aqui vai para:\n${walletLines.join('\n')}` +
+            (example ? `\nPara outra carteira, cite o nome: "comprei 10 de peixe carteira ${example} pix".` : '')
+    }
+    return wa.sendText(phone, `✅ Pronto${name ? `, ${name}` : ''}! Este número está conectado à sua conta do EuSempreMEI.\nO lembrete diário de contas está ligado.${walletText}\n\n${HELP_TEXT()}`)
 }
 
 // ─── Entrada principal ───────────────────────────────────────────────────────
@@ -441,13 +675,16 @@ async function handleIncomingMessage(msg) {
         return wa.sendText(phone, 'Ainda não entendo esse tipo de mensagem. Mande texto, áudio ou foto.')
     }
 
-    const categories = await fa.listCategories(ctx.id)
+    const [categories, wallets] = await Promise.all([fa.listCategories(ctx.id), fa.listWallets(ctx.id)])
+    const personalWallet = wallets.find(w => w.id === link.personalWalletId)
     const result = await agent.interpret({
         text,
         media,
-        userName: firstName(ctx.name),
+        userName: ownerFirstName(ctx, personalWallet && personalWallet.name),
         today: fa.todayISO(),
-        categories
+        categories,
+        // Só nome e tipo: documentos (CPF/CNPJ) e fotos das carteiras não vão para a IA
+        wallets: wallets.map(w => ({ name: w.name, accountType: w.accountType }))
     })
     return executeAgentResult(ctx, link, phone, result)
 }
@@ -486,16 +723,18 @@ async function sendDailyReminders(now = new Date()) {
     const templateName = process.env.WHATSAPP_REMINDER_TEMPLATE || 'contas_vencendo_hoje'
     const templateLang = process.env.WHATSAPP_REMINDER_TEMPLATE_LANG || 'pt_BR'
 
+    // Cada número da conta recebe o lembrete com todas as contas da conta
     const { rows } = await db.query(
-        `SELECT l.id AS "linkId", l.phone, l."userId",
+        `SELECT l.id AS "linkId", l.phone, l."userId", pw.name AS "personalWalletName",
                 COUNT(t.id)::int AS count, COALESCE(SUM(t.amount), 0) AS total
          FROM whatsapp_links l
          JOIN finance_transactions t
            ON t."userId" = l."userId" AND t.status = 'PENDING'
           AND t."dueDate" IS NOT NULL AND t."dueDate" <= $1
+         LEFT JOIN business_units pw ON pw.id = l."personalWalletId" AND pw."ownerId" = l."userId"
          WHERE l."reminderEnabled" = TRUE
            AND (l."lastReminderOn" IS NULL OR l."lastReminderOn" < $1)
-         GROUP BY l.id, l.phone, l."userId"`,
+         GROUP BY l.id, l.phone, l."userId", pw.name`,
         [today]
     )
 
@@ -518,7 +757,7 @@ async function sendDailyReminders(now = new Date()) {
                 )
                 if (!rowCount) { summary.skipped++; continue }
                 await wa.sendTemplate(row.phone, templateName, templateLang, [
-                    firstName(ctx.name) || 'cliente',
+                    ownerFirstName(ctx, row.personalWalletName) || 'cliente',
                     String(row.count),
                     brl(row.total)
                 ])
@@ -545,5 +784,6 @@ module.exports = {
     createLinkCode,
     sendDailyReminders,
     normalizeTransactionArgs,
+    matchWallets,
     hashCode
 }
