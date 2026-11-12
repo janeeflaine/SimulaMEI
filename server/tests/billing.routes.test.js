@@ -23,6 +23,7 @@ jest.mock('../middleware/auth', () => ({
 const mockStripe = {
     subscriptions: { retrieve: jest.fn(), update: jest.fn(), cancel: jest.fn() },
     checkout: { sessions: { create: jest.fn() } },
+    invoices: { createPreview: jest.fn() },
     webhooks: { constructEvent: jest.fn() }
 }
 jest.mock('stripe', () => () => mockStripe)
@@ -144,6 +145,62 @@ describe('Trocar de plano (POST /api/stripe/change-plan)', () => {
         const res = await request(app).post('/api/stripe/change-plan').send({ planId: 2 })
         expect(res.statusCode).toBe(200)
         expect(mockStripe.subscriptions.update.mock.calls[0][1].cancel_at_period_end).toBe(false)
+    })
+})
+
+describe('Prévia da troca (POST /api/stripe/preview-change)', () => {
+    test('Prata → Ouro: mostra quanto será cobrado agora, sem mudar nada', async () => {
+        mockStripe.invoices.createPreview.mockResolvedValue({
+            amount_due: 4000, currency: 'brl',
+            lines: { data: [{ amount: -2990, proration: true }, { amount: 6990, proration: true }] }
+        })
+        const res = await request(app).post('/api/stripe/preview-change').send({ planId: 3 })
+        expect(res.statusCode).toBe(200)
+        expect(res.body).toMatchObject({ upgrade: true, planName: 'Ouro', chargeNow: 4000, credit: 0, monthlyPrice: 3990 })
+        expect(Number.isInteger(res.body.prorationDate)).toBe(true)
+        expect(new Date(res.body.nextBillingDate)).toEqual(new Date(PERIOD_END * 1000))
+
+        const params = mockStripe.invoices.createPreview.mock.calls[0][0]
+        expect(params.subscription).toBe('sub_1')
+        expect(params.subscription_details.items).toEqual([{ id: 'si_1', price: 'price_ouro' }])
+        expect(params.subscription_details.proration_behavior).toBe('always_invoice')
+        expect(params.subscription_details.proration_date).toBe(res.body.prorationDate)
+        // prévia não altera nada
+        expect(mockStripe.subscriptions.update).not.toHaveBeenCalled()
+        expect(state.updates).toHaveLength(0)
+    })
+
+    test('Ouro → Prata: mostra o crédito (formato novo da API, proration dentro de parent)', async () => {
+        state.user.planId = 3
+        const line = (amount, proration) => ({ amount, parent: { subscription_item_details: { proration } } })
+        mockStripe.invoices.createPreview.mockResolvedValue({
+            amount_due: 490, currency: 'brl',
+            lines: { data: [line(-4000, true), line(1500, true), line(2990, false)] }
+        })
+        const res = await request(app).post('/api/stripe/preview-change').send({ planId: 2 })
+        expect(res.statusCode).toBe(200)
+        expect(res.body).toMatchObject({ upgrade: false, chargeNow: 0, credit: 2500, monthlyPrice: 1990 })
+        expect(mockStripe.invoices.createPreview.mock.calls[0][0].subscription_details.proration_behavior).toBe('create_prorations')
+    })
+
+    test('Sem assinatura, a prévia avisa para assinar pelo pagamento (409)', async () => {
+        state.user.stripeSubscriptionId = null
+        const res = await request(app).post('/api/stripe/preview-change').send({ planId: 3 })
+        expect(res.statusCode).toBe(409)
+        expect(res.body.code).toBe('NO_SUBSCRIPTION')
+        expect(mockStripe.invoices.createPreview).not.toHaveBeenCalled()
+    })
+
+    test('A troca usa o mesmo instante da prévia (mesmo valor cobrado)', async () => {
+        const when = Math.floor(Date.now() / 1000) - 30
+        await request(app).post('/api/stripe/change-plan').send({ planId: 3, prorationDate: when })
+        expect(mockStripe.subscriptions.update.mock.calls[0][1].proration_date).toBe(when)
+    })
+
+    test('Prévia com mais de 10 minutos é ignorada (o Stripe calcula na hora)', async () => {
+        const old = Math.floor(Date.now() / 1000) - 11 * 60
+        await request(app).post('/api/stripe/change-plan').send({ planId: 3, prorationDate: old })
+        expect(mockStripe.subscriptions.update.mock.calls[0][1].proration_date).toBeUndefined()
     })
 })
 

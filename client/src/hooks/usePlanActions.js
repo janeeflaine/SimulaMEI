@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
+const brlFromCents = (cents) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((Number(cents) || 0) / 100)
+
+const shortDate = (value) => {
+    if (!value) return ''
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR')
+}
+
 /**
  * Assinar, trocar e cancelar plano — a mesma regra em Planos e em Minha conta.
  *
@@ -49,14 +58,64 @@ export default function usePlanActions({ onChanged } = {}) {
         setBusy(false)
     }
 
-    /** Troca o plano na assinatura que já existe (ou reativa a que ia ser cancelada). */
-    const changePlan = async (plan, { currentPrice = 0, reactivate = false } = {}) => {
-        const up = Number(plan.price) > Number(currentPrice)
-        const question = reactivate
-            ? `Manter a assinatura do ${plan.name}? A cobrança continua normalmente na renovação.`
-            : up
-                ? `Mudar para o ${plan.name} agora? O plano é liberado na hora e o Stripe cobra só a diferença proporcional dos dias que faltam.`
-                : `Mudar para o ${plan.name} agora? A troca é imediata e a diferença vira crédito na sua próxima fatura.`
+    /** Pede ao servidor quanto a troca custa (ou quanto vira crédito). Não muda nada. */
+    const previewChange = async (plan) => {
+        const res = await fetch('/api/stripe/preview-change', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({ planId: plan.id })
+        })
+        const body = await res.json().catch(() => ({}))
+        return { res, body }
+    }
+
+    /**
+     * Troca o plano na assinatura que já existe (ou reativa a que ia ser cancelada).
+     * Antes de confirmar, mostra o valor exato calculado pelo Stripe; a troca usa
+     * o mesmo instante do cálculo, então o valor cobrado é o que apareceu.
+     */
+    const changePlan = async (plan, { reactivate = false } = {}) => {
+        let question = `Manter a assinatura do ${plan.name}? A cobrança continua normalmente na renovação.`
+        let prorationDate = null
+        let summary = null
+
+        if (!reactivate) {
+            setBusy(true)
+            let preview
+            try {
+                preview = await previewChange(plan)
+            } catch (_) {
+                setBusy(false)
+                alert('Erro de comunicação com o servidor. Nada foi alterado.')
+                return
+            }
+            setBusy(false)
+            const { res, body } = preview
+            if (res.status === 409 && body.code === 'NO_SUBSCRIPTION') {
+                // Plano sem assinatura no Stripe (ex.: dado pelo admin): assina pelo pagamento
+                return checkout(plan)
+            }
+            if (!res.ok) {
+                alert(body.message || 'Não foi possível calcular o valor da troca. Nada foi alterado.')
+                return
+            }
+            prorationDate = body.prorationDate
+            const monthly = brlFromCents(body.monthlyPrice)
+            const nextDate = shortDate(body.nextBillingDate)
+            if (body.upgrade) {
+                const now = brlFromCents(body.chargeNow)
+                question = `Mudar para o ${plan.name} agora?\n\n` +
+                    `Hoje será cobrado ${now} no cartão da assinatura (diferença proporcional${nextDate ? ` até ${nextDate}` : ''}).\n` +
+                    `Depois, ${monthly} por mês.`
+                summary = `Foram cobrados ${now}.`
+            } else {
+                const credit = brlFromCents(body.credit)
+                question = `Mudar para o ${plan.name} agora?\n\n` +
+                    `Você fica com ${credit} de crédito, descontado na próxima fatura${nextDate ? ` (${nextDate})` : ''}.\n` +
+                    `Depois, ${monthly} por mês.`
+                summary = `${credit} de crédito na próxima fatura.`
+            }
+        }
         if (!window.confirm(question)) return
 
         setBusy(true)
@@ -64,15 +123,16 @@ export default function usePlanActions({ onChanged } = {}) {
             const res = await fetch('/api/stripe/change-plan', {
                 method: 'POST',
                 headers: authHeaders(),
-                body: JSON.stringify({ planId: plan.id })
+                body: JSON.stringify({ planId: plan.id, ...(prorationDate ? { prorationDate } : {}) })
             })
             const body = await res.json().catch(() => ({}))
             if (res.ok) {
                 setBusy(false)
-                return finish(reactivate ? `Pronto! Sua assinatura do ${plan.name} continua ativa.` : body.message)
+                return finish(reactivate
+                    ? `Pronto! Sua assinatura do ${plan.name} continua ativa.`
+                    : `Pronto! Você agora está no ${plan.name}. ${summary}`)
             }
             if (res.status === 409 && body.code === 'NO_SUBSCRIPTION') {
-                // Plano sem assinatura no Stripe (ex.: dado pelo admin): assina pelo pagamento
                 setBusy(false)
                 return checkout(plan)
             }
@@ -118,7 +178,7 @@ export default function usePlanActions({ onChanged } = {}) {
                 return { label: 'Pagar agora', short: 'Pagar', up: true, run: () => checkout(plan) }
             }
             if (status === 'canceling' && isPaid && user.hasSubscription) {
-                return { label: 'Manter assinatura', short: 'Manter', up: true, run: () => changePlan(plan, { currentPrice, reactivate: true }) }
+                return { label: 'Manter assinatura', short: 'Manter', up: true, run: () => changePlan(plan, { reactivate: true }) }
             }
             return null
         }
@@ -132,8 +192,8 @@ export default function usePlanActions({ onChanged } = {}) {
         const up = Number(plan.price) > currentPrice
         if (hasPaidPlan) {
             return up
-                ? { label: `Mudar para o ${plan.name}`, short: 'Mudar', up: true, run: () => changePlan(plan, { currentPrice }) }
-                : { label: `Mudar para o ${plan.name}`, short: 'Mudar', up: false, run: () => changePlan(plan, { currentPrice }) }
+                ? { label: `Mudar para o ${plan.name}`, short: 'Mudar', up: true, run: () => changePlan(plan) }
+                : { label: `Mudar para o ${plan.name}`, short: 'Mudar', up: false, run: () => changePlan(plan) }
         }
         return { label: `Assinar ${plan.name}`, short: 'Assinar', up: true, run: () => checkout(plan) }
     }

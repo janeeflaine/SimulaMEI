@@ -86,44 +86,121 @@ router.post('/create-checkout-session', authMiddleware, async (req, res) => {
 // 1b. Trocar de plano na assinatura que já existe (Prata ↔ Ouro)
 // Mais caro: libera na hora e cobra a diferença proporcional agora.
 // Mais barato: troca na hora e a diferença vira crédito na próxima fatura.
+
+const PRORATION_MAX_AGE_SECONDS = 600 // a prévia vale por 10 minutos
+
+/**
+ * Valida a troca e devolve o que a prévia e a troca precisam, ou responde o erro
+ * (e devolve null). As duas rotas usam esta mesma regra.
+ */
+async function loadPlanChange(req, res) {
+    const stripe = getStripe()
+    if (!stripe) {
+        res.status(500).json({ message: 'Stripe não está configurado neste servidor.' })
+        return null
+    }
+
+    const { planId } = req.body || {}
+    if (!planId) {
+        res.status(400).json({ message: 'O ID do plano é obrigatório.' })
+        return null
+    }
+
+    const { rows: [plan] } = await db.query('SELECT id, name, price, "stripePriceId" FROM plans WHERE id = $1', [planId])
+    if (!plan) {
+        res.status(404).json({ message: 'Plano não encontrado' })
+        return null
+    }
+    if (Number(plan.price) <= 0) {
+        res.status(400).json({ message: 'Para voltar ao plano gratuito, cancele a assinatura.' })
+        return null
+    }
+
+    const priceId = resolvePriceId(plan)
+    if (!priceId) {
+        res.status(400).json({ message: 'Este plano não possui um Price ID configurado na Stripe.' })
+        return null
+    }
+
+    const current = await userSubscriptionId(req.user.id)
+    const subscription = await getLiveSubscription(stripe, current.stripeSubscriptionId)
+    const item = subscription?.items?.data?.[0]
+    if (!subscription || !item) {
+        res.status(409).json({ code: 'NO_SUBSCRIPTION', message: 'Você não tem uma assinatura ativa para trocar. Assine o plano pelo pagamento.' })
+        return null
+    }
+
+    const { rows: [currentPlan] } = await db.query('SELECT price FROM plans WHERE id = $1', [current.planId])
+    const isUpgrade = Number(plan.price) > Number(currentPlan?.price ?? 0)
+    return { stripe, plan, priceId, subscription, item, isUpgrade }
+}
+
+const prorationBehavior = (isUpgrade) => (isUpgrade ? 'always_invoice' : 'create_prorations')
+
+/** É linha de ajuste proporcional? (o campo mudou de lugar nas versões novas da API) */
+const isProrationLine = (line) => !!(line?.proration || line?.parent?.subscription_item_details?.proration)
+
+// 1b-1. Prévia: quanto a troca custa (ou quanto vira de crédito). Não muda nada.
+router.post('/preview-change', authMiddleware, async (req, res) => {
+    try {
+        const ctx = await loadPlanChange(req, res)
+        if (!ctx) return
+        const { stripe, plan, priceId, subscription, item, isUpgrade } = ctx
+        const prorationDate = Math.floor(Date.now() / 1000)
+
+        const preview = await stripe.invoices.createPreview({
+            customer: subscription.customer,
+            subscription: subscription.id,
+            subscription_details: {
+                items: [{ id: item.id, price: priceId }],
+                proration_behavior: prorationBehavior(isUpgrade),
+                proration_date: prorationDate
+            }
+        })
+
+        // Soma dos ajustes proporcionais: positivo = a pagar agora; negativo = crédito
+        const prorationNet = (preview.lines?.data || [])
+            .filter(isProrationLine)
+            .reduce((sum, line) => sum + Number(line.amount || 0), 0)
+
+        res.json({
+            upgrade: isUpgrade,
+            planId: plan.id,
+            planName: plan.name,
+            currency: preview.currency || 'brl',
+            // valores em centavos
+            chargeNow: isUpgrade ? Math.max(0, Number(preview.amount_due ?? prorationNet)) : 0,
+            credit: isUpgrade ? 0 : Math.max(0, -prorationNet),
+            monthlyPrice: Math.round(Number(plan.price) * 100),
+            nextBillingDate: toDate(periodEnd(subscription)),
+            prorationDate
+        })
+    } catch (err) {
+        console.error('Stripe preview-change error:', err)
+        res.status(500).json({ message: 'Não foi possível calcular o valor da troca agora. Nada foi alterado.' })
+    }
+})
+
+// 1b-2. Troca de fato, com o mesmo instante de cálculo da prévia (mesmo valor)
 router.post('/change-plan', authMiddleware, async (req, res) => {
     try {
-        const stripe = getStripe()
-        if (!stripe) {
-            return res.status(500).json({ message: 'Stripe não está configurado neste servidor.' })
-        }
+        const ctx = await loadPlanChange(req, res)
+        if (!ctx) return
+        const { stripe, plan, priceId, subscription, item, isUpgrade } = ctx
 
-        const { planId } = req.body || {}
-        if (!planId) return res.status(400).json({ message: 'O ID do plano é obrigatório.' })
-
-        const { rows: [plan] } = await db.query('SELECT id, name, price, "stripePriceId" FROM plans WHERE id = $1', [planId])
-        if (!plan) return res.status(404).json({ message: 'Plano não encontrado' })
-        if (Number(plan.price) <= 0) {
-            return res.status(400).json({ message: 'Para voltar ao plano gratuito, cancele a assinatura.' })
-        }
-
-        const priceId = resolvePriceId(plan)
-        if (!priceId) {
-            return res.status(400).json({ message: 'Este plano não possui um Price ID configurado na Stripe.' })
-        }
-
-        const current = await userSubscriptionId(req.user.id)
-        const subscription = await getLiveSubscription(stripe, current.stripeSubscriptionId)
-        if (!subscription) {
-            return res.status(409).json({ code: 'NO_SUBSCRIPTION', message: 'Você não tem uma assinatura ativa para trocar. Assine o plano pelo pagamento.' })
-        }
-
-        const item = subscription.items?.data?.[0]
-        if (!item) return res.status(409).json({ code: 'NO_SUBSCRIPTION', message: 'Assinatura sem item de cobrança.' })
-
-        const { rows: [currentPlan] } = await db.query('SELECT price FROM plans WHERE id = $1', [current.planId])
-        const isUpgrade = Number(plan.price) > Number(currentPlan?.price ?? 0)
+        // Usa o instante da prévia, se ainda for recente; senão calcula agora
+        const now = Math.floor(Date.now() / 1000)
+        const requested = parseInt(req.body?.prorationDate, 10)
+        const prorationDate = Number.isInteger(requested) && requested <= now + 60 && now - requested <= PRORATION_MAX_AGE_SECONDS
+            ? requested
+            : null
 
         if (item.price?.id !== priceId || subscription.cancel_at_period_end) {
             try {
                 await stripe.subscriptions.update(subscription.id, {
                     items: [{ id: item.id, price: priceId }],
-                    proration_behavior: isUpgrade ? 'always_invoice' : 'create_prorations',
+                    proration_behavior: prorationBehavior(isUpgrade),
+                    ...(prorationDate ? { proration_date: prorationDate } : {}),
                     // Upgrade só vale se a diferença for cobrada; se não der, nada muda
                     ...(isUpgrade ? { payment_behavior: 'error_if_incomplete' } : {}),
                     cancel_at_period_end: false,
