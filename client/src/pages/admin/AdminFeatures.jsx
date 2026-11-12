@@ -133,6 +133,8 @@ export default function AdminFeatures() {
 
                 <AdminWalletLimits plans={plans} />
 
+                <AdminWhatsappLimits plans={plans} />
+
                 <AdminTrialSettings />
 
                 <div className="alert-banner" style={{ marginTop: 'var(--spacing-6)', marginBottom: 0 }}>
@@ -222,6 +224,105 @@ function AdminTransactionLimits({ plans }) {
                         />
                     </div>
                 ))}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                        {saving ? 'Salvando...' : 'Salvar Limites'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// Padrão quando o limite ainda não foi salvo (Gratuito, Prata, Ouro), igual ao servidor
+const WHATSAPP_NUMBERS_DEFAULT = { 1: '1', 2: '3', 3: '4' }
+
+function AdminWhatsappLimits({ plans }) {
+    const [limits, setLimits] = useState({})
+    const [saving, setSaving] = useState(false)
+    const [loaded, setLoaded] = useState(false)
+
+    useEffect(() => { fetchLimits() }, [])
+
+    const fetchLimits = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+            const data = await res.json()
+            const parsed = {}
+            plans.forEach(p => {
+                const setting = data.find(s => s.key === `whatsapp_numbers_${p.id}`)
+                parsed[p.id] = setting ? setting.value : (WHATSAPP_NUMBERS_DEFAULT[p.id] ?? '1')
+            })
+            setLimits(parsed)
+        } catch (err) {
+            console.error('Erro ao buscar limites de WhatsApp:', err)
+        } finally {
+            setLoaded(true)
+        }
+    }
+
+    const handleSave = async () => {
+        setSaving(true)
+        try {
+            const token = localStorage.getItem('token')
+            await Promise.all(
+                plans.map(p =>
+                    fetch('/api/settings', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ key: `whatsapp_numbers_${p.id}`, value: String(Math.max(0, parseInt(limits[p.id], 10) || 0)) })
+                    })
+                )
+            )
+            alert('Limites de números de WhatsApp salvos!')
+        } catch (err) {
+            console.error(err)
+            alert('Erro ao salvar limites')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    if (!loaded) return null
+
+    return (
+        <div className="admin-card" style={{ marginTop: '2rem' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+                    💬 Números de WhatsApp por Plano
+                </h2>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
+                    Quantos celulares cada conta pode conectar ao assistente. Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
+                    Para ligar ou desligar o WhatsApp em um plano, use <strong style={{ color: '#93c5fd' }}>Assistente no WhatsApp</strong> na tabela acima.
+                </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {plans.map(plan => {
+                    const enabled = !!plan.features?.whatsapp
+                    const value = limits[plan.id] ?? '1'
+                    return (
+                        <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div>
+                                <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
+                                <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
+                                    {value === '0' ? 'Ilimitado' : `Até ${value} número(s) por conta`}
+                                    {!enabled && ' · WhatsApp desligado neste plano'}
+                                </p>
+                            </div>
+                            <input
+                                type="number"
+                                min="0"
+                                value={value}
+                                onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
+                                aria-label={`Números de WhatsApp do plano ${plan.name}`}
+                                style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
+                            />
+                        </div>
+                    )
+                })}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>

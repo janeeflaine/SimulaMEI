@@ -77,8 +77,9 @@ export default function WhatsAppSection() {
 
     const links = status?.links || []
     const wallets = status?.wallets || []
+    const unlimited = status?.maxNumbers === null // limite 0 no painel admin = ilimitado
     const maxNumbers = status?.maxNumbers || 0
-    const canAddMore = links.length < maxNumbers
+    const canAddMore = unlimited || links.length < maxNumbers
     const personalWallets = wallets.filter(w => w.accountType === 'PF')
     const businessWallets = wallets.filter(w => w.accountType === 'PJ')
 
@@ -188,7 +189,7 @@ export default function WhatsAppSection() {
             {!loading && status?.available && links.length > 0 && (
                 <>
                     <p className="whatsapp-muted whatsapp-count">
-                        {links.length} de {maxNumbers} número(s) conectado(s). Cada número lança nas próprias carteiras;
+                        {unlimited ? links.length : `${links.length} de ${maxNumbers}`} número(s) conectado(s). Cada número lança nas próprias carteiras;
                         para usar outra, cite o nome na mensagem.
                     </p>
 

@@ -547,7 +547,7 @@ async function handleLinkCommand(phone, code) {
         'SELECT id FROM whatsapp_links WHERE phone = $1 AND "userId" = $2', [phone, ctx.id]
     )
     if (!sameAccount) {
-        const max = fa.maxWhatsappNumbers(ctx)
+        const max = await fa.maxWhatsappNumbers(ctx)
         if (await countLinks(ctx.id) >= max) {
             return wa.sendText(phone, `Sua conta já tem ${max} número(s) de WhatsApp, o limite do seu plano. Desconecte um em ${siteUrl()}/conta para conectar este.`)
         }

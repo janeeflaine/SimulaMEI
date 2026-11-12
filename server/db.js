@@ -541,6 +541,16 @@ VALUES('Administrador', 'admin@eusempremei.com.br', $1, 'ADMIN')
       }
     }
 
+    // WhatsApp: números por conta em cada plano (0 = ilimitado). Editável no painel admin.
+    const whatsappNumberLimits = [
+      { key: 'whatsapp_numbers_1', value: '1' },  // Gratuito (o acesso depende da feature "whatsapp")
+      { key: 'whatsapp_numbers_2', value: '3' },  // Prata
+      { key: 'whatsapp_numbers_3', value: '4' },  // Ouro
+    ]
+    for (const wn of whatsappNumberLimits) {
+      await pool.query('INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [wn.key, wn.value])
+    }
+
     // PF/PJ type limits per plan (0 = ilimitado por tipo)
     const walletTypeLimits = [
       { key: 'wallet_pf_limit_1', value: '1' }, // Gratuito: 1 PF

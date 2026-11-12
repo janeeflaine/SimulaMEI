@@ -106,7 +106,13 @@ function route(sql, params = []) {
     }
     if (q.startsWith('SELECT id, name, type FROM finance_categories')) return { rows: state.categories }
     if (q.startsWith('SELECT id FROM business_units')) return { rows: [{ id: params[1] === 'PJ' ? 11 : 12 }] }
-    if (q.startsWith('SELECT value FROM system_settings')) return { rows: [{ value: '0' }] }
+    if (q.startsWith('SELECT value FROM system_settings')) {
+        if (String(params[0]).startsWith('whatsapp_numbers_')) {
+            const value = (state.numberSettings || {})[params[0]]
+            return { rows: value === undefined ? [] : [{ value }] }
+        }
+        return { rows: [{ value: '0' }] }
+    }
     if (q.startsWith('INSERT INTO finance_transactions')) {
         state.inserted.push(params)
         return { rows: [{ id: 99 }] }
@@ -454,10 +460,24 @@ describe('whatsappBot - vínculo de vários números', () => {
     })
 
     test('Número novo acima do limite do plano não é vinculado', async () => {
-        state.linkCount = 3 // Prata permite 3
+        state.linkCount = 3 // Prata permite 3 (padrão, sem configuração no painel)
         await bot.handleIncomingMessage(textMsg('VINCULAR 123456'))
         expect(sqlCalls('INSERT INTO whatsapp_links')).toHaveLength(0)
         expect(mockWa.sendText.mock.calls[0][1]).toContain('limite do seu plano')
+    })
+
+    test('Limite configurado no painel admin vale no lugar do padrão', async () => {
+        state.linkCount = 3
+        state.numberSettings = { whatsapp_numbers_2: '5' }
+        await bot.handleIncomingMessage(textMsg('VINCULAR 123456'))
+        expect(sqlCalls('INSERT INTO whatsapp_links')).toHaveLength(1)
+    })
+
+    test('Limite 0 no painel admin = ilimitado', async () => {
+        state.linkCount = 50
+        state.numberSettings = { whatsapp_numbers_2: '0' }
+        await bot.handleIncomingMessage(textMsg('VINCULAR 123456'))
+        expect(sqlCalls('INSERT INTO whatsapp_links')).toHaveLength(1)
     })
 
     test('O mesmo número da conta pode ser vinculado de novo (troca carteiras) mesmo no limite', async () => {

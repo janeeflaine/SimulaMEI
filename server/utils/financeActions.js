@@ -9,9 +9,9 @@ const { db } = require('../db')
 
 const TIME_ZONE = 'America/Sao_Paulo'
 const PLAN_FALLBACK = { whatsapp: 2, whatsapp_midia: 3, contas_pagar: 2 }
-// Quantos números de WhatsApp cada plano pode vincular (Gratuito, Prata, Ouro).
-// O plano pode sobrescrever com a feature numérica "whatsapp_numeros".
-const WHATSAPP_NUMBERS_BY_PLAN = { 1: 1, 2: 3, 3: 4 }
+// Números de WhatsApp por plano (Gratuito, Prata, Ouro) quando o admin ainda não
+// definiu "whatsapp_numbers_<planId>" em system_settings (0 = ilimitado).
+const WHATSAPP_NUMBERS_DEFAULT = { 1: 1, 2: 3, 3: 4 }
 
 // ─── Datas (sempre no fuso de Brasília) ──────────────────────────────────────
 
@@ -100,14 +100,23 @@ function hasFeature(ctx, key) {
     return (Number(ctx.planId) || 1) >= (PLAN_FALLBACK[key] || 2)
 }
 
-/** Limite de números de WhatsApp da conta. Admin e trial têm o limite do Ouro. */
-function maxWhatsappNumbers(ctx) {
+/**
+ * Limite de números de WhatsApp da conta, configurado no painel admin
+ * (system_settings "whatsapp_numbers_<planId>"; 0 = ilimitado → Infinity).
+ * Admin e trial têm o limite do Ouro, como no featureGuard.
+ */
+async function maxWhatsappNumbers(ctx) {
     if (!ctx) return 0
-    const custom = ctx.planFeatures ? Number(ctx.planFeatures.whatsapp_numeros) : NaN
-    if (Number.isInteger(custom) && custom >= 0) return custom
-    if (ctx.role === 'ADMIN' || ctx.isInTrial) return WHATSAPP_NUMBERS_BY_PLAN[3]
-    const planId = Math.min(Math.max(Number(ctx.planId) || 1, 1), 3)
-    return WHATSAPP_NUMBERS_BY_PLAN[planId]
+    const planId = (ctx.role === 'ADMIN' || ctx.isInTrial) ? 3 : (Number(ctx.planId) || 1)
+    const { rows: [row] } = await db.query(
+        'SELECT value FROM system_settings WHERE key = $1',
+        [`whatsapp_numbers_${planId}`]
+    )
+    const configured = row ? parseInt(row.value, 10) : NaN
+    const limit = Number.isInteger(configured) && configured >= 0
+        ? configured
+        : (WHATSAPP_NUMBERS_DEFAULT[planId] ?? 1)
+    return limit === 0 ? Infinity : limit
 }
 
 /** Mesma regra do checkTransactionLimit das rotas de finanças. */
@@ -349,6 +358,7 @@ async function monthSummary(userId) {
 
 module.exports = {
     TIME_ZONE,
+    WHATSAPP_NUMBERS_DEFAULT,
     BILL_PERIODS,
     todayISO,
     addDaysISO,

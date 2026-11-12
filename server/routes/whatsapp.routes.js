@@ -98,6 +98,7 @@ router.get('/status', authMiddleware, async (req, res) => {
             [req.user.id]
         )
         const number = businessNumber()
+        const max = await maxWhatsappNumbers(req.user)
         const items = links.map(l => ({
             id: l.id,
             phone: maskPhone(l.phone),
@@ -109,7 +110,7 @@ router.get('/status', authMiddleware, async (req, res) => {
         res.json({
             available: hasFeature(req.user, 'whatsapp'),
             mediaAvailable: hasFeature(req.user, 'whatsapp_midia'),
-            maxNumbers: maxWhatsappNumbers(req.user),
+            maxNumbers: Number.isFinite(max) ? max : null, // null = ilimitado
             links: items,
             wallets: wallets.map(w => ({ id: w.id, name: w.name, accountType: w.accountType })),
             // Campos do primeiro número, mantidos para telas antigas
@@ -127,7 +128,7 @@ router.get('/status', authMiddleware, async (req, res) => {
 
 router.post('/link-code', authMiddleware, featureGuard('whatsapp', 2), async (req, res) => {
     try {
-        const max = maxWhatsappNumbers(req.user)
+        const max = await maxWhatsappNumbers(req.user)
         if (await countLinks(req.user.id) >= max) {
             return res.status(403).json({
                 message: `Seu plano permite ${max} número(s) de WhatsApp. Desconecte um para conectar outro ou veja os planos.`

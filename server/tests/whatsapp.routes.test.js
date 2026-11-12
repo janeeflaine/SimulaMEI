@@ -137,14 +137,30 @@ describe('Área do usuário', () => {
         expect(mockBot.createLinkCode).not.toHaveBeenCalled()
     })
 
-    test('Limite de números: Gratuito 1, Prata 3, Ouro 4; admin e trial 4', () => {
-        const { maxWhatsappNumbers } = jest.requireActual('../utils/financeActions')
-        expect(maxWhatsappNumbers({ role: 'USER', planId: 1, planFeatures: {} })).toBe(1)
-        expect(maxWhatsappNumbers({ role: 'USER', planId: 2, planFeatures: {} })).toBe(3)
-        expect(maxWhatsappNumbers({ role: 'USER', planId: 3, planFeatures: {} })).toBe(4)
-        expect(maxWhatsappNumbers({ role: 'ADMIN', planId: 1, planFeatures: {} })).toBe(4)
-        expect(maxWhatsappNumbers({ role: 'USER', planId: 1, isInTrial: true, planFeatures: {} })).toBe(4)
-        expect(maxWhatsappNumbers({ role: 'USER', planId: 2, planFeatures: { whatsapp_numeros: 5 } })).toBe(5)
+    test('Limite de números: padrão Gratuito 1, Prata 3, Ouro 4; admin e trial usam o do Ouro', async () => {
+        const { maxWhatsappNumbers } = require('../utils/financeActions')
+        mockDb.query.mockResolvedValue({ rows: [] }) // nada configurado no painel
+        expect(await maxWhatsappNumbers({ role: 'USER', planId: 1 })).toBe(1)
+        expect(await maxWhatsappNumbers({ role: 'USER', planId: 2 })).toBe(3)
+        expect(await maxWhatsappNumbers({ role: 'USER', planId: 3 })).toBe(4)
+        expect(await maxWhatsappNumbers({ role: 'ADMIN', planId: 1 })).toBe(4)
+        expect(await maxWhatsappNumbers({ role: 'USER', planId: 1, isInTrial: true })).toBe(4)
+        expect(mockDb.query.mock.calls.at(-1)[1]).toEqual(['whatsapp_numbers_3'])
+
+        mockDb.query.mockResolvedValue({ rows: [{ value: '6' }] }) // definido no painel
+        expect(await maxWhatsappNumbers({ role: 'USER', planId: 2 })).toBe(6)
+        mockDb.query.mockResolvedValue({ rows: [{ value: '0' }] }) // 0 = ilimitado
+        expect(await maxWhatsappNumbers({ role: 'USER', planId: 2 })).toBe(Infinity)
+    })
+
+    test('Status devolve maxNumbers null quando o limite é ilimitado', async () => {
+        mockDb.query.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [{ value: '0' }] }
+            return { rows: [] }
+        })
+        const res = await request(app).get('/api/whatsapp/status')
+        expect(res.body.maxNumbers).toBeNull()
+        expect(res.body.links).toEqual([])
     })
 
     test('Status lista os números (só 4 últimos dígitos), as carteiras e o limite', async () => {
