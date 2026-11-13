@@ -32,8 +32,10 @@
     z-index: 1100;
 }
 
+/* Marca em SVG (três barras nas cores da logo) */
 .logo-icon {
-    font-size: 24px;
+    display: block;
+    flex: none;
 }
 
 .logo-text {
@@ -90,6 +92,11 @@
 @media (pointer: coarse) {
     .nav-link {
         min-height: 44px;
+    }
+
+    .user-menu .user-avatar-link {
+        width: 44px;
+        height: 44px;
     }
 }
 
@@ -150,7 +157,9 @@
 }
 
 .dropdown-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     text-decoration: none;
     color: var(--color-text-secondary);
     padding: 12px 16px;
@@ -160,11 +169,35 @@
     transition: all 0.2s ease;
 }
 
+.dropdown-item svg {
+    flex: none;
+    color: #5b6b80;
+}
+
+/* Página em que a pessoa está */
+.dropdown-item.is-active {
+    background: rgba(18, 40, 74, 0.08);
+    color: #12284a;
+    font-weight: 600;
+}
+
+.dropdown-item.is-active svg {
+    color: #12284a;
+}
+
+/* Carteiras fica separada por uma linha acima */
 .dropdown-item--sep {
-    margin-top: 6px;
+    position: relative;
+    margin-top: 11px;
+}
+
+.dropdown-item--sep::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 8px;
+    right: 8px;
     border-top: 1px solid #e3e8ef;
-    border-radius: 0 0 10px 10px;
-    padding-top: 12px;
 }
 
 @media (hover: hover) {
@@ -231,12 +264,27 @@
 .mobile-menu-toggle {
     display: none;
     flex-direction: column;
+    justify-content: center;
+    align-items: center;
     gap: 5px;
+    min-width: 44px;
+    min-height: 44px;
     background: none;
     border: none;
+    border-radius: 12px;
     cursor: pointer;
     padding: 8px;
     z-index: 1100;
+}
+
+.mobile-menu-toggle:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+}
+
+/* Fundo escuro atrás do menu do celular (só aparece até 1024px) */
+.nav-backdrop {
+    display: none;
 }
 
 .mobile-menu-toggle span {
@@ -338,9 +386,20 @@
     font-size: 0.95rem;
     font-weight: 700;
     color: var(--color-text, #0f172a);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: -0.01em;
     margin: 0 0 16px 0;
+}
+
+.footer-inline-icon {
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: 2px;
+    color: #5b6b80;
+}
+
+.contact-icon {
+    flex: none;
+    color: #5b6b80;
 }
 
 .footer-links {
@@ -393,6 +452,9 @@
 }
 
 .footer-hours {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 0.8rem;
     color: var(--color-text-muted, #94a3b8);
     margin: 4px 0 6px 0;
@@ -467,6 +529,27 @@
         display: flex;
     }
 
+    /* O cabeçalho usa backdrop-filter, que vira a referência do position: fixed:
+       por isso o fundo usa largura e altura da tela em vez de inset: 0 */
+    .nav-backdrop {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(12, 28, 54, 0.45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+        z-index: 1040;
+    }
+
+    .nav-backdrop.is-open {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
     .nav-links {
         position: fixed;
         top: 0;
@@ -476,6 +559,8 @@
         width: 80%;
         max-width: 300px;
         height: 100vh;
+        height: 100dvh;
+        overflow-y: auto;
         background: #ffffff;
         flex-direction: column;
         align-items: flex-start;
@@ -527,20 +612,47 @@
         display: block;
     }
 
+    /* Foto e nome lado a lado; "Sair" embaixo, na largura toda */
     .user-menu {
         border: none;
-        border-top: 1px solid rgba(0, 0, 0, 0.05);
+        border-top: 1px solid #e3e8ef;
         width: 100%;
         margin: 20px 0 0 0;
         padding: 20px 0 0 0;
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .user-menu .user-avatar-link {
+        order: -1;
+    }
+
+    .user-menu .user-name {
+        flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-size: 15px;
+    }
+
+    .user-menu .btn {
+        flex-basis: 100%;
+        margin-top: 4px;
     }
 
     /* Só o botão do menu: antes esticava todo botão pequeno do site em telas até 1024px */
     .nav-links .btn.btn-sm {
         width: 100%;
         min-height: 48px;
+    }
+}
+
+/* Celular: o menu ocupa a tela toda (logo e "fechar" ficam sobre o branco) */
+@media (max-width: 480px) {
+    .nav-links {
+        width: 100%;
+        max-width: none;
     }
 }
 

@@ -1,9 +1,23 @@
 import { useState, useEffect, useRef } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Home, LayoutDashboard, Wallet, Bell, Gem, Calculator, ChevronDown } from 'lucide-react'
+import {
+    Home, LayoutDashboard, Wallet, Bell, Gem, Calculator, ChevronDown,
+    ReceiptText, CalendarClock, Tags, CreditCard, WalletCards,
+    Building2, Mail, MessageCircle, Phone, Clock, TriangleAlert, ArrowRight
+} from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import BrandMark from '../components/ui/BrandMark'
 import { COMPANY, CONTACT_EMAILS } from '../utils/legalInfo'
 import './UserLayout.css'
+
+// Itens do menu Finanças: caminho, nome e ícone
+const FINANCE_LINKS = [
+    { to: '/financas/extrato', label: 'Extrato', Icon: ReceiptText },
+    { to: '/financas/contas', label: 'Contas a pagar', Icon: CalendarClock },
+    { to: '/financas/categorias', label: 'Categorias', Icon: Tags },
+    { to: '/financas/cartoes', label: 'Cartões', Icon: CreditCard },
+    { to: '/financas/gerenciar-contas', label: 'Carteiras', Icon: WalletCards, separated: true }
+]
 
 export default function UserLayout() {
     const { user, logout, refreshUser } = useAuth()
@@ -12,6 +26,7 @@ export default function UserLayout() {
     const [isFinanceOpen, setIsFinanceOpen] = useState(false)
     const [avatarUrl, setAvatarUrl] = useState('')
     const lastRefresh = useRef(0)
+    const financeRef = useRef(null)
 
     // Foto do avatar: logo da primeira carteira criada na conta.
     // Recarrega ao entrar/sair de Gerenciar Carteiras, onde a foto pode mudar.
@@ -65,37 +80,85 @@ export default function UserLayout() {
                 refreshUser()
             }
         }
-        window.addEventListener('focus', onFocus)
-        document.addEventListener('visibilitychange', () => {
+        const onVisible = () => {
             if (document.visibilityState === 'visible') onFocus()
-        })
+        }
+        window.addEventListener('focus', onFocus)
+        document.addEventListener('visibilitychange', onVisible)
         return () => {
             window.removeEventListener('focus', onFocus)
+            document.removeEventListener('visibilitychange', onVisible)
         }
     }, [user])
+
+    // Menu Finanças (computador): fecha ao clicar fora
+    useEffect(() => {
+        if (!isFinanceOpen || isMenuOpen) return undefined
+        const onDown = (e) => {
+            if (financeRef.current && !financeRef.current.contains(e.target)) setIsFinanceOpen(false)
+        }
+        document.addEventListener('mousedown', onDown)
+        document.addEventListener('touchstart', onDown)
+        return () => {
+            document.removeEventListener('mousedown', onDown)
+            document.removeEventListener('touchstart', onDown)
+        }
+    }, [isFinanceOpen, isMenuOpen])
+
+    // Esc fecha o menu Finanças e o menu do celular
+    useEffect(() => {
+        if (!isFinanceOpen && !isMenuOpen) return undefined
+        const onKey = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return
+            setIsFinanceOpen(false)
+            setIsMenuOpen(false)
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+    }, [isFinanceOpen, isMenuOpen])
+
+    // Celular: com o menu aberto, a página de trás não rola
+    useEffect(() => {
+        if (!isMenuOpen) return undefined
+        const { overflow } = document.body.style
+        document.body.style.overflow = 'hidden'
+        return () => { document.body.style.overflow = overflow }
+    }, [isMenuOpen])
+
+    const isFinanceItemActive = (to) => location.pathname === to || location.pathname.startsWith(`${to}/`)
 
     return (
         <div className="user-layout">
             <header className="header">
                 <div className="container">
                     <nav className="nav">
-                        <Link to="/" className="logo">
-                            <span className="logo-icon">📊</span>
+                        <Link to="/" className="logo" aria-label="EuSempreMEI, página inicial">
+                            <BrandMark className="logo-icon" size={30} />
                             <span className="logo-text">EuSempreMEI</span>
                         </Link>
 
                         {/* Mobile Menu Toggle */}
                         <button
+                            type="button"
                             className={`mobile-menu-toggle ${isMenuOpen ? 'active' : ''}`}
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
-                            aria-label="Menu"
+                            aria-label={isMenuOpen ? 'Fechar menu' : 'Abrir menu'}
+                            aria-expanded={isMenuOpen}
+                            aria-controls="site-menu"
                         >
                             <span></span>
                             <span></span>
                             <span></span>
                         </button>
 
-                        <div className={`nav-links ${isMenuOpen ? 'mobile-active' : ''}`}>
+                        {/* Celular: fundo escuro atrás do menu; tocar nele fecha */}
+                        <div
+                            className={`nav-backdrop ${isMenuOpen ? 'is-open' : ''}`}
+                            onClick={() => setIsMenuOpen(false)}
+                            aria-hidden="true"
+                        />
+
+                        <div id="site-menu" className={`nav-links ${isMenuOpen ? 'mobile-active' : ''}`}>
                             <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
                                 <Home size={16} aria-hidden="true" /> Início
                             </Link>
@@ -106,9 +169,12 @@ export default function UserLayout() {
                                         <LayoutDashboard size={16} aria-hidden="true" /> Painel
                                     </Link>
 
-                                    <div className={`nav-dropdown ${isFinanceOpen ? 'active' : ''}`}>
+                                    <div ref={financeRef} className={`nav-dropdown ${isFinanceOpen ? 'active' : ''}`}>
                                         <button
+                                            type="button"
                                             className={`nav-link dropdown-trigger ${location.pathname.startsWith('/financas') ? 'active' : ''}`}
+                                            aria-expanded={isFinanceOpen}
+                                            aria-controls="menu-financas"
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 setIsFinanceOpen(!isFinanceOpen);
@@ -117,12 +183,20 @@ export default function UserLayout() {
                                             <Wallet size={16} aria-hidden="true" /> Finanças
                                             <span className={`arrow ${isFinanceOpen ? 'up' : 'down'}`} aria-hidden="true"><ChevronDown size={14} /></span>
                                         </button>
-                                        <div className="dropdown-content">
-                                            <Link to="/financas/extrato" className="dropdown-item">Extrato</Link>
-                                            <Link to="/financas/contas" className="dropdown-item">Contas a pagar</Link>
-                                            <Link to="/financas/categorias" className="dropdown-item">Categorias</Link>
-                                            <Link to="/financas/cartoes" className="dropdown-item">Cartões</Link>
-                                            <Link to="/financas/gerenciar-contas" className="dropdown-item dropdown-item--sep">Carteiras</Link>
+                                        <div id="menu-financas" className="dropdown-content">
+                                            {FINANCE_LINKS.map(({ to, label, Icon, separated }) => {
+                                                const active = isFinanceItemActive(to)
+                                                return (
+                                                    <Link
+                                                        key={to}
+                                                        to={to}
+                                                        className={`dropdown-item ${separated ? 'dropdown-item--sep' : ''} ${active ? 'is-active' : ''}`}
+                                                        aria-current={active ? 'page' : undefined}
+                                                    >
+                                                        <Icon size={16} aria-hidden="true" /> {label}
+                                                    </Link>
+                                                )
+                                            })}
                                         </div>
                                     </div>
 
@@ -152,7 +226,7 @@ export default function UserLayout() {
                                                 </span>
                                             )}
                                         </Link>
-                                        <button onClick={logout} className="btn btn-secondary btn-sm">
+                                        <button type="button" onClick={logout} className="btn btn-secondary btn-sm">
                                             Sair
                                         </button>
                                     </div>
@@ -185,15 +259,15 @@ export default function UserLayout() {
                     <div className="footer-grid">
                         {/* Coluna 1: Marca & Identificação da Empresa */}
                         <div className="footer-col footer-col-brand">
-                            <Link to="/" className="footer-brand">
-                                <span className="logo-icon">📊</span>
+                            <Link to="/" className="footer-brand" aria-label="EuSempreMEI, página inicial">
+                                <BrandMark className="logo-icon" size={30} />
                                 <span className="logo-text">EuSempreMEI</span>
                             </Link>
                             <p className="footer-desc">
                                 Plataforma inteligente de apoio à gestão financeira, controle de faturamento e simulação tributária para o Microempreendedor Individual (MEI).
                             </p>
                             <div className="footer-entity-pill">
-                                🏢 EuSempreMEI é um produto de <strong>{COMPANY.legalName}</strong>
+                                <Building2 size={15} aria-hidden="true" className="footer-inline-icon" /> EuSempreMEI é um produto de <strong>{COMPANY.legalName}</strong>
                                 <div className="footer-cnpj">CNPJ: <strong>{COMPANY.cnpj}</strong></div>
                                 <div className="footer-cnpj">{COMPANY.address}</div>
                             </div>
@@ -238,22 +312,22 @@ export default function UserLayout() {
                             <h4 className="footer-col-title">Atendimento & Contato</h4>
                             <div className="footer-contact-info">
                                 <p className="footer-contact-line">
-                                    <span className="contact-icon">✉️</span>
+                                    <Mail size={16} aria-hidden="true" className="contact-icon" />
                                     <a href={`mailto:${CONTACT_EMAILS.contato}`}>{CONTACT_EMAILS.contato}</a>
                                 </p>
                                 <p className="footer-contact-line">
-                                    <span className="contact-icon">💬</span>
+                                    <MessageCircle size={16} aria-hidden="true" className="contact-icon" />
                                     <a href={`mailto:${CONTACT_EMAILS.suporte}`}>{CONTACT_EMAILS.suporte}</a>
                                 </p>
                                 <p className="footer-contact-line">
-                                    <span className="contact-icon">📞</span>
+                                    <Phone size={16} aria-hidden="true" className="contact-icon" />
                                     <a href={COMPANY.phoneHref}>{COMPANY.phone}</a>
                                 </p>
                                 <p className="footer-hours">
-                                    🕒 Seg. a Sex. das 09h às 18h (Brasília)
+                                    <Clock size={14} aria-hidden="true" /> Seg. a sex. das 9h às 18h (Brasília)
                                 </p>
                                 <Link to="/contato" className="footer-contact-link">
-                                    Central de Atendimento →
+                                    Central de atendimento <ArrowRight size={16} aria-hidden="true" />
                                 </Link>
                             </div>
                         </div>
@@ -261,7 +335,7 @@ export default function UserLayout() {
 
                     <div className="footer-bottom">
                         <p className="footer-disclaimer">
-                            ⚠️ <strong>Aviso Legal:</strong> O EuSempreMEI é uma plataforma informativa de apoio à gestão do empreendedor.
+                            <TriangleAlert size={15} aria-hidden="true" className="footer-inline-icon" /> <strong>Aviso legal:</strong> O EuSempreMEI é uma plataforma informativa de apoio à gestão do empreendedor.
                             Os valores e simulações são estimativos e não substituem o papel de um contador profissional habilitado.
                         </p>
                         <div className="footer-copyright-bar">
