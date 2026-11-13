@@ -1,34 +1,76 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
-    PlusCircle,
+    Plus,
     FileText,
     Search,
     Trash2,
-    Edit2,
-    Filter,
-    ChevronLeft,
-    ChevronRight,
-    ArrowUpCircle,
-    ArrowDownCircle,
-    Calendar,
-    Briefcase,
+    ArrowDownLeft,
+    ArrowUpRight,
+    Pencil,
+    ArrowLeftRight,
+    Building2,
     User,
-    CreditCard,
-    Wallet,
-    CheckSquare
+    Calendar,
+    ChevronDown,
+    SlidersHorizontal,
+    X
 } from 'lucide-react'
 import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import TransferModal from '../../components/TransferModal'
+import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { showToast } from '../../utils/toast'
 import './FinancialStatement.css'
+
+// Data local no formato do servidor (YYYY-MM-DD), sem o desvio de fuso do toISOString
+const ymd = (d) => d.toLocaleDateString('sv-SE')
+
+const PERIOD_LABELS = {
+    all: 'Todo o período',
+    thisMonth: 'Este mês',
+    lastMonth: 'Mês passado',
+    last30: 'Últimos 30 dias',
+    thisYear: 'Este ano',
+    custom: 'Outro período'
+}
+
+const getDateRange = (preset) => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = now.getMonth()
+    switch (preset) {
+        case 'thisMonth': return { dateStart: ymd(new Date(y, m, 1)), dateEnd: ymd(new Date(y, m + 1, 0)) }
+        case 'lastMonth': return { dateStart: ymd(new Date(y, m - 1, 1)), dateEnd: ymd(new Date(y, m, 0)) }
+        case 'last30': {
+            const start = new Date(); start.setDate(start.getDate() - 30)
+            return { dateStart: ymd(start), dateEnd: ymd(now) }
+        }
+        case 'thisYear': return { dateStart: ymd(new Date(y, 0, 1)), dateEnd: ymd(new Date(y, 11, 31)) }
+        default: return { dateStart: '', dateEnd: '' }
+    }
+}
+
+// Nome da forma de pagamento como a pessoa fala
+const METHOD_LABELS = {
+    PIX: 'Pix',
+    'Cartão de Crédito': 'Cartão de crédito',
+    'Cartão de Débito': 'Cartão de débito'
+}
+
+/** "1 lançamento" / "2 lançamentos" */
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
 export default function FinancialStatement() {
     const { user } = useAuth()
+    const { confirm, notify, dialog } = useConfirmDialog()
     const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
     const [page, setPage] = useState(1)
     const [hasMore, setHasMore] = useState(true)
     const [totalCount, setTotalCount] = useState(0) // New state for total records
+    // Totais do filtro inteiro, calculados pelo servidor (não só dos 15 carregados)
+    const [serverTotals, setServerTotals] = useState(null)
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
     const [editingTransaction, setEditingTransaction] = useState(null)
@@ -38,18 +80,21 @@ export default function FinancialStatement() {
     // Grátis: extrato limitado aos últimos 30 dias
     const isGratuito = !user?.isInTrial && (Number(user?.planId) === 1 || (!user?.planId && user?.plan !== 'Prata' && user?.plan !== 'Ouro'))
     const isPrataPlus = user?.planFeatures?.transferencias || user?.isInTrial || user?.role === 'ADMIN'
-    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    const todayStr = new Date().toISOString().split('T')[0]
-    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
+    const defaultPeriod = isGratuito ? 'last30' : 'all'
+    const defaultRange = getDateRange(defaultPeriod)
 
     const [filters, setFilters] = useState({
         search: '',
         type: 'ALL',
         walletId: 'ALL',
         categoryId: 'ALL',
-        dateStart: isGratuito ? thirtyDaysAgoStr : '',
-        dateEnd: isGratuito ? todayStr : ''
+        dateStart: defaultRange.dateStart,
+        dateEnd: defaultRange.dateEnd
     })
+    const [period, setPeriod] = useState(defaultPeriod)
+    const [isPeriodOpen, setIsPeriodOpen] = useState(false)
+    const [isFiltersOpen, setIsFiltersOpen] = useState(false) // celular: painel de filtros
+    const periodRef = useRef(null)
 
     // Debounce for search
     const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -74,6 +119,7 @@ export default function FinancialStatement() {
         setTransactions([]) // Clear list on filter change
         setTotalCount(0)
         setLoading(true)
+        setSelectedIds(new Set())
     }, [debouncedSearch, filters.type, filters.walletId, filters.categoryId, filters.dateStart, filters.dateEnd])
 
     useEffect(() => {
@@ -84,6 +130,19 @@ export default function FinancialStatement() {
         fetchWallets()
         fetchCategories()
     }, [])
+
+    // Menu de período: fecha ao clicar fora ou com Esc
+    useEffect(() => {
+        if (!isPeriodOpen) return
+        const onDown = (e) => { if (periodRef.current && !periodRef.current.contains(e.target)) setIsPeriodOpen(false) }
+        const onKey = (e) => { if (e.key === 'Escape') setIsPeriodOpen(false) }
+        document.addEventListener('mousedown', onDown)
+        document.addEventListener('keydown', onKey)
+        return () => {
+            document.removeEventListener('mousedown', onDown)
+            document.removeEventListener('keydown', onKey)
+        }
+    }, [isPeriodOpen])
 
     const fetchWallets = async () => {
         try {
@@ -138,12 +197,12 @@ export default function FinancialStatement() {
             if (!res.ok) {
                 // Revert on failure
                 fetchTransactions()
-                alert('Erro ao atualizar carteira.')
+                notify({ title: 'Não foi possível trocar a carteira', message: 'O lançamento continua na carteira de antes. Tente de novo.', tone: 'error' })
             }
         } catch (err) {
             console.error(err)
             fetchTransactions()
-            alert('Erro de conexão.')
+            notify({ title: 'Sem conexão', message: 'Não foi possível trocar a carteira. Tente de novo.', tone: 'error' })
         }
     }
 
@@ -167,7 +226,8 @@ export default function FinancialStatement() {
                 }
             })
             if (res.ok) {
-                const { data, totalPages, totalCount } = await res.json()
+                const { data, totalPages, totalCount, totals } = await res.json()
+                setServerTotals(totals || null)
 
                 setTransactions(prev => {
                     if (page === 1) return data
@@ -185,26 +245,52 @@ export default function FinancialStatement() {
         }
     }
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.')) return
+    // Tira os excluídos dos totais do servidor, sem precisar buscar de novo
+    const subtractFromTotals = (removed) => {
+        setServerTotals(prev => {
+            if (!prev) return prev
+            const sum = (f) => removed.filter(f).reduce((acc, t) => acc + (Number(t.amount) || 0), 0)
+            return {
+                receitas: (Number(prev.receitas) || 0) - sum(t => t.type === 'RECEITA'),
+                despesas: (Number(prev.despesas) || 0) - sum(t => t.type === 'DESPESA'),
+                pendentes: (Number(prev.pendentes) || 0) - sum(t => t.type === 'DESPESA' && t.status === 'PENDING')
+            }
+        })
+    }
+
+    const handleDelete = async (t) => {
+        const ok = await confirm({
+            title: 'Excluir este lançamento?',
+            message: 'Não dá para desfazer.',
+            details: [
+                { label: t.description || t.categoryName || 'Lançamento', value: signedAmount(t), strong: true },
+                { label: 'Data', value: formatDate(t.date) }
+            ],
+            confirmLabel: 'Excluir lançamento',
+            tone: 'danger'
+        })
+        if (!ok) return
 
         try {
             const token = localStorage.getItem('token')
-            const res = await fetch(`/api/finance/transactions/${id}`, {
+            const res = await fetch(`/api/finance/transactions/${t.id}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             })
             if (res.ok) {
-                setTransactions(prev => prev.filter(t => t.id !== id))
+                setTransactions(prev => prev.filter(item => item.id !== t.id))
+                setTotalCount(prev => Math.max(0, prev - 1))
+                subtractFromTotals([t])
+                setSelectedIds(prev => { const next = new Set(prev); next.delete(t.id); return next })
             } else {
-                const data = await res.json()
-                alert(data.message || 'Erro ao excluir transação')
+                const data = await res.json().catch(() => ({}))
+                notify({ title: 'Não foi possível excluir', message: data.message || 'Tente de novo em instantes.', tone: 'error' })
             }
         } catch (error) {
             console.error('Erro ao excluir:', error)
-            alert('Erro de conexão ao excluir transação')
+            notify({ title: 'Sem conexão', message: 'Não foi possível excluir o lançamento. Tente de novo.', tone: 'error' })
         }
     }
 
@@ -228,7 +314,14 @@ export default function FinancialStatement() {
 
     const handleBulkDelete = async () => {
         if (selectedIds.size === 0) return
-        if (!window.confirm(`Tem certeza que deseja excluir ${selectedIds.size} transação(ões)? Esta ação não pode ser desfeita.`)) return
+        const count = selectedIds.size
+        const ok = await confirm({
+            title: `Excluir ${plural(count, 'lançamento', 'lançamentos')}?`,
+            message: 'Não dá para desfazer.',
+            confirmLabel: `Excluir ${plural(count, 'lançamento', 'lançamentos')}`,
+            tone: 'danger'
+        })
+        if (!ok) return
         setBulkDeleting(true)
         try {
             const token = localStorage.getItem('token')
@@ -241,23 +334,22 @@ export default function FinancialStatement() {
                 body: JSON.stringify({ ids: Array.from(selectedIds) })
             })
             if (res.ok) {
-                const data = await res.json()
+                subtractFromTotals(transactions.filter(t => selectedIds.has(t.id)))
                 setTransactions(prev => prev.filter(t => !selectedIds.has(t.id)))
+                setTotalCount(prev => Math.max(0, prev - count))
                 setSelectedIds(new Set())
-                alert(data.message)
+                showToast(`${plural(count, 'lançamento excluído', 'lançamentos excluídos')}.`, 'success')
             } else {
-                const data = await res.json()
-                alert(data.message || 'Erro ao excluir transações')
+                const data = await res.json().catch(() => ({}))
+                notify({ title: 'Não foi possível excluir', message: data.message || 'Tente de novo em instantes.', tone: 'error' })
             }
         } catch (err) {
             console.error(err)
-            alert('Erro de conexão ao excluir transações.')
+            notify({ title: 'Sem conexão', message: 'Não foi possível excluir os lançamentos. Tente de novo.', tone: 'error' })
         } finally {
             setBulkDeleting(false)
         }
     }
-
-
 
     // Infinite Scroll Observer
     useEffect(() => {
@@ -278,10 +370,13 @@ export default function FinancialStatement() {
         }
     }, [hasMore, loading])
 
-    // paginatedTransactions was removed, use transactions directly
-
-    // Financial summary computed from loaded transactions
+    // Resumo: totais do servidor (filtro inteiro); sem eles, soma o que já foi carregado
     const financialTotals = useMemo(() => {
+        if (serverTotals) {
+            const totalReceitas = Number(serverTotals.receitas) || 0
+            const totalDespesas = Number(serverTotals.despesas) || 0
+            return { totalReceitas, totalDespesas, saldo: totalReceitas - totalDespesas, pendentes: Number(serverTotals.pendentes) || 0, complete: true }
+        }
         const safeTransactions = Array.isArray(transactions) ? transactions : []
         const totalReceitas = safeTransactions
             .filter(t => t.type === 'RECEITA')
@@ -290,9 +385,12 @@ export default function FinancialStatement() {
             .filter(t => t.type === 'DESPESA')
             .reduce((sum, t) => sum + (t.amount || 0), 0)
         const saldo = totalReceitas - totalDespesas
-        return { totalReceitas, totalDespesas, saldo }
-    }, [transactions])
+        return { totalReceitas, totalDespesas, saldo, pendentes: 0, complete: !hasMore }
+    }, [transactions, serverTotals, hasMore])
 
+    const resultTone = financialTotals.saldo > 0.004 ? 'is-pos' : financialTotals.saldo < -0.004 ? 'is-neg' : 'is-zero'
+    const flowTotal = financialTotals.totalReceitas + financialTotals.totalDespesas
+    const inShare = flowTotal > 0 ? Math.round((financialTotals.totalReceitas / flowTotal) * 100) : 50
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -310,421 +408,475 @@ export default function FinancialStatement() {
         return new Date(dateString).toLocaleDateString('pt-BR')
     }
 
-    // Função auxiliar para achar o nome da carteira pelo ID
-    const getWalletName = (id) => {
-        const wallet = wallets.find(w => w.id === id)
-        return wallet ? wallet.name : 'Desconhecido'
+    const shortDate = (dateString) => formatDate(dateString).slice(0, 5)
+
+    function signedAmount(t) {
+        return `${t.type === 'RECEITA' ? '+' : '−'}\u00a0${formatCurrency(t.amount)}`
     }
 
+    // ── Carteiras e filtros ──────────────────────────────────────────────
+    const safeWallets = Array.isArray(wallets) ? wallets : []
+    const walletsById = useMemo(() => new Map(safeWallets.map(w => [w.id, w])), [wallets])
+    const pjWallets = safeWallets.filter(w => w.account_type === 'PJ')
+    const pfWallets = safeWallets.filter(w => w.account_type === 'PF')
+
+    const uniqueCategories = useMemo(() => Object.values(
+        categories.reduce((acc, c) => {
+            const key = c.name.trim().toLowerCase()
+            if (!acc[key]) acc[key] = c
+            return acc
+        }, {})
+    ).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [categories])
+
+    const setFilter = (field, value) => setFilters(prev => ({ ...prev, [field]: value }))
+
+    const applyPeriod = (preset) => {
+        setPeriod(preset)
+        if (preset !== 'custom') {
+            const range = getDateRange(preset)
+            setFilters(prev => ({ ...prev, ...range }))
+            setIsPeriodOpen(false)
+        }
+    }
+
+    const periodLabel = period === 'custom'
+        ? (filters.dateStart || filters.dateEnd
+            ? `${filters.dateStart ? shortDate(filters.dateStart) : '…'} a ${filters.dateEnd ? shortDate(filters.dateEnd) : '…'}`
+            : PERIOD_LABELS.custom)
+        : PERIOD_LABELS[period]
+
+    // Filtros em uso, em texto, cada um com o próprio "tirar"
+    const activeFilters = [
+        filters.search.trim() && { key: 'search', label: `Busca: "${filters.search.trim()}"`, clear: () => setFilter('search', '') },
+        filters.walletId !== 'ALL' && { key: 'wallet', label: walletsById.get(Number(filters.walletId))?.name || 'Carteira', clear: () => setFilter('walletId', 'ALL') },
+        filters.categoryId !== 'ALL' && { key: 'category', label: uniqueCategories.find(c => String(c.id) === String(filters.categoryId))?.name || 'Categoria', clear: () => setFilter('categoryId', 'ALL') },
+        filters.type !== 'ALL' && { key: 'type', label: filters.type === 'RECEITA' ? 'Só entradas' : 'Só saídas', clear: () => setFilter('type', 'ALL') },
+        !isGratuito && period !== 'all' && { key: 'period', label: periodLabel, clear: () => applyPeriod('all') },
+    ].filter(Boolean)
+
+    const clearFilters = () => {
+        setFilters({ search: '', type: 'ALL', walletId: 'ALL', categoryId: 'ALL', ...getDateRange(defaultPeriod) })
+        setPeriod(defaultPeriod)
+    }
+
+    // Quantos filtros do painel (sem a busca) estão ligados: aparece no botão "Filtros" do celular
+    const panelFilterCount = activeFilters.filter(f => f.key !== 'search').length
+
+    const allSelected = transactions.length > 0 && selectedIds.size === transactions.length
+
     return (
-        <div className="financial-statement-page">
-            <div className="statement-container">
-                {isGratuito && (
-                    <div className="alert alert-warning" style={{ marginBottom: '1.5rem' }}>
-                        <span>📅</span>
-                        <span>
-                            Plano Gratuito exibe apenas os últimos 30 dias.{' '}
-                            <a href="/planos" style={{ fontWeight: 600, color: 'inherit', textDecoration: 'underline' }}>Faça upgrade para o Prata</a> e acesse todo o histórico.
-                        </span>
+        <div className="financial-statement-page extrato">
+            <div className="ext-container">
+                <header className="ext-head">
+                    <div>
+                        <h1 className="ext-title">Extrato</h1>
+                        <p className="ext-sub">Tudo o que entrou e saiu nas suas carteiras, pessoais e do MEI.</p>
                     </div>
-                )}
-                <div className="statement-header">
-                    <div className="header-title">
-                        <h1>Extrato Financeiro</h1>
-                        <p>Visão unificada das finanças Familiares e Empresariais.</p>
-                    </div>
-                    <div className="header-actions">
-                        {/* Botão de Transferência — Prata+ */}
+                    <div className="ext-actions">
                         {isPrataPlus && (
                             <button
-                                className="btn btn-outline"
+                                type="button"
+                                className="ext-btn ext-btn--ghost"
                                 onClick={() => setIsTransferModalOpen(true)}
-                                title="Mova dinheiro entre suas carteiras (ex: da conta PJ para a conta PF). O sistema registra automaticamente a saída em uma e a entrada na outra."
+                                title="Registra a saída numa carteira e a entrada na outra"
                             >
-                                <ArrowUpCircle size={18} style={{ transform: 'rotate(45deg)' }} /> Transferir
+                                <ArrowLeftRight size={18} aria-hidden="true" /> Transferir entre carteiras
                             </button>
                         )}
-                        <button className="btn btn-secondary" onClick={() => setIsCreateModalOpen(true)}>
-                            <PlusCircle size={18} /> Novo Lançamento
+                        <button type="button" className="ext-btn ext-btn--primary" onClick={() => setIsCreateModalOpen(true)}>
+                            <Plus size={18} aria-hidden="true" /> Novo lançamento
                         </button>
                     </div>
-                </div>
+                </header>
 
-                <div className="statement-controls">
-                    <div className="control-group" style={{ flex: 1, minWidth: '250px' }}>
-                        <label>Buscar</label>
-                        <div style={{ position: 'relative' }}>
-                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-slate-400)' }} />
+                {isGratuito && (
+                    <div className="ext-notice">
+                        <span>No plano Gratuito o extrato mostra os últimos 30 dias.</span>
+                        <Link to="/planos" className="ext-link">Ver planos</Link>
+                    </div>
+                )}
+
+                {/* ── Filtros ── */}
+                <section className="ext-filters" aria-label="Filtros">
+                    <div className="ext-filters__top">
+                        <label className="ext-search">
+                            <span className="ext-sr">Buscar</span>
+                            <Search size={18} aria-hidden="true" />
                             <input
-                                type="text"
-                                placeholder="Descrição ou categoria..."
-                                style={{ paddingLeft: '40px', width: '100%' }}
+                                type="search"
+                                placeholder="Descrição ou categoria"
                                 value={filters.search}
-                                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                                onChange={(e) => setFilter('search', e.target.value)}
                             />
+                        </label>
+                        <button
+                            type="button"
+                            className={`ext-btn ext-btn--ghost ext-filters__toggle ${isFiltersOpen ? 'is-on' : ''}`}
+                            aria-expanded={isFiltersOpen}
+                            aria-controls="ext-filters-more"
+                            onClick={() => setIsFiltersOpen(!isFiltersOpen)}
+                        >
+                            <SlidersHorizontal size={18} aria-hidden="true" />
+                            Filtros
+                            {panelFilterCount > 0 && <span className="ext-count">{panelFilterCount}</span>}
+                        </button>
+                    </div>
+
+                    <div id="ext-filters-more" className={`ext-filters__more ${isFiltersOpen ? 'is-open' : ''}`}>
+                        <label className="ext-select">
+                            <span className="ext-sr">Carteira</span>
+                            <select
+                                value={filters.walletId}
+                                className={filters.walletId !== 'ALL' ? 'is-on' : ''}
+                                onChange={(e) => setFilter('walletId', e.target.value)}
+                            >
+                                <option value="ALL">Todas as carteiras</option>
+                                {pjWallets.length > 0 && (
+                                    <optgroup label="MEI">
+                                        {pjWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                    </optgroup>
+                                )}
+                                {pfWallets.length > 0 && (
+                                    <optgroup label="Pessoal">
+                                        {pfWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                    </optgroup>
+                                )}
+                            </select>
+                            <ChevronDown size={16} aria-hidden="true" />
+                        </label>
+
+                        <label className="ext-select">
+                            <span className="ext-sr">Categoria</span>
+                            <select
+                                value={filters.categoryId}
+                                className={filters.categoryId !== 'ALL' ? 'is-on' : ''}
+                                onChange={(e) => setFilter('categoryId', e.target.value)}
+                            >
+                                <option value="ALL">Todas as categorias</option>
+                                {uniqueCategories.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown size={16} aria-hidden="true" />
+                        </label>
+
+                        <div className="ext-seg" role="group" aria-label="Tipo">
+                            {[['ALL', 'Tudo', ''], ['RECEITA', 'Entradas', ''], ['DESPESA', 'Saídas', '']].map(([value, label, tone]) => (
+                                <button
+                                    key={value}
+                                    className={tone}
+                                    type="button"
+                                    aria-pressed={filters.type === value}
+                                    onClick={() => setFilter('type', value)}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="ext-period" ref={periodRef}>
+                            <button
+                                type="button"
+                                className={`ext-btn ext-btn--ghost ext-period__btn ${!isGratuito && period !== 'all' ? 'is-on' : ''}`}
+                                aria-haspopup="true"
+                                aria-expanded={isPeriodOpen}
+                                disabled={isGratuito}
+                                title={isGratuito ? 'Escolher o período é do plano Prata em diante' : undefined}
+                                onClick={() => setIsPeriodOpen(!isPeriodOpen)}
+                            >
+                                <Calendar size={16} aria-hidden="true" />
+                                <span className="ext-period__label">{periodLabel}</span>
+                                {!isGratuito && <ChevronDown size={16} aria-hidden="true" />}
+                            </button>
+
+                            {isPeriodOpen && (
+                                <div className="ext-menu">
+                                    {['all', 'thisMonth', 'lastMonth', 'last30', 'thisYear'].map(p => (
+                                        <button
+                                            key={p}
+                                            type="button"
+                                            className={`ext-menu__item ${period === p ? 'is-on' : ''}`}
+                                            aria-pressed={period === p}
+                                            onClick={() => applyPeriod(p)}
+                                        >
+                                            {PERIOD_LABELS[p]}
+                                        </button>
+                                    ))}
+                                    <div className="ext-menu__custom">
+                                        <span>Outro período</span>
+                                        <label>
+                                            De
+                                            <input
+                                                type="date"
+                                                value={filters.dateStart}
+                                                onChange={(e) => { setPeriod('custom'); setFilter('dateStart', e.target.value) }}
+                                            />
+                                        </label>
+                                        <label>
+                                            Até
+                                            <input
+                                                type="date"
+                                                value={filters.dateEnd}
+                                                onChange={(e) => { setPeriod('custom'); setFilter('dateEnd', e.target.value) }}
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* --- MUDANÇA 4: O Novo Dropdown de Carteiras --- */}
-                    <div className="control-group">
-                        <label>Carteira</label>
-                        <select
-                            value={filters.walletId}
-                            onChange={(e) => setFilters({ ...filters, walletId: e.target.value })}
-                            style={{ fontWeight: 'bold', color: filters.walletId !== 'ALL' ? 'var(--color-primary)' : 'inherit' }}
-                        >
-                            <option value="ALL">🏠 Visão Geral (Tudo)</option>
-                            <option disabled>--- EMPRESAS ---</option>
-                            {Array.isArray(wallets) && wallets.filter(w => w.type === 'PJ').map(w => (
-                                <option key={w.id} value={w.id}>🏢 {w.name}</option>
-                            ))}
-                            <option disabled>--- PESSOAL ---</option>
-                            {Array.isArray(wallets) && wallets.filter(w => w.type === 'PF').map(w => (
-                                <option key={w.id} value={w.id}>👤 {w.name}</option>
-                            ))}
-                        </select>
+                    <div className="ext-filters__status" aria-live="polite">
+                        <span className="ext-total">
+                            {loading ? 'Buscando lançamentos...' : plural(totalCount, 'lançamento', 'lançamentos')}
+                        </span>
+                        {activeFilters.length > 0 && (
+                            <div className="ext-chips-wrap">
+                                <ul className="ext-chips" aria-label="Filtros em uso">
+                                    {activeFilters.map(f => (
+                                        <li key={f.key}>
+                                            <button type="button" className="ext-chip" onClick={f.clear} aria-label={`Tirar filtro ${f.label}`}>
+                                                {f.label} <X size={14} aria-hidden="true" />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <button type="button" className="ext-link" onClick={clearFilters}>Limpar filtros</button>
+                            </div>
+                        )}
                     </div>
+                </section>
 
-                    <div className="control-group">
-                        <label>Categoria</label>
-                        <select
-                            value={filters.categoryId}
-                            onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
-                        >
-                            <option value="ALL">Todas</option>
-                            {Object.values(
-                                categories.reduce((acc, c) => {
-                                    const key = c.name.trim().toLowerCase();
-                                    if (!acc[key]) {
-                                        acc[key] = c;
-                                    }
-                                    return acc;
-                                }, {})
-                            ).map((c) => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                        </select>
-                    </div>
+                {/* ── Resumo do filtro ── */}
+                {!loading && transactions.length > 0 && (
+                    <section className="ext-summary" aria-label="Resumo">
+                        <div className="ext-summary__flow">
+                            <dl className="ext-summary__grid">
+                                <div className="ext-summary__in">
+                                    <dt><span className="ext-dir ext-dir--in" aria-hidden="true"><ArrowDownLeft size={14} /></span>Entrou</dt>
+                                    <dd>+{'\u00a0'}{formatCurrency(financialTotals.totalReceitas)}</dd>
+                                </div>
+                                <div className="ext-summary__out">
+                                    <dt><span className="ext-dir ext-dir--out" aria-hidden="true"><ArrowUpRight size={14} /></span>Saiu</dt>
+                                    <dd>−{'\u00a0'}{formatCurrency(financialTotals.totalDespesas)}</dd>
+                                </div>
+                            </dl>
+                            {flowTotal > 0 && (
+                                <div
+                                    className="ext-summary__bar"
+                                    role="img"
+                                    aria-label={`Do total movimentado, ${inShare}% entrou e ${100 - inShare}% saiu`}
+                                >
+                                    <span className="ext-summary__bar-in" style={{ width: `${inShare}%` }} />
+                                    <span className="ext-summary__bar-out" />
+                                </div>
+                            )}
+                            {financialTotals.pendentes > 0 && (
+                                <p className="ext-summary__pending">
+                                    {formatCurrency(financialTotals.pendentes)} do que saiu ainda está pendente
+                                </p>
+                            )}
+                            {!financialTotals.complete && (
+                                <p className="ext-summary__note">
+                                    Somando os {transactions.length} lançamentos carregados de {totalCount}. Role a lista para somar o resto.
+                                </p>
+                            )}
+                        </div>
+                        <div className={`ext-summary__result ${resultTone}`}>
+                            <p className="ext-summary__label">
+                                Resultado
+                                {resultTone !== 'is-zero' && (
+                                    <span className="ext-summary__tag">{resultTone === 'is-pos' ? 'Positivo' : 'Negativo'}</span>
+                                )}
+                            </p>
+                            <p className="ext-summary__value">
+                                {resultTone === 'is-neg' ? '−\u00a0' : resultTone === 'is-pos' ? '+\u00a0' : ''}{formatCurrency(Math.abs(financialTotals.saldo))}
+                            </p>
+                        </div>
+                    </section>
+                )}
 
-                    <div className="control-group">
-                        <label>Tipo</label>
-                        <select value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
-                            <option value="ALL">Todos</option>
-                            <option value="RECEITA">Entradas (+)</option>
-                            <option value="DESPESA">Saídas (-)</option>
-                        </select>
-                    </div>
+                {/* ── Lista ── */}
+                <section className="ext-list" aria-label="Lançamentos">
+                    {loading ? (
+                        <p className="ext-empty">Carregando lançamentos...</p>
+                    ) : transactions.length === 0 ? (
+                        <div className="ext-empty">
+                            <FileText size={32} aria-hidden="true" />
+                            {activeFilters.length > 0 ? (
+                                <>
+                                    <p>Nenhum lançamento com esses filtros.</p>
+                                    <button type="button" className="ext-btn ext-btn--ghost" onClick={clearFilters}>Limpar filtros</button>
+                                </>
+                            ) : (
+                                <>
+                                    <p>{isGratuito ? 'Nenhum lançamento nos últimos 30 dias.' : 'Nenhum lançamento ainda.'}</p>
+                                    <button type="button" className="ext-btn ext-btn--primary" onClick={() => setIsCreateModalOpen(true)}>
+                                        <Plus size={18} aria-hidden="true" /> Novo lançamento
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            <div className="ext-row ext-row--head">
+                                <label className="ext-check">
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={toggleSelectAll}
+                                        aria-label="Selecionar todos os lançamentos carregados"
+                                    />
+                                </label>
+                                <span className="ext-row__date" aria-hidden="true">Data</span>
+                                <span className="ext-row__main" aria-hidden="true">Descrição</span>
+                                <span className="ext-row__wallet" aria-hidden="true">Carteira</span>
+                                <span className="ext-row__method" aria-hidden="true">Pagamento</span>
+                                <span className="ext-row__amount" aria-hidden="true">Valor</span>
+                                <span className="ext-row__all" aria-hidden="true">Selecionar todos</span>
+                            </div>
 
-                    <div className="control-group">
-                        <label>De</label>
-                        <input type="date" value={filters.dateStart} disabled={isGratuito} title={isGratuito ? 'Disponível no plano Prata ou superior' : ''} onChange={(e) => setFilters({ ...filters, dateStart: e.target.value })} />
-                    </div>
+                            <ul className="ext-rows">
+                                {transactions.map(t => {
+                                    const wallet = walletsById.get(t.business_unit_id)
+                                    const isPJ = wallet ? wallet.account_type === 'PJ' : t.target === 'BUSINESS'
+                                    const title = t.description || t.categoryName || 'Sem descrição'
+                                    const category = t.description ? (t.categoryName || 'Sem categoria') : null
+                                    const method = METHOD_LABELS[t.paymentMethod] || t.paymentMethod || '-'
+                                    const methodFull = t.cardName ? `${method} · ${t.cardName}` : method
+                                    const invoiceNote = t.billing_date && t.billing_date !== t.date ? `Fatura de ${shortDate(t.billing_date)}` : null
+                                    const isPending = t.status === 'PENDING'
+                                    const selected = selectedIds.has(t.id)
 
-                    <div className="control-group">
-                        <label>Até</label>
-                        <input type="date" value={filters.dateEnd} disabled={isGratuito} title={isGratuito ? 'Disponível no plano Prata ou superior' : ''} onChange={(e) => setFilters({ ...filters, dateEnd: e.target.value })} />
-                    </div>
-                </div>
-
-                <div className="statement-card">
-                    <div className="table-responsive">
-                        <table className="statement-table">
-                            <thead>
-                                <tr>
-                                    <th style={{ width: '40px', textAlign: 'center' }}>
-                                        <input
-                                            type="checkbox"
-                                            className="bulk-checkbox"
-                                            checked={transactions.length > 0 && selectedIds.size === transactions.length}
-                                            onChange={toggleSelectAll}
-                                            title="Selecionar todos"
-                                        />
-                                    </th>
-                                    <th>Data</th>
-                                    <th>Carteira</th>
-                                    <th>Categoria</th>
-                                    <th>Descrição</th>
-                                    <th>Método</th>
-                                    <th style={{ textAlign: 'right' }}>Valor</th>
-                                    <th style={{ textAlign: 'right' }}>Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loading ? (
-                                    <tr><td colSpan="8" style={{ textAlign: 'center', padding: '3rem' }}>Carregando transações...</td></tr>
-                                ) : transactions.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="8">
-                                            <div className="statement-empty">
-                                                <FileText size={48} color="var(--color-slate-200)" />
-                                                <p>Nenhuma transação encontrada nesta carteira.</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    transactions.map(t => (
-                                        <tr key={t.id} className={selectedIds.has(t.id) ? 'row-selected' : ''}>
-                                            <td style={{ textAlign: 'center', width: '40px' }}>
+                                    return (
+                                        <li key={t.id} className={`ext-row ${selected ? 'is-selected' : ''}`}>
+                                            <label className="ext-check">
                                                 <input
                                                     type="checkbox"
-                                                    className="bulk-checkbox"
-                                                    checked={selectedIds.has(t.id)}
+                                                    checked={selected}
                                                     onChange={() => toggleSelectId(t.id)}
+                                                    aria-label={`Selecionar ${title}`}
                                                 />
-                                            </td>
-                                            <td className="td-date">
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <Calendar size={14} />
-                                                    {formatDate(t.date)}
+                                            </label>
+
+                                            <span className="ext-row__date">{formatDate(t.date)}</span>
+
+                                            <div className="ext-row__main">
+                                                <strong>
+                                                    {title}
+                                                    {isPending && <span className="ext-chip-status">Pendente</span>}
+                                                </strong>
+                                                {category && <span className="ext-row__cat">{category}</span>}
+                                                {/* No celular: categoria · data · pagamento numa linha só */}
+                                                <span className="ext-row__sub">
+                                                    {[category, shortDate(t.date), method, invoiceNote].filter(Boolean).join(' · ')}
+                                                </span>
+                                            </div>
+
+                                            <div className="ext-row__method">
+                                                <span>{methodFull}</span>
+                                                {invoiceNote && <small>{invoiceNote}</small>}
+                                            </div>
+
+                                            <span className={`ext-row__amount ${t.type === 'RECEITA' ? 'is-in' : isPending ? 'is-pending' : 'is-out'}`}>
+                                                {signedAmount(t)}
+                                            </span>
+
+                                            <div className="ext-row__foot">
+                                                <div className="ext-row__wallet">
+                                                    {editingWalletTransactionId === t.id ? (
+                                                        <select
+                                                            autoFocus
+                                                            className="ext-wallet-select"
+                                                            aria-label="Mover para a carteira"
+                                                            value={t.business_unit_id || ''}
+                                                            onChange={(e) => handleQuickWalletChange(t.id, e.target.value)}
+                                                            onBlur={() => setEditingWalletTransactionId(null)}
+                                                        >
+                                                            <option value="">Escolha a carteira</option>
+                                                            {pjWallets.length > 0 && (
+                                                                <optgroup label="MEI">
+                                                                    {pjWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                                                </optgroup>
+                                                            )}
+                                                            {pfWallets.length > 0 && (
+                                                                <optgroup label="Pessoal">
+                                                                    {pfWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                                                </optgroup>
+                                                            )}
+                                                        </select>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            className="ext-wallet"
+                                                            onClick={() => setEditingWalletTransactionId(t.id)}
+                                                            title="Trocar a carteira deste lançamento"
+                                                        >
+                                                            {isPJ ? <Building2 size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />}
+                                                            <span>{wallet ? wallet.name : 'Sem carteira'}</span>
+                                                            <ChevronDown className="ext-wallet__chev" size={14} aria-hidden="true" />
+                                                        </button>
+                                                    )}
                                                 </div>
-                                            </td>
-                                            <td className="td-target">
-                                                {editingWalletTransactionId === t.id ? (
-                                                    <select
-                                                        autoFocus
-                                                        value={t.business_unit_id || ''}
-                                                        onChange={(e) => handleQuickWalletChange(t.id, e.target.value)}
-                                                        onBlur={() => setEditingWalletTransactionId(null)}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        style={{
-                                                            padding: '2px 8px',
-                                                            borderRadius: '12px',
-                                                            fontSize: '11px',
-                                                            border: '1px solid var(--color-primary)',
-                                                            outline: 'none',
-                                                            maxWidth: '140px'
-                                                        }}
-                                                    >
-                                                        <option value="">Selecione...</option>
-                                                        {wallets.map(w => (
-                                                            <option key={w.id} value={w.id}>
-                                                                {w.name}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                ) : (
-                                                    <span
-                                                        className={`badge`}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation()
-                                                            setEditingWalletTransactionId(t.id)
-                                                        }}
-                                                        style={{
-                                                            fontSize: '11px',
-                                                            padding: '4px 8px',
-                                                            borderRadius: '12px',
-                                                            backgroundColor: t.business_unit_id === 1 ? '#eff6ff' : '#f0fdf4',
-                                                            color: t.business_unit_id === 1 ? '#1d4ed8' : '#15803d',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '4px',
-                                                            width: 'fit-content',
-                                                            cursor: 'pointer',
-                                                            border: '1px solid transparent'
-                                                        }}
-                                                        title="Clique para alterar a carteira"
-                                                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--color-slate-300)'}
-                                                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'transparent'}
-                                                    >
-                                                        {t.business_unit_id === 1 ? <Briefcase size={12} /> : <User size={12} />}
-                                                        {getWalletName(t.business_unit_id)}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="td-category">
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    {t.type === 'RECEITA' ?
-                                                        <ArrowUpCircle size={16} className="amount-positive" /> :
-                                                        <ArrowDownCircle size={16} className="amount-negative" />
-                                                    }
-                                                    {t.categoryName || 'Outros'}
-                                                </div>
-                                            </td>
-                                            <td className="td-description">{t.description || '-'}</td>
-                                            <td className="td-method">
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    {t.paymentMethod === 'Cartão de Crédito' && <CreditCard size={14} />}
-                                                    {t.paymentMethod} {t.cardName && `(${t.cardName})`}
-                                                </div>
-                                            </td>
-                                            <td className={`td-amount ${t.type === 'RECEITA' ? 'amount-positive' : 'amount-negative'}`}>
-                                                {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
-                                            </td>
-                                            <td className="td-actions">
-                                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+
+                                                <div className="ext-row__actions">
                                                     <button
-                                                        className="btn-delete"
-                                                        style={{ color: 'var(--color-primary)' }}
+                                                        type="button"
+                                                        className="ext-icon-btn"
+                                                        aria-label={`Editar ${title}`}
                                                         title="Editar"
                                                         onClick={() => {
                                                             setEditingTransaction(t)
                                                             setIsEditModalOpen(true)
                                                         }}
                                                     >
-                                                        <Edit2 size={18} />
+                                                        <Pencil size={17} aria-hidden="true" />
                                                     </button>
-                                                    <button className="btn-delete" title="Excluir" onClick={() => handleDelete(t.id)}>
-                                                        <Trash2 size={18} />
+                                                    <button
+                                                        type="button"
+                                                        className="ext-icon-btn"
+                                                        aria-label={`Excluir ${title}`}
+                                                        title="Excluir"
+                                                        onClick={() => handleDelete(t)}
+                                                    >
+                                                        <Trash2 size={17} aria-hidden="true" />
                                                     </button>
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                            </div>
+                                        </li>
+                                    )
+                                })}
+                            </ul>
 
-                    {/* SENTINEL ELEMENT FOR INFINITE SCROLL */}
-                    {hasMore && (
-                        <div
-                            ref={loadMoreRef}
-                            style={{
-                                height: '20px',
-                                margin: '20px 0',
-                                textAlign: 'center',
-                                color: 'var(--color-slate-500)',
-                                fontSize: '0.875rem'
-                            }}
-                        >
-                            Carregando mais transações...
-                        </div>
-                    )}
-
-                    {/* ═══ RESUMO FINANCEIRO ═══ */}
-                    {!loading && transactions.length > 0 && (
-                        <div style={{
-                            padding: '20px 24px',
-                            borderTop: '2px solid var(--color-slate-200)',
-                            background: 'linear-gradient(to bottom, #f8fafc, #ffffff)',
-                        }}>
-                            {/* Nota parcial */}
+                            {/* SENTINEL ELEMENT FOR INFINITE SCROLL */}
                             {hasMore && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    marginBottom: '12px',
-                                    padding: '8px 12px',
-                                    background: '#fffbeb',
-                                    borderRadius: '8px',
-                                    border: '1px solid #fde68a',
-                                    fontSize: '0.8rem',
-                                    color: '#92400e',
-                                }}>
-                                    ⚠️ Totais parciais — role para baixo para carregar todas as transações.
-                                </div>
+                                <div ref={loadMoreRef} className="ext-more">Carregando mais lançamentos...</div>
                             )}
 
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(3, 1fr)',
-                                gap: '16px',
-                            }}>
-                                {/* Receitas */}
-                                <div style={{
-                                    background: '#ecfdf5',
-                                    borderRadius: '12px',
-                                    padding: '16px 20px',
-                                    borderLeft: '4px solid #10b981',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                }}>
-                                    <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                    }}>
-                                        <ArrowUpCircle size={18} color="#10b981" />
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                            Total Receitas
-                                        </span>
-                                    </div>
-                                    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#059669' }}>
-                                        + {formatCurrency(financialTotals.totalReceitas)}
-                                    </span>
-                                </div>
-
-                                {/* Despesas */}
-                                <div style={{
-                                    background: '#fef2f2',
-                                    borderRadius: '12px',
-                                    padding: '16px 20px',
-                                    borderLeft: '4px solid #ef4444',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                }}>
-                                    <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                    }}>
-                                        <ArrowDownCircle size={18} color="#ef4444" />
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                            Total Despesas
-                                        </span>
-                                    </div>
-                                    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#dc2626' }}>
-                                        − {formatCurrency(financialTotals.totalDespesas)}
-                                    </span>
-                                </div>
-
-                                {/* Saldo */}
-                                <div style={{
-                                    background: financialTotals.saldo >= 0 ? 'linear-gradient(135deg, #ecfdf5, #eff6ff)' : 'linear-gradient(135deg, #fef2f2, #fff7ed)',
-                                    borderRadius: '12px',
-                                    padding: '16px 20px',
-                                    borderLeft: `4px solid ${financialTotals.saldo >= 0 ? '#3b82f6' : '#f97316'}`,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                                }}>
-                                    <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                    }}>
-                                        <Wallet size={18} color={financialTotals.saldo >= 0 ? '#3b82f6' : '#f97316'} />
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: financialTotals.saldo >= 0 ? '#1e40af' : '#9a3412', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                            Saldo (Receita − Despesa)
-                                        </span>
-                                    </div>
-                                    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: financialTotals.saldo >= 0 ? '#1d4ed8' : '#ea580c' }}>
-                                        {financialTotals.saldo >= 0 ? '+ ' : '− '}{formatCurrency(Math.abs(financialTotals.saldo))}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
+                            <p className="ext-foot">
+                                Mostrando {transactions.length} de {plural(totalCount, 'lançamento', 'lançamentos')}
+                            </p>
+                        </>
                     )}
+                </section>
 
-                    {/* Footer com contagem total */}
-                    <div className="statement-footer">
-                        <span style={{ fontSize: '0.875rem', color: 'var(--color-slate-500)' }}>
-                            Mostrando <strong>{transactions.length}</strong> de <strong>{totalCount}</strong> transações
-                        </span>
-                    </div>
-                </div>
-
-                {/* FLOATING BULK ACTION BAR */}
+                {/* Barra de seleção */}
                 {selectedIds.size > 0 && (
-                    <div className="bulk-action-bar">
-                        <div className="bulk-info">
-                            <CheckSquare size={18} />
-                            <span><strong>{selectedIds.size}</strong> transação(ões) selecionada(s)</span>
-                        </div>
-                        <div className="bulk-actions">
-                            <button className="btn btn-outline btn-sm" onClick={() => setSelectedIds(new Set())}>
+                    <div className="ext-bulk" role="region" aria-label="Lançamentos selecionados">
+                        <span className="ext-bulk__info">
+                            <strong>{selectedIds.size}</strong> {selectedIds.size === 1 ? 'selecionado' : 'selecionados'}
+                        </span>
+                        <div className="ext-bulk__actions">
+                            <button type="button" className="ext-btn ext-btn--on-ink" onClick={() => setSelectedIds(new Set())}>
                                 Cancelar
                             </button>
                             <button
-                                className="btn btn-danger btn-sm"
+                                type="button"
+                                className="ext-btn ext-btn--danger"
                                 onClick={handleBulkDelete}
                                 disabled={bulkDeleting}
                             >
-                                <Trash2 size={16} />
+                                <Trash2 size={16} aria-hidden="true" />
                                 {bulkDeleting ? 'Excluindo...' : `Excluir ${selectedIds.size}`}
                             </button>
                         </div>
@@ -774,6 +926,8 @@ export default function FinancialStatement() {
                     />
                 )
             }
+
+            {dialog}
         </div >
     )
 }

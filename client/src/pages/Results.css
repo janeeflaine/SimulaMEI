@@ -289,35 +289,17 @@
     border-radius: var(--radius-full);
 }
 
-.btn-upgrade {
-    position: relative;
-    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #8b5cf6 100%);
-    background-size: 200% 200%;
-    color: white;
-    font-weight: var(--font-weight-bold);
-    padding: var(--spacing-4) var(--spacing-8);
-    border-radius: var(--radius-xl);
-    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
-    animation: gradient-shift 3s ease infinite;
+.btn.btn-upgrade {
+    background: #12284a;
+    border-color: #12284a;
+    color: #fff;
 }
 
-@keyframes gradient-shift {
-    0% {
-        background-position: 0% 50%;
+@media (hover: hover) {
+    .btn.btn-upgrade:hover {
+        background: #1f3d6b;
+        border-color: #1f3d6b;
     }
-
-    50% {
-        background-position: 100% 50%;
-    }
-
-    100% {
-        background-position: 0% 50%;
-    }
-}
-
-.btn-upgrade:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(139, 92, 246, 0.5);
 }
 
 @media (max-width: 600px) {

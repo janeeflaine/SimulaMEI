@@ -282,13 +282,14 @@
     align-items: center;
 }
 
-.btn-sm {
+/* Presas à barra de seleção: antes valiam para o site inteiro e brigavam com o padrão de botões */
+.bulk-action-bar .btn-sm {
     padding: 0.375rem 0.875rem !important;
     font-size: 0.8rem !important;
     border-radius: 0.5rem !important;
 }
 
-.btn-danger {
+.bulk-action-bar .btn-danger {
     background: #ef4444 !important;
     color: white !important;
     border: none !important;
@@ -298,11 +299,11 @@
     transition: background 0.2s;
 }
 
-.btn-danger:hover {
+.bulk-action-bar .btn-danger:hover {
     background: #dc2626 !important;
 }
 
-.btn-danger:disabled {
+.bulk-action-bar .btn-danger:disabled {
     background: #fca5a5 !important;
     cursor: not-allowed;
 }
@@ -315,4 +316,1222 @@
 
 .bulk-action-bar .btn-outline:hover {
     background: rgba(255, 255, 255, 0.1) !important;
+}
+/* ==========================================================================
+   Extrato no padrão novo (design-do-site.md).
+   Tudo abaixo fica preso a .extrato ou usa o prefixo .ext-. As regras antigas
+   acima continuam porque outras telas usam algumas delas (.bulk-action-bar em
+   Cartões, .btn-delete em Cartões de crédito).
+   ========================================================================== */
+
+.extrato {
+    --e-ink: #12284a;
+    --e-ink-2: #1f3d6b;
+    --e-paper: #f6f8fa;
+    --e-line: #e3e8ef;
+    --e-text: #0f172a;
+    --e-muted: #5b6b80;
+    --e-brand: #10b981;
+    --e-in: #047857;
+    --e-warn-bg: #fffbeb;
+    --e-warn-line: #fde68a;
+    --e-warn-text: #92400e;
+    /* Cores de resultado: as mesmas famílias que o site já usa
+       (--color-success, --color-danger, --color-warning), com o tom
+       escuro para texto em fundo claro e o tom claro sobre o azul */
+    --e-pos: #10b981;
+    --e-pos-text: #047857;
+    --e-pos-on-ink: #6ee7b7;
+    --e-neg: #ef4444;
+    --e-neg-text: #dc2626;
+    --e-neg-on-ink: #fca5a5;
+    --e-neu: #f59e0b;
+    --e-neu-on-ink: #fcd34d;
+    min-height: 100vh;
+    padding: var(--spacing-8, 2rem) 0 calc(var(--spacing-16, 4rem) + 72px);
+    background: var(--e-paper);
+    color: var(--e-text);
+}
+
+.ext-container {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 var(--spacing-6, 1.5rem);
+}
+
+.ext-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.extrato :is(button, select, input, a):focus-visible {
+    outline: 2px solid var(--e-brand);
+    outline-offset: 2px;
+}
+
+/* ── Botões ───────────────────────────────────────────────────────────── */
+
+.ext-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 999px;
+    border: 1.5px solid transparent;
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.ext-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.ext-btn--primary {
+    background: var(--e-ink);
+    border-color: var(--e-ink);
+    color: #fff;
+}
+
+.ext-btn--ghost {
+    background: #fff;
+    border-color: var(--e-line);
+    color: var(--e-text);
+}
+
+.ext-btn--ghost.is-on {
+    border-color: var(--e-ink);
+    color: var(--e-ink);
+}
+
+.ext-btn--danger {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #fff;
+}
+
+.ext-btn--on-ink {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #fff;
+}
+
+.ext-link {
+    padding: 4px 0;
+    border: 0;
+    background: none;
+    color: var(--e-in);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/* ── Topo ─────────────────────────────────────────────────────────────── */
+
+.ext-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: var(--spacing-4, 1rem) var(--spacing-6, 1.5rem);
+    flex-wrap: wrap;
+    margin-bottom: var(--spacing-6, 1.5rem);
+}
+
+.extrato .ext-title {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+    color: var(--e-text);
+    text-align: left;
+}
+
+.ext-sub {
+    margin: 6px 0 0;
+    color: var(--e-muted);
+    font-size: 1rem;
+}
+
+.ext-actions {
+    display: flex;
+    gap: var(--spacing-3, 0.75rem);
+    flex-wrap: wrap;
+}
+
+/* Aviso do plano (âmbar) */
+.ext-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 24px;
+    flex-wrap: wrap;
+    margin-bottom: var(--spacing-4, 1rem);
+    padding: 12px 16px 12px 20px;
+    border-radius: 14px;
+    border: 1px solid var(--e-warn-line);
+    background: var(--e-warn-bg);
+    color: var(--e-warn-text);
+    font-size: 0.9375rem;
+}
+
+.ext-notice .ext-link {
+    color: var(--e-warn-text);
+}
+
+/* ── Filtros ──────────────────────────────────────────────────────────── */
+
+.ext-filters {
+    padding-bottom: var(--spacing-4, 1rem);
+    margin-bottom: var(--spacing-5, 1.25rem);
+    border-bottom: 1px solid var(--e-line);
+}
+
+.ext-filters__top {
+    display: flex;
+    gap: 10px;
+}
+
+.ext-search {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+}
+
+.ext-search svg {
+    position: absolute;
+    left: 16px;
+    color: var(--e-muted);
+    pointer-events: none;
+}
+
+.extrato .ext-search input {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 16px 0 46px;
+    border-radius: 999px;
+    border: 1.5px solid var(--e-line);
+    background: #fff;
+    color: var(--e-text);
+    font: inherit;
+    font-size: 16px;
+    box-shadow: none;
+}
+
+.extrato .ext-search input::placeholder {
+    color: #94a3b8;
+}
+
+.extrato .ext-search input:focus {
+    outline: none;
+    border-color: var(--e-brand);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.ext-filters__toggle,
+.ext-period__btn {
+    min-height: 48px;
+}
+
+
+.ext-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--e-ink);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.ext-filters__more {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+/* Seletor em pílula (carteira, categoria) */
+.ext-select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.extrato .ext-select select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    min-height: 48px;
+    max-width: 260px;
+    padding: 0 40px 0 16px;
+    border-radius: 999px;
+    border: 1.5px solid var(--e-line);
+    background: #fff;
+    color: var(--e-text);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    box-shadow: none;
+}
+
+.extrato .ext-select select.is-on {
+    border-color: var(--e-ink);
+    color: var(--e-ink);
+}
+
+.ext-select svg {
+    position: absolute;
+    right: 14px;
+    color: var(--e-muted);
+    pointer-events: none;
+}
+
+/* Tudo / Entradas / Saídas */
+.ext-seg {
+    display: inline-flex;
+    padding: 1px;
+    border-radius: 999px;
+    border: 1.5px solid var(--e-line);
+    background: #fff;
+}
+
+.ext-seg button {
+    flex: 1;
+    min-height: 44px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--e-muted);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.ext-seg button[aria-pressed="true"] {
+    background: var(--e-ink);
+    color: #fff;
+}
+
+/* Período */
+.ext-period {
+    position: relative;
+}
+
+.ext-period__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ext-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 150;
+    width: min(280px, calc(100vw - 32px));
+    padding: 6px;
+    border-radius: 14px;
+    border: 1px solid var(--e-line);
+    background: #fff;
+    box-shadow: 0 24px 48px -20px rgba(18, 40, 74, 0.4);
+}
+
+.ext-menu__item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--e-text);
+    font: inherit;
+    font-size: 0.9375rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ext-menu__item.is-on {
+    color: var(--e-in);
+    font-weight: 700;
+    background: rgba(16, 185, 129, 0.08);
+}
+
+.ext-menu__custom {
+    display: grid;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 12px 14px 8px;
+    border-top: 1px solid var(--e-line);
+}
+
+.ext-menu__custom > span {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--e-muted);
+}
+
+.ext-menu__custom label {
+    display: grid;
+    grid-template-columns: 3ch 1fr;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: var(--e-muted);
+}
+
+.extrato .ext-menu__custom input {
+    min-height: 44px;
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid var(--e-line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--e-text);
+    font: inherit;
+    font-size: 16px;
+}
+
+/* Quantos lançamentos + filtros em uso */
+.ext-filters__status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    margin-top: 14px;
+    min-height: 32px;
+}
+
+.ext-total {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--e-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.ext-chips-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    min-width: 0;
+}
+
+.ext-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ext-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    max-width: 100%;
+    padding: 0 10px 0 12px;
+    border: 1px solid var(--e-line);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--e-text);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    text-align: left;
+}
+
+.ext-chip svg {
+    flex: none;
+    color: var(--e-muted);
+}
+
+/* ── Resumo (o destaque da página) ────────────────────────────────────
+   Cores de resultado sempre sobre fundo claro; o azul-marinho entra só
+   como bloco sólido, com texto branco. */
+
+.ext-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    margin-bottom: var(--spacing-5, 1.25rem);
+    border-radius: 18px;
+    border: 1px solid var(--e-line);
+    background: #fff;
+    overflow: hidden;
+}
+
+.ext-summary__flow {
+    padding: 20px 24px;
+    min-width: 0;
+}
+
+.ext-summary__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+    margin: 0;
+}
+
+.ext-summary__grid > div {
+    min-width: 0;
+}
+
+.ext-summary dt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: var(--e-muted);
+}
+
+.ext-dir {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+}
+
+.ext-dir--in {
+    background: #ecfdf5;
+    color: var(--e-pos-text);
+}
+
+.ext-dir--out {
+    background: #fef2f2;
+    color: var(--e-neg-text);
+}
+
+.ext-summary dd {
+    margin: 4px 0 0;
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ext-summary__in dd { color: var(--e-pos-text); }
+.ext-summary__out dd { color: var(--e-neg-text); }
+
+/* Quanto do que movimentou entrou (verde) e saiu (vermelho) */
+.ext-summary__bar {
+    display: flex;
+    gap: 3px;
+    height: 6px;
+    margin-top: 16px;
+}
+
+.ext-summary__bar-in,
+.ext-summary__bar-out {
+    min-width: 6px;
+    border-radius: 99px;
+}
+
+.ext-summary__bar-in {
+    flex: none;
+    background: var(--e-pos);
+}
+
+.ext-summary__bar-out {
+    flex: 1;
+    background: #fca5a5;
+}
+
+.ext-summary__pending,
+.ext-summary__note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 0;
+    font-size: 0.8125rem;
+    color: var(--e-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.ext-summary__pending {
+    color: #b45309;
+}
+
+.ext-summary__pending::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--e-neu);
+}
+
+/* Resultado: bloco azul-marinho, número branco; o sinal vai numa etiqueta clara */
+.ext-summary__result {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 20px 24px;
+    background: var(--e-ink);
+    color: #fff;
+}
+
+.ext-summary__label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0;
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.ext-summary__tag {
+    padding: 1px 9px;
+    border-radius: 99px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.is-pos .ext-summary__tag { background: #ecfdf5; color: var(--e-pos-text); }
+.is-neg .ext-summary__tag { background: #fef2f2; color: var(--e-neg-text); }
+
+.ext-summary__value {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: #fff;
+}
+
+/* ── Lista ────────────────────────────────────────────────────────────── */
+
+.ext-list {
+    border-radius: 18px;
+    border: 1px solid var(--e-line);
+    background: #fff;
+    overflow: hidden;
+}
+
+.ext-rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ext-row {
+    display: grid;
+    grid-template-columns: 44px 96px minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1fr) 140px 96px;
+    grid-template-areas: "check date main wallet method amount actions";
+    align-items: center;
+    gap: 0 14px;
+    padding: 10px 16px 10px 8px;
+    border-top: 1px solid var(--e-line);
+}
+
+.ext-row > .ext-check { grid-area: check; }
+.ext-row__date { grid-area: date; }
+.ext-row__main { grid-area: main; }
+.ext-row__wallet { grid-area: wallet; }
+.ext-row__method { grid-area: method; }
+.ext-row__amount { grid-area: amount; }
+.ext-row__actions { grid-area: actions; }
+
+/* Carteira + ações: no computador cada um vai para a sua coluna */
+.ext-row__foot {
+    display: contents;
+}
+
+.ext-row.is-selected {
+    background: rgba(18, 40, 74, 0.04);
+}
+
+.ext-row--head {
+    border-top: 0;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    background: var(--e-paper);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--e-muted);
+}
+
+.ext-row--head > span,
+.ext-row--head .ext-row__amount {
+    color: var(--e-muted);
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+.ext-row__all {
+    display: none;
+}
+
+.ext-check {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.ext-check input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--e-ink);
+    cursor: pointer;
+}
+
+.ext-row__date {
+    font-size: 0.875rem;
+    color: var(--e-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.ext-row__main {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ext-row__main strong {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--e-text);
+    overflow-wrap: anywhere;
+}
+
+.ext-row__cat {
+    font-size: 0.8125rem;
+    color: var(--e-muted);
+    overflow-wrap: anywhere;
+}
+
+.ext-row__sub {
+    display: none;
+}
+
+.ext-chip-status {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 99px;
+    background: var(--e-warn-bg);
+    box-shadow: inset 0 0 0 1px var(--e-warn-line);
+    color: var(--e-warn-text);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.ext-row__wallet {
+    min-width: 0;
+}
+
+.ext-wallet {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--e-paper);
+    color: var(--e-text);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ext-wallet span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ext-wallet svg {
+    flex: none;
+    color: var(--e-muted);
+}
+
+.extrato .ext-wallet-select {
+    width: 100%;
+    max-width: 200px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1.5px solid var(--e-brand);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--e-text);
+    font: inherit;
+    font-size: 16px;
+}
+
+.ext-row__method {
+    display: grid;
+    min-width: 0;
+    font-size: 0.875rem;
+    color: var(--e-text);
+}
+
+.ext-row__method span {
+    overflow-wrap: anywhere;
+}
+
+.ext-row__method small {
+    font-size: 0.8125rem;
+    color: var(--e-muted);
+}
+
+.ext-row__amount {
+    text-align: right;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--e-text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ext-row__amount.is-in {
+    color: var(--e-pos-text);
+}
+
+.ext-row__amount.is-out {
+    color: var(--e-neg-text);
+}
+
+/* Boleto ainda não pago: não saiu do bolso, fica no tom de atenção */
+.ext-row__amount.is-pending {
+    color: #b45309;
+}
+
+.ext-row__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+.ext-icon-btn {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--e-muted);
+    cursor: pointer;
+}
+
+.ext-more,
+.ext-foot {
+    margin: 0;
+    padding: 14px 16px;
+    border-top: 1px solid var(--e-line);
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--e-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.ext-empty {
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--e-muted);
+}
+
+.ext-empty p {
+    margin: 0;
+    font-size: 1rem;
+}
+
+/* Barra de seleção (aparece ao marcar lançamentos) */
+.ext-bulk {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: min(560px, calc(100vw - 32px));
+    padding: 10px 10px 10px 20px;
+    border-radius: 999px;
+    background: var(--e-ink);
+    color: #fff;
+    box-shadow: 0 24px 48px -16px rgba(18, 40, 74, 0.55);
+    transform: translateX(-50%);
+}
+
+.ext-bulk__info {
+    font-size: 0.9375rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.ext-bulk__actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Efeito de passar o mouse só onde há mouse (no celular ele fica preso) */
+@media (hover: hover) {
+    .ext-btn--primary:hover { background: var(--e-ink-2); border-color: var(--e-ink-2); }
+    .ext-btn--ghost:hover { border-color: var(--e-ink); }
+    .ext-btn--danger:hover { background: #b91c1c; border-color: #b91c1c; }
+    .ext-btn--on-ink:hover { border-color: #fff; }
+    .ext-link:hover { color: var(--e-ink); }
+    .extrato .ext-select select:hover { border-color: var(--e-ink); }
+    .ext-seg button:hover:not([aria-pressed="true"]) { color: var(--e-text); }
+    .ext-menu__item:hover { background: var(--e-paper); }
+    .ext-chip:hover { border-color: var(--e-ink); }
+    .ext-wallet:hover { border-color: var(--e-line); background: #fff; }
+    .ext-icon-btn:hover { background: var(--e-paper); color: var(--e-ink); }
+    .ext-rows .ext-row:hover { background: #fafbfc; }
+    .ext-rows .ext-row.is-selected:hover { background: rgba(18, 40, 74, 0.05); }
+}
+
+/* ── Telas médias e celular: filtros recolhidos e lista em linhas ─────── */
+
+@media (min-width: 900px) {
+    .ext-filters__toggle {
+        display: none;
+    }
+
+    .ext-filters__top {
+        display: contents;
+    }
+
+    .ext-filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .ext-filters .ext-search {
+        flex: 1 1 240px;
+    }
+
+    .ext-filters__more {
+        margin-top: 0;
+    }
+
+    .ext-filters__status {
+        flex-basis: 100%;
+        margin-top: 4px;
+    }
+}
+
+@media (max-width: 899px) {
+    .ext-filters__more {
+        display: none;
+    }
+
+    .ext-filters__more.is-open {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--e-line);
+        background: #fff;
+    }
+
+    .ext-filters__more.is-open .ext-seg,
+    .ext-filters__more.is-open .ext-period {
+        grid-column: 1 / -1;
+    }
+
+    .extrato .ext-select select {
+        max-width: none;
+    }
+
+    .ext-period__btn {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .ext-period__btn svg:last-child {
+        margin-left: auto;
+    }
+
+    .ext-menu {
+        left: 0;
+        right: auto;
+    }
+
+    /* Lista: três linhas por lançamento */
+    .ext-row {
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "check main amount"
+            "check foot foot";
+        align-items: start;
+        gap: 2px 10px;
+        padding: 10px 8px 6px 4px;
+    }
+
+    .ext-row__main { padding-top: 10px; }
+    .ext-row__amount { padding-top: 10px; }
+
+    /* Linha de baixo: carteira à esquerda, editar/excluir à direita */
+    .ext-row__foot {
+        grid-area: foot;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+        margin-left: -6px;
+    }
+
+    .ext-row__wallet {
+        min-width: 0;
+    }
+
+    .ext-wallet {
+        padding: 0 8px;
+    }
+
+    .ext-row__actions {
+        gap: 0;
+        flex: none;
+    }
+
+    .ext-row__date,
+    .ext-row__method,
+    .ext-row__cat {
+        display: none;
+    }
+
+    .ext-row__sub {
+        display: block;
+        font-size: 0.8125rem;
+        color: var(--e-muted);
+        overflow-wrap: anywhere;
+    }
+
+    .ext-row--head {
+        grid-template-columns: 44px 1fr;
+        grid-template-areas: none;
+        align-items: center;
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+
+    .ext-row--head > span {
+        display: none;
+    }
+
+    .ext-row--head > .ext-check {
+        grid-area: auto;
+    }
+
+    .ext-wallet__chev {
+        display: none;
+    }
+
+    .ext-row--head .ext-row__all {
+        display: block;
+        font-size: 0.875rem;
+    }
+
+}
+
+@media (max-width: 699px) {
+    .ext-summary {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 520px) {
+    .ext-summary__flow,
+    .ext-summary__result {
+        padding: 16px 18px;
+    }
+
+    .ext-summary dd {
+        font-size: 1.125rem;
+    }
+
+    .ext-summary__value {
+        font-size: 1.5rem;
+    }
+
+    .ext-filters__top {
+        flex-wrap: wrap;
+    }
+
+    .ext-filters__top .ext-search {
+        flex-basis: 100%;
+    }
+
+    /* Celular: "Filtros" e a contagem na mesma linha */
+    .ext-filters {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        column-gap: 12px;
+    }
+
+    .ext-filters__top {
+        display: contents;
+    }
+
+    .ext-filters__top .ext-search {
+        grid-column: 1 / -1;
+        margin-bottom: 10px;
+    }
+
+    .ext-filters__toggle {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .ext-filters__status {
+        display: contents;
+    }
+
+    .ext-total {
+        grid-column: 2;
+        grid-row: 2;
+    }
+
+    .ext-chips-wrap {
+        grid-column: 1 / -1;
+        grid-row: 4;
+        margin-top: 10px;
+    }
+
+    .ext-filters__more.is-open {
+        grid-column: 1 / -1;
+        grid-row: 3;
+    }
+
+    .extrato {
+        padding-top: var(--spacing-6, 1.5rem);
+    }
+
+    .ext-container {
+        padding: 0 16px;
+    }
+
+    .extrato .ext-title {
+        font-size: 1.75rem;
+    }
+
+    .ext-actions {
+        width: 100%;
+        flex-direction: column-reverse;
+    }
+
+    .ext-actions .ext-btn {
+        width: 100%;
+        min-height: 48px;
+    }
+
+    .ext-filters__more.is-open {
+        grid-template-columns: 1fr;
+    }
+
+    .ext-list {
+        border-radius: 14px;
+    }
+
+    .ext-bulk {
+        bottom: 0;
+        flex-wrap: wrap;
+        gap: 10px;
+        width: 100%;
+        border-radius: 18px 18px 0 0;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .ext-bulk__info {
+        flex-basis: 100%;
+    }
+
+    .ext-bulk__actions {
+        flex: 1;
+    }
+
+    .ext-bulk__actions .ext-btn {
+        flex: 1;
+        min-height: 48px;
+    }
+}
+
+@media (max-width: 360px) {
+    .ext-filters__toggle {
+        padding: 0 14px;
+    }
+
+    .ext-row__amount {
+        font-size: 0.875rem;
+    }
+}
+
+/* Toque: alvos de pelo menos 44px */
+@media (pointer: coarse), (max-width: 1199px) {
+    .ext-chip,
+    .ext-wallet {
+        min-height: 44px;
+    }
+
+    .ext-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+    }
 }

@@ -371,51 +371,118 @@ img {
 
 /* ===== COMPONENTS ===== */
 
-/* Buttons */
+/* Buttons — padrão único do site (design-do-site.md)
+   Um formato (pílula), três alturas e quatro papéis:
+   primário (azul-marinho), secundário (branco com contorno),
+   perigo (vermelho) e perigo discreto (contorno vermelho).
+   Verde, roxo e dourado não são cores de botão. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3) var(--spacing-6);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  border-radius: var(--radius-lg);
-  transition: all var(--transition-base);
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.btn-primary {
-  background: var(--gradient-primary);
-  color: var(--color-text-inverse);
-  box-shadow: var(--shadow-md), 0 0 20px rgba(16, 185, 129, 0.2);
+.btn svg {
+  flex: none;
 }
 
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg), 0 0 30px rgba(16, 185, 129, 0.3);
+.btn:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
 }
 
-.btn-secondary {
-  background: var(--color-surface);
-  color: var(--color-text);
-  border: 2px solid var(--color-border);
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
-.btn-secondary:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+.btn.btn-primary {
+  background: #12284a;
+  border-color: #12284a;
+  color: #fff;
+  box-shadow: none;
 }
 
-.btn-lg {
-  padding: var(--spacing-4) var(--spacing-8);
-  font-size: var(--font-size-lg);
-  border-radius: var(--radius-xl);
+.btn.btn-secondary,
+.btn.btn-outline,
+.btn.btn-outline-primary {
+  background: #fff;
+  border-color: #e3e8ef;
+  color: #0f172a;
+  box-shadow: none;
 }
 
-.btn-sm {
-  padding: var(--spacing-2) var(--spacing-4);
-  font-size: var(--font-size-sm);
+.btn.btn-danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+
+.btn.btn-danger-outline {
+  background: #fff;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.btn.btn-lg {
+  min-height: 52px;
+  padding: 0 28px;
+  font-size: 1rem;
+}
+
+.btn.btn-sm {
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 0.875rem;
+}
+
+/* No toque, todo botão tem pelo menos 44px de altura */
+@media (pointer: coarse) {
+  .btn.btn-sm {
+    min-height: 44px;
+  }
+}
+
+/* Passar o mouse: só onde há mouse (no celular o efeito fica preso) */
+@media (hover: hover) {
+  .btn.btn-primary:hover:not(:disabled) {
+    background: #1f3d6b;
+    border-color: #1f3d6b;
+    color: #fff;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn.btn-secondary:hover:not(:disabled),
+  .btn.btn-outline:hover:not(:disabled),
+  .btn.btn-outline-primary:hover:not(:disabled) {
+    border-color: #12284a;
+    color: #0f172a;
+  }
+
+  .btn.btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+    border-color: #b91c1c;
+  }
+
+  .btn.btn-danger-outline:hover:not(:disabled) {
+    border-color: #dc2626;
+    background: #fef2f2;
+  }
 }
 
 /* Cards */

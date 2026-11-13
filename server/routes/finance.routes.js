@@ -281,9 +281,20 @@ router.get('/transactions', authMiddleware, async (req, res) => {
         // Count Total (for pagination metadata)
         // We use a separate query to count the total filtered records
         // Simple regex replace to get count query might be fragile, but effective here
-        const countQueryStr = `SELECT COUNT(*) FROM (` + query + `) as filtered_data`
+        // Junto com a contagem, os totais do filtro inteiro (não só da página),
+        // para o resumo do Extrato: receitas, despesas e quanto das despesas está pendente
+        const countQueryStr = `SELECT COUNT(*),
+            COALESCE(SUM(CASE WHEN type = 'RECEITA' THEN amount END), 0) AS receitas,
+            COALESCE(SUM(CASE WHEN type = 'DESPESA' THEN amount END), 0) AS despesas,
+            COALESCE(SUM(CASE WHEN type = 'DESPESA' AND status = 'PENDING' THEN amount END), 0) AS pendentes
+            FROM (` + query + `) as filtered_data`
         const countRes = await db.query(countQueryStr, params)
         const totalCount = parseInt(countRes.rows[0].count)
+        const totals = {
+            receitas: Number(countRes.rows[0].receitas) || 0,
+            despesas: Number(countRes.rows[0].despesas) || 0,
+            pendentes: Number(countRes.rows[0].pendentes) || 0
+        }
 
         // Pagination
         query += ` ORDER BY t."billing_date" DESC, t.date DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
@@ -294,6 +305,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
         res.json({
             data: rows,
             totalCount,
+            totals,
             totalPages: Math.ceil(totalCount / limit),
             currentPage: Number(page)
         })

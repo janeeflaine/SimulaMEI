@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
+import { Home, LayoutDashboard, Wallet, Bell, Gem, Calculator, ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPANY, CONTACT_EMAILS } from '../utils/legalInfo'
 import './UserLayout.css'
@@ -96,13 +97,13 @@ export default function UserLayout() {
 
                         <div className={`nav-links ${isMenuOpen ? 'mobile-active' : ''}`}>
                             <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
-                                🏠 Home
+                                <Home size={16} aria-hidden="true" /> Início
                             </Link>
 
                             {user ? (
                                 <>
                                     <Link to="/dashboard" className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}>
-                                        📊 Dashboard
+                                        <LayoutDashboard size={16} aria-hidden="true" /> Painel
                                     </Link>
 
                                     <div className={`nav-dropdown ${isFinanceOpen ? 'active' : ''}`}>
@@ -113,26 +114,26 @@ export default function UserLayout() {
                                                 setIsFinanceOpen(!isFinanceOpen);
                                             }}
                                         >
-                                            💰 Finanças <span className={`arrow ${isFinanceOpen ? 'up' : 'down'}`}>▼</span>
+                                            <Wallet size={16} aria-hidden="true" /> Finanças
+                                            <span className={`arrow ${isFinanceOpen ? 'up' : 'down'}`} aria-hidden="true"><ChevronDown size={14} /></span>
                                         </button>
                                         <div className="dropdown-content">
-                                            <Link to="/financas/extrato" className="dropdown-item">Extrato Financeiro</Link>
-                                            <Link to="/financas/contas" className="dropdown-item">Contas a Pagar</Link>
+                                            <Link to="/financas/extrato" className="dropdown-item">Extrato</Link>
+                                            <Link to="/financas/contas" className="dropdown-item">Contas a pagar</Link>
                                             <Link to="/financas/categorias" className="dropdown-item">Categorias</Link>
                                             <Link to="/financas/cartoes" className="dropdown-item">Cartões</Link>
-                                            <div style={{ padding: '0.5rem', cursor: 'default' }}></div>
-                                            <Link to="/financas/gerenciar-contas" className="dropdown-item" style={{ color: 'var(--color-primary)', fontWeight: '500' }}>👥 Gerenciar Pessoas</Link>
+                                            <Link to="/financas/gerenciar-contas" className="dropdown-item dropdown-item--sep">Carteiras</Link>
                                         </div>
                                     </div>
 
                                     {(user.plan === 'Ouro' || Number(user.planId) === 3) && (
                                         <Link to="/alertas" className={`nav-link ${location.pathname === '/alertas' ? 'active' : ''}`}>
-                                            🔔 Alertas
+                                            <Bell size={16} aria-hidden="true" /> Alertas
                                         </Link>
                                     )}
 
                                     <Link to="/planos" className={`nav-link nav-link-plans ${location.pathname === '/planos' ? 'active' : ''}`}>
-                                        💎 Planos
+                                        <Gem size={16} aria-hidden="true" /> Planos
                                     </Link>
 
                                     <div className="user-menu">
@@ -159,14 +160,14 @@ export default function UserLayout() {
                             ) : (
                                 <>
                                     <Link to="/simular" className={`nav-link ${location.pathname === '/simular' ? 'active' : ''}`}>
-                                        🚀 Simular
+                                        <Calculator size={16} aria-hidden="true" /> Simular
                                     </Link>
                                     <Link to="/planos" className={`nav-link nav-link-plans ${location.pathname === '/planos' ? 'active' : ''}`}>
-                                        💎 Planos
+                                        <Gem size={16} aria-hidden="true" /> Planos
                                     </Link>
                                     <Link to="/login" className="nav-link">Entrar</Link>
                                     <Link to="/cadastro" className="btn btn-primary btn-sm">
-                                        Criar Conta
+                                        Criar conta
                                     </Link>
                                 </>
                             )}
