@@ -49,4 +49,47 @@ const validateWalletOwnership = async (req, res, next) => {
     }
 }
 
-module.exports = { validateWalletOwnership }
+/**
+ * Confere se a categoria (categoryId) e o cartão (cardId) mandados no corpo
+ * pertencem ao usuário. Sem isso, dava para gravar o id de outra pessoa num
+ * lançamento ou item de fatura e ler o nome da categoria ou do cartão dela.
+ */
+const REFERENCES = {
+    categoryId: { table: 'finance_categories', message: 'Acesso negado: essa categoria não é da sua conta.' },
+    cardId: { table: 'credit_cards', message: 'Acesso negado: esse cartão não é da sua conta.' }
+}
+
+const isEmptyReference = (value) => value === undefined || value === null || value === ''
+
+const findForeignReference = async (userId, body = {}) => {
+    for (const [field, ref] of Object.entries(REFERENCES)) {
+        const value = body[field]
+        if (isEmptyReference(value)) continue
+
+        const id = Number(value)
+        if (!Number.isInteger(id) || id <= 0) return { field, ...ref }
+
+        const { rows } = await db.query(
+            `SELECT 1 FROM ${ref.table} WHERE id = $1 AND "userId" = $2`,
+            [id, userId]
+        )
+        if (rows.length === 0) return { field, ...ref }
+    }
+    return null
+}
+
+const validateReferenceOwnership = async (req, res, next) => {
+    try {
+        const foreign = await findForeignReference(req.user.id, req.body)
+        if (foreign) {
+            console.warn(`[Security] User ${req.user.id} sent a ${foreign.field} that is not theirs: ${req.body[foreign.field]}`)
+            return res.status(403).json({ message: foreign.message, code: 'REFERENCE_OWNERSHIP_VIOLATION' })
+        }
+        next()
+    } catch (err) {
+        console.error('[Security] Reference validation error:', err)
+        return res.status(500).json({ message: 'Erro interno ao validar os dados enviados.' })
+    }
+}
+
+module.exports = { validateWalletOwnership, validateReferenceOwnership, findForeignReference }

@@ -5,6 +5,12 @@ const { authMiddleware } = require('../middleware/auth')
 const { MercadoPagoConfig, Payment } = require('mercadopago')
 const { getAccessToken, upgradeUser, syncPaymentStatus } = require('../utils/payment.utils')
 
+// Modo de teste (Pix falso, sem Mercado Pago) só existe em desenvolvimento e com a
+// variável ALLOW_MOCK_PAYMENTS=true. Antes, bastava o token do Mercado Pago não estar
+// configurado para qualquer pessoa logada "pagar" o próprio plano pelo /mock-pay.
+const mockPaymentsAllowed = () =>
+    process.env.ALLOW_MOCK_PAYMENTS === 'true' && process.env.NODE_ENV !== 'production'
+
 // Create Payment
 router.post('/create', authMiddleware, async (req, res) => {
     try {
@@ -22,6 +28,9 @@ router.post('/create', authMiddleware, async (req, res) => {
         if (plan.price <= 0) return res.status(400).json({ message: 'Plano gratuito não requer pagamento' })
 
         // 2. Mock Mode Logic
+        if (MOCK_MODE && !mockPaymentsAllowed()) {
+            return res.status(503).json({ message: 'Pagamento por Pix indisponível no momento. Assine pelo cartão na página de planos.' })
+        }
         if (MOCK_MODE) {
             const mockPaymentId = `mock_${Date.now()}`
             const qrCode = "00020126580014BR.GOV.BCB.PIX0136123e4567-e89b-12d3-a456-426614174000520400005303986540510.005802BR5913Cicrano de Tal6008Brasilia62070503***6304E2CA"
@@ -86,7 +95,7 @@ router.post('/create', authMiddleware, async (req, res) => {
 
     } catch (error) {
         console.error('Payment creation error:', error)
-        res.status(500).json({ message: 'Erro ao criar pagamento', error: error.message, stack: error.stack })
+        res.status(500).json({ message: 'Erro ao criar pagamento' })
     }
 })
 
@@ -167,23 +176,28 @@ router.post('/webhook', async (req, res) => {
 
 // MOCK: Simulate Webhook (Dev only)
 router.post('/:id/mock-pay', authMiddleware, async (req, res) => {
-    const accessToken = await getAccessToken()
-    if (accessToken) return res.status(403).json({ message: 'Only available in Mock Mode (No Access Token Set)' })
+    try {
+        if (!mockPaymentsAllowed()) return res.status(404).json({ message: 'API Route not found' })
 
-    const paymentId = req.params.id
+        const accessToken = await getAccessToken()
+        if (accessToken) return res.status(403).json({ message: 'Only available in Mock Mode (No Access Token Set)' })
 
-    // Update Payment
-    await db.query("UPDATE payments SET status = 'approved', \"updatedAt\" = CURRENT_TIMESTAMP WHERE id = $1", [paymentId])
+        // Só o dono do pagamento, e só pagamento de teste ainda pendente
+        const paymentResult = await db.query(
+            `SELECT * FROM payments WHERE id = $1 AND "userId" = $2 AND status = 'pending' AND "externalId" LIKE 'mock\\_%'`,
+            [req.params.id, req.user.id]
+        )
+        const payment = paymentResult.rows[0]
+        if (!payment) return res.status(404).json({ message: 'Pagamento não encontrado' })
 
-    // Get Payment to upgrade user
-    const paymentResult = await db.query('SELECT * FROM payments WHERE id = $1', [paymentId])
-    const payment = paymentResult.rows[0]
-
-    if (payment) {
+        await db.query("UPDATE payments SET status = 'approved', \"updatedAt\" = CURRENT_TIMESTAMP WHERE id = $1", [payment.id])
         await upgradeUser(payment)
-    }
 
-    res.json({ success: true, status: 'approved' })
+        res.json({ success: true, status: 'approved' })
+    } catch (error) {
+        console.error('[MockPay] Error:', error)
+        res.status(500).json({ message: 'Erro ao simular pagamento' })
+    }
 })
 
 // Check Status (With Sync)

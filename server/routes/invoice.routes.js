@@ -8,6 +8,7 @@ const express = require('express')
 const router = express.Router()
 const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
+const { validateReferenceOwnership } = require('../middleware/walletSecurity')
 const { featureGuard } = require('../middleware/planGuard')
 const cartoesGuard = featureGuard('cartoes')
 const uploadFaturasGuard = featureGuard('upload_faturas')
@@ -262,7 +263,7 @@ router.delete('/:id', authMiddleware, cartoesGuard, async (req, res) => {
 // =============================================
 
 // POST /api/finance/invoices/:id/items — Add item to invoice
-router.post('/:id/items', authMiddleware, cartoesGuard, async (req, res) => {
+router.post('/:id/items', authMiddleware, cartoesGuard, validateReferenceOwnership, async (req, res) => {
     try {
         const { id: invoiceId } = req.params
         const { description, amount, transactionDate, categoryId, aiCategory, aiConfidence, installment } = req.body
@@ -302,7 +303,7 @@ router.post('/:id/items', authMiddleware, cartoesGuard, async (req, res) => {
 })
 
 // PATCH /api/finance/invoices/items/:itemId — Update an item
-router.patch('/items/:itemId', authMiddleware, cartoesGuard, async (req, res) => {
+router.patch('/items/:itemId', authMiddleware, cartoesGuard, validateReferenceOwnership, async (req, res) => {
     try {
         const { itemId } = req.params
         const { categoryId, categoryName, isConfirmed, description, amount } = req.body

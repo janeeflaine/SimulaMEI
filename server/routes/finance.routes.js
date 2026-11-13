@@ -2,11 +2,35 @@ const express = require('express')
 const router = express.Router()
 const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
-const { validateWalletOwnership } = require('../middleware/walletSecurity')
+const { validateWalletOwnership, validateReferenceOwnership } = require('../middleware/walletSecurity')
 const { calculateBillingDate } = require('../utils/billingDate')
 const { featureGuard } = require('../middleware/planGuard')
 const cartoesGuard = featureGuard('cartoes')
 const transferenciasGuard = featureGuard('transferencias', 2)
+
+// Valor de lançamento/transferência: número maior que zero
+const isValidAmount = (value) => {
+    if (value === '' || value === null || value === undefined || typeof value === 'boolean') return false
+    const n = Number(value)
+    return Number.isFinite(n) && n > 0
+}
+
+const WALLET_TYPES = ['PF', 'PJ']
+const normalizeAccountType = (value) => String(value || 'PF').trim().toUpperCase()
+
+// Limites de carteira do plano: total, PF e PJ (0 = ilimitado)
+const getWalletLimits = async (planId) => {
+    const [totalRow, pfRow, pjRow] = await Promise.all([
+        pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_limit_${planId}`]),
+        pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_pf_limit_${planId}`]),
+        pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_pj_limit_${planId}`]),
+    ])
+    return {
+        totalLimit: totalRow.rows.length > 0 ? parseInt(totalRow.rows[0].value) : 2,
+        pfLimit: pfRow.rows.length > 0 ? parseInt(pfRow.rows[0].value) : 1,
+        pjLimit: pjRow.rows.length > 0 ? parseInt(pjRow.rows[0].value) : 1,
+    }
+}
 
 // Verifica limite de carteiras do plano antes de criar uma nova
 const checkWalletLimit = async (req, res, next) => {
@@ -17,18 +41,13 @@ const checkWalletLimit = async (req, res, next) => {
 
         if (isAdmin || inTrial) return next()
 
-        const accountType = (req.body.account_type || 'PF').toUpperCase() // 'PF' ou 'PJ'
+        const accountType = normalizeAccountType(req.body.account_type) // 'PF' ou 'PJ'
+        if (!WALLET_TYPES.includes(accountType)) {
+            return res.status(400).json({ message: 'Tipo de carteira inválido. Use PF ou PJ.' })
+        }
 
         // Buscar os 3 limites em paralelo
-        const [totalRow, pfRow, pjRow] = await Promise.all([
-            pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_limit_${planId}`]),
-            pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_pf_limit_${planId}`]),
-            pool.query('SELECT value FROM system_settings WHERE key = $1', [`wallet_pj_limit_${planId}`]),
-        ])
-
-        const totalLimit = totalRow.rows.length > 0 ? parseInt(totalRow.rows[0].value) : 2
-        const pfLimit    = pfRow.rows.length   > 0 ? parseInt(pfRow.rows[0].value)    : 1
-        const pjLimit    = pjRow.rows.length   > 0 ? parseInt(pjRow.rows[0].value)    : 1
+        const { totalLimit, pfLimit, pjLimit } = await getWalletLimits(planId)
 
         // Buscar contagens atuais
         const { rows: counts } = await pool.query(
@@ -108,6 +127,19 @@ const checkTransactionLimit = async (req, res, next) => {
     }
 }
 
+// Plano Gratuito: o extrato mostra só os últimos 30 dias. O servidor trava em 31
+// (um dia de folga para o fuso), então mudar as datas na chamada não traz mais nada.
+// O Painel do Gratuito pede só o mês atual, que sempre cabe nessa janela.
+const FREE_HISTORY_DAYS = 31
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
+const freeHistoryStart = (user, now = new Date()) => {
+    if (!user || user.role === 'ADMIN' || user.isInTrial === true) return null
+    if ((Number(user.planId) || 1) !== 1) return null
+    const start = new Date(now.getTime() - FREE_HISTORY_DAYS * 24 * 60 * 60 * 1000)
+    return start.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+}
+
 // --- CATEGORIES ---
 
 router.get('/categories', authMiddleware, async (req, res) => {
@@ -179,7 +211,7 @@ router.get('/cards', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/cards', authMiddleware, cartoesGuard, async (req, res) => {
+router.post('/cards', authMiddleware, cartoesGuard, validateWalletOwnership, async (req, res) => {
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
     try {
         const { rows: [newCard] } = await db.query(
@@ -193,7 +225,7 @@ router.post('/cards', authMiddleware, cartoesGuard, async (req, res) => {
     }
 })
 
-router.patch('/cards/:id', authMiddleware, cartoesGuard, async (req, res) => {
+router.patch('/cards/:id', authMiddleware, cartoesGuard, validateWalletOwnership, async (req, res) => {
     const { id } = req.params
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
     try {
@@ -234,7 +266,13 @@ router.delete('/cards/:id', authMiddleware, cartoesGuard, async (req, res) => {
 
 router.get('/transactions', authMiddleware, async (req, res) => {
     try {
-        const { page = 1, limit = 15, walletId, type, search, startDate, endDate } = req.query
+        const { page = 1, limit = 15, walletId, type, search, endDate } = req.query
+        let { startDate } = req.query
+
+        const historyStart = freeHistoryStart(req.user)
+        if (historyStart && (!DATE_ONLY.test(String(startDate || '')) || startDate < historyStart)) {
+            startDate = historyStart
+        }
 
         const offset = (page - 1) * limit
         const params = [req.user.id]
@@ -260,7 +298,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
         // New Category Filter
         if (req.query.categoryId && req.query.categoryId !== 'ALL') {
             params.push(req.query.categoryId)
-            query += ` AND t."categoryId" IN (SELECT id FROM finance_categories WHERE TRIM(name) = (SELECT TRIM(name) FROM finance_categories WHERE id = $${params.length}))`
+            query += ` AND t."categoryId" IN (SELECT id FROM finance_categories WHERE "userId" = $1 AND TRIM(name) = (SELECT TRIM(name) FROM finance_categories WHERE id = $${params.length} AND "userId" = $1))`
         }
 
         if (search) {
@@ -316,8 +354,12 @@ router.get('/transactions', authMiddleware, async (req, res) => {
     }
 })
 
-router.post('/transactions', authMiddleware, checkTransactionLimit, validateWalletOwnership, async (req, res) => {
+router.post('/transactions', authMiddleware, checkTransactionLimit, validateWalletOwnership, validateReferenceOwnership, async (req, res) => {
     let { type, target, amount, date, categoryId, paymentMethod, cardId, description, isRecurring, isSubscription, dueDate, business_unit_id } = req.body
+
+    if (!isValidAmount(amount)) {
+        return res.status(400).json({ message: 'Informe um valor maior que zero.' })
+    }
 
     // Normalize empty strings to null for ID and date columns
     const finalCategoryId = categoryId === '' || categoryId === null ? null : categoryId
@@ -335,8 +377,8 @@ router.post('/transactions', authMiddleware, checkTransactionLimit, validateWall
         if (paymentMethod === 'Cartão de Crédito' && finalCardId) {
             // Fetch card's closing and due day to calculate billing_date
             const { rows: cardRows } = await db.query(
-                'SELECT "closingDay", "dueDate" FROM credit_cards WHERE id = $1',
-                [finalCardId]
+                'SELECT "closingDay", "dueDate" FROM credit_cards WHERE id = $1 AND "userId" = $2',
+                [finalCardId, req.user.id]
             )
             if (cardRows.length > 0 && cardRows[0].closingDay && cardRows[0].dueDate) {
                 billingDate = calculateBillingDate(date, cardRows[0].closingDay, cardRows[0].dueDate)
@@ -357,7 +399,7 @@ router.post('/transactions', authMiddleware, checkTransactionLimit, validateWall
 })
 
 // Confirm payment of a pending transaction
-router.patch('/transactions/:id/confirm', authMiddleware, async (req, res) => {
+router.patch('/transactions/:id/confirm', authMiddleware, validateWalletOwnership, async (req, res) => {
     try {
         const { business_unit_id } = req.body || {}
         // Update status to PAID, date to current timestamp, billing_date to current date, and optionally assign wallet
@@ -403,7 +445,7 @@ router.get('/transactions/due-today', authMiddleware, async (req, res) => {
 
 // Update a transaction
 // Update a transaction (supports partial updates)
-router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, async (req, res) => {
+router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, validateReferenceOwnership, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     const allowedUpdates = [
@@ -418,6 +460,10 @@ router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, async
 
         if (keys.length === 0) {
             return res.status(400).json({ message: 'Nenhum campo válido para atualização' });
+        }
+
+        if (keys.includes('amount') && !isValidAmount(updates.amount)) {
+            return res.status(400).json({ message: 'Informe um valor maior que zero.' });
         }
 
         // Build dynamic query
@@ -453,8 +499,8 @@ router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, async
 
             if (txPaymentMethod === 'Cartão de Crédito' && txCardId) {
                 const { rows: cardRows } = await db.query(
-                    'SELECT "closingDay", "dueDate" FROM credit_cards WHERE id = $1',
-                    [txCardId]
+                    'SELECT "closingDay", "dueDate" FROM credit_cards WHERE id = $1 AND "userId" = $2',
+                    [txCardId, req.user.id]
                 );
                 if (cardRows.length > 0 && cardRows[0].closingDay && cardRows[0].dueDate) {
                     newBillingDate = calculateBillingDate(txDate, cardRows[0].closingDay, cardRows[0].dueDate);
@@ -462,8 +508,8 @@ router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, async
             }
 
             await db.query(
-                'UPDATE finance_transactions SET "billing_date" = $1 WHERE id = $2',
-                [newBillingDate, id]
+                'UPDATE finance_transactions SET "billing_date" = $1 WHERE id = $2 AND "userId" = $3',
+                [newBillingDate, id, req.user.id]
             );
             updated.billing_date = newBillingDate;
         }
@@ -550,6 +596,14 @@ router.post('/transfers', authMiddleware, transferenciasGuard, validateWalletOwn
 
     if (!sourceWalletId || !targetWalletId || !amount || !date) {
         return res.status(400).json({ message: 'Dados incompletos para transferência.' });
+    }
+
+    if (!isValidAmount(amount)) {
+        return res.status(400).json({ message: 'Informe um valor maior que zero.' });
+    }
+
+    if (Number(sourceWalletId) === Number(targetWalletId)) {
+        return res.status(400).json({ message: 'Escolha carteiras diferentes para a transferência.' });
     }
 
     const client = await pool.connect();
@@ -650,6 +704,11 @@ router.post('/business-units', authMiddleware, checkWalletLimit, async (req, res
         // 1. Mudamos "userId" para "ownerId" (para bater com seu banco)
         // 2. Mudamos "photo_url" para "logo_url" (se sua coluna no banco for logo_url)
 
+        const accountType = normalizeAccountType(account_type)
+        if (!WALLET_TYPES.includes(accountType)) {
+            return res.status(400).json({ message: 'Tipo de carteira inválido. Use PF ou PJ.' })
+        }
+
         const { rows: [newUnit] } = await db.query(
             `INSERT INTO business_units 
             ("ownerId", name, account_type, cnpj, logo_url, "isPrimary") 
@@ -658,7 +717,7 @@ router.post('/business-units', authMiddleware, checkWalletLimit, async (req, res
             [
                 req.user.id,        // $1: Vai para ownerId
                 name,               // $2: Vai para name
-                account_type,       // $3: Vai para account_type
+                accountType,        // $3: Vai para account_type
                 cnpj,               // $4: Vai para cnpj
                 photo_url,          // $5: Salva em logo_url
                 isPrimary || false  // $6: isPrimary
@@ -672,12 +731,43 @@ router.post('/business-units', authMiddleware, checkWalletLimit, async (req, res
     }
 })
 
+// Trocar uma carteira de PF para PJ (ou o contrário) conta no limite do novo tipo
+const walletTypeChangeBlocked = async (user, newType) => {
+    if (user?.role === 'ADMIN' || user?.isInTrial === true) return null
+    const planId = Number(user.planId) || 1
+    const { pfLimit, pjLimit } = await getWalletLimits(planId)
+    const limit = newType === 'PF' ? pfLimit : pjLimit
+    if (!(limit > 0)) return null
+    const { rows: [row] } = await pool.query(
+        'SELECT COUNT(*) as count FROM business_units WHERE "ownerId" = $1 AND account_type = $2',
+        [user.id, newType]
+    )
+    if (parseInt(row?.count || 0) < limit) return null
+    const label = newType === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'
+    return `Seu plano permite no máximo ${limit} carteira${limit > 1 ? 's' : ''} ${label}. Faça upgrade para adicionar mais.`
+}
+
 router.put('/business-units/:id', authMiddleware, async (req, res) => {
     const { name, account_type, cnpj, photo_url, isPrimary } = req.body
     try {
+        const { rows: [current] } = await db.query(
+            'SELECT account_type FROM business_units WHERE id = $1 AND "ownerId" = $2',
+            [req.params.id, req.user.id]
+        )
+        if (!current) return res.status(404).json({ message: 'Carteira não encontrada' })
+
+        const accountType = account_type === undefined ? current.account_type : normalizeAccountType(account_type)
+        if (!WALLET_TYPES.includes(accountType)) {
+            return res.status(400).json({ message: 'Tipo de carteira inválido. Use PF ou PJ.' })
+        }
+        if (accountType !== current.account_type) {
+            const blocked = await walletTypeChangeBlocked(req.user, accountType)
+            if (blocked) return res.status(403).json({ message: blocked })
+        }
+
         const { rows: [updated] } = await db.query(
             'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "logo_url" = $4, "isPrimary" = $5 WHERE id = $6 AND "ownerId" = $7 RETURNING *',
-            [name, account_type, cnpj, photo_url, isPrimary, req.params.id, req.user.id]
+            [name, accountType, cnpj, photo_url, isPrimary, req.params.id, req.user.id]
         )
         if (!updated) return res.status(404).json({ message: 'Carteira não encontrada' })
         res.json(updated)

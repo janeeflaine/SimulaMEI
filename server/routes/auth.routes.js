@@ -452,6 +452,11 @@ router.post('/reset-password', async (req, res) => {
 // ─── Get Current User ─────────────────────────────────────────────────────────
 
 router.get('/me', authMiddleware, (req, res) => {
+    // Com pagamento pendente, o site mostra o plano escolhido para cobrar;
+    // os recursos liberados (planFeatures) continuam os do Gratuito até pagar.
+    if (req.user.pendingPlanId) {
+        return res.json({ ...req.user, planId: req.user.pendingPlanId, plan: req.user.pendingPlan })
+    }
     res.json(req.user)
 })
 

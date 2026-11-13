@@ -86,6 +86,9 @@ export function AuthProvider({ children }) {
                 const user = await res.json()
                 localStorage.setItem('user', JSON.stringify(user))
                 setUser(user)
+            } else if (res.status === 401 || res.status === 403) {
+                // Sessão encerrada, conta bloqueada ou excluída: sai e volta para o login
+                logout()
             }
         } catch (error) {
             console.error('Error refreshing user:', error)

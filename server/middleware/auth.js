@@ -31,6 +31,14 @@ const authMiddleware = async (req, res, next) => {
             return res.status(401).json({ message: 'Usuário não encontrado' })
         }
 
+        // Conta excluída ou bloqueada pelo admin: o token antigo para de valer na hora
+        if (user.deletedAt) {
+            return res.status(401).json({ message: 'Usuário não encontrado' })
+        }
+        if (Number(user.isBlocked) === 1 || user.isBlocked === true) {
+            return res.status(403).json({ message: 'Sua conta está bloqueada. Fale com o suporte.', code: 'ACCOUNT_BLOCKED' })
+        }
+
         // Session version check: if token carries a version number (sv) that no
         // longer matches the DB, the session was invalidated (concurrent login from
         // a new device). Tokens issued before this feature have no sv field → skip.
@@ -84,6 +92,25 @@ const authMiddleware = async (req, res, next) => {
             planFeatures = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
         } catch (_) { planFeatures = {} }
 
+        // Cadastro com plano pago ainda sem pagamento: o plano escolhido fica guardado
+        // (para a página de planos cobrar), mas o acesso é o do Gratuito até pagar.
+        let pendingPlanId = null
+        let pendingPlan = null
+        if (user.subscriptionStatus === 'pending_payment' && user.role !== 'ADMIN') {
+            const freeResult = await db.query('SELECT id, name, features FROM plans WHERE price = 0 LIMIT 1')
+            const free = freeResult.rows[0]
+            if (free && Number(free.id) !== Number(finalPlanId)) {
+                pendingPlanId = finalPlanId
+                pendingPlan = finalPlan
+                finalPlanId = Number(free.id)
+                finalPlan = free.name
+                try {
+                    const raw = free.features
+                    planFeatures = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
+                } catch (_) { planFeatures = {} }
+            }
+        }
+
         req.user = {
             id: user.id,
             name: user.name,
@@ -91,6 +118,8 @@ const authMiddleware = async (req, res, next) => {
             role: user.role,
             plan: finalPlan,
             planId: finalPlanId,
+            pendingPlanId,
+            pendingPlan,
             subscriptionStatus: user.subscriptionStatus,
             planExpiresAt: user.planExpiresAt,
             isInTrial,

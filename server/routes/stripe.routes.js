@@ -79,7 +79,7 @@ router.post('/create-checkout-session', authMiddleware, async (req, res) => {
 
     } catch (err) {
         console.error('Stripe Checkout Error:', err)
-        res.status(500).json({ message: 'Erro ao gerar checkout', error: err.message })
+        res.status(500).json({ message: 'Erro ao gerar checkout' })
     }
 })
 
@@ -257,13 +257,25 @@ router.get('/verify-session', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'Sessão Stripe não encontrada' })
         }
 
-        const userId = session.client_reference_id || session.metadata?.userId || req.user.id
+        // Só vale a sessão de pagamento da própria pessoa
+        const sessionUserId = session.client_reference_id || session.metadata?.userId
+        if (!sessionUserId || String(sessionUserId) !== String(req.user.id)) {
+            return res.status(404).json({ message: 'Sessão Stripe não encontrada' })
+        }
+
+        const userId = req.user.id
         const planId = session.metadata?.planId
 
         // Active if payment status is paid OR session status is complete
         const isPaid = session.payment_status === 'paid' || session.status === 'complete'
 
-        if (isPaid && planId) {
+        // A assinatura criada pela sessão precisa estar valendo agora. Sem isso, o link
+        // de um pagamento antigo (de uma assinatura já cancelada) reativava o plano de graça.
+        const subscription = isPaid && planId && session.mode === 'subscription'
+            ? await getLiveSubscription(stripe, typeof session.subscription === 'string' ? session.subscription : session.subscription?.id)
+            : null
+
+        if (subscription) {
             await db.query(`
                 UPDATE users 
                 SET "stripeCustomerId" = $1, 
@@ -273,7 +285,7 @@ router.get('/verify-session', authMiddleware, async (req, res) => {
                     "planExpiresAt" = NULL,
                     "updatedAt" = CURRENT_TIMESTAMP
                 WHERE id = $4
-            `, [session.customer, session.subscription, planId, userId])
+            `, [session.customer, subscription.id, planId, userId])
 
             const planRes = await db.query('SELECT name FROM plans WHERE id = $1', [planId])
             const planName = planRes.rows[0]?.name || 'Premium'
@@ -295,11 +307,40 @@ router.get('/verify-session', authMiddleware, async (req, res) => {
         })
     } catch (err) {
         console.error('Stripe verify-session error:', err)
-        res.status(500).json({ message: 'Erro ao verificar sessão', error: err.message })
+        res.status(500).json({ message: 'Erro ao verificar sessão' })
     }
 })
 
 // 3. Webhook Handler
+
+// Situações da assinatura em que o acesso pago acaba. Em 'past_due' o Stripe ainda
+// está tentando cobrar de novo: o plano continua até ele desistir (vira 'unpaid'
+// ou 'canceled'), como já valia para trocar e cancelar (LIVE_STATUSES).
+const DOWNGRADE_STATUSES = ['unpaid', 'canceled', 'incomplete_expired', 'paused']
+
+const idOf = (value) => (typeof value === 'string' ? value : value?.id) || null
+
+/** Id da assinatura (sub_...) de um evento de assinatura, fatura ou checkout */
+const subscriptionIdOf = (event) => {
+    const obj = event.data.object || {}
+    if (event.type.startsWith('customer.subscription.')) return obj.id || null
+    // Fatura: campo antigo `subscription` ou, nas versões novas da API, em parent.subscription_details
+    return idOf(obj.subscription) || idOf(obj.parent?.subscription_details?.subscription)
+}
+
+const downgradeSubscription = async (subscriptionId) => {
+    const freePlanResult = await db.query('SELECT id FROM plans WHERE price = 0 LIMIT 1')
+    const freePlanId = freePlanResult.rows[0]?.id || 1
+    await db.query(`
+        UPDATE users 
+        SET "subscriptionStatus" = 'expired', 
+            "planId" = $1,
+            "planExpiresAt" = NULL,
+            "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "stripeSubscriptionId" = $2
+    `, [freePlanId, subscriptionId])
+}
+
 const webhookHandler = async (req, res) => {
     const stripe = getStripe()
     if (!stripe) return res.status(200).send('Stripe disabled.')
@@ -362,21 +403,17 @@ const webhookHandler = async (req, res) => {
             case 'customer.subscription.deleted':
             case 'customer.subscription.paused':
                 {
-                    const obj = event.data.object
-                    const subId = obj.id || obj.subscription
-
-                    const freePlanResult = await db.query('SELECT id FROM plans WHERE price = 0 LIMIT 1')
-                    const freePlanId = freePlanResult.rows[0]?.id || 1
-
-                    if (subId) {
-                        await db.query(`
-                            UPDATE users 
-                            SET "subscriptionStatus" = 'expired', 
-                                "planId" = $1,
-                                "updatedAt" = CURRENT_TIMESTAMP
-                            WHERE "stripeSubscriptionId" = $2
-                        `, [freePlanId, subId])
-                        console.log(`Subscription ${subId} canceled/failed. User downgraded.`)
+                    // Cada evento traz um objeto diferente: assinatura (id = sub_...),
+                    // fatura ou sessão de checkout (a assinatura vem em outro campo)
+                    const subId = subscriptionIdOf(event)
+                    // Fatura recusada não encerra a assinatura sozinha: o Stripe tenta de novo,
+                    // e numa troca de plano recusada nada muda. Só rebaixa se ela não vale mais.
+                    const stillLive = subId && !event.type.startsWith('customer.subscription.')
+                        ? await getLiveSubscription(stripe, subId)
+                        : null
+                    if (subId && !stillLive) {
+                        await downgradeSubscription(subId)
+                        console.log(`Subscription ${subId} canceled/failed (${event.type}). User downgraded.`)
                     }
                 }
                 break;
@@ -384,7 +421,11 @@ const webhookHandler = async (req, res) => {
             case 'customer.subscription.updated':
                 {
                     const subscription = event.data.object
-                    if (subscription.status === 'active' || subscription.status === 'trialing') {
+                    // Cobrança falhou de vez, assinatura cancelada ou vencida: volta ao Gratuito
+                    if (DOWNGRADE_STATUSES.includes(subscription.status)) {
+                        await downgradeSubscription(subscription.id)
+                        console.log(`Subscription ${subscription.id} is ${subscription.status}. User downgraded.`)
+                    } else if (subscription.status === 'active' || subscription.status === 'trialing') {
                         // Plano segue o preço da assinatura (troca feita no site ou no painel do Stripe)
                         const priceId = subscription.items?.data?.[0]?.price?.id || null
                         const planId = await planIdForPrice(priceId)

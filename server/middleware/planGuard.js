@@ -43,8 +43,7 @@ const featureGuard = (featureKey, fallbackMinPlanId = 2) => (req, res, next) => 
     if (typeof features[featureKey] === 'boolean') {
         if (features[featureKey]) return next()
         return res.status(403).json({
-            message: `Funcionalidade "${featureKey}" não disponível no seu plano atual.`,
-            debug: { planId: req.user?.planId, planFeatures: features }
+            message: `Funcionalidade "${featureKey}" não disponível no seu plano atual.`
         })
     }
     // Fallback: comportamento por planId (planos sem features configuradas)

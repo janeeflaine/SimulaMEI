@@ -16,7 +16,8 @@ jest.mock('../middleware/auth', () => ({
 }))
 
 jest.mock('../middleware/walletSecurity', () => ({
-    validateWalletOwnership: (req, res, next) => next()
+    validateWalletOwnership: (req, res, next) => next(),
+    validateReferenceOwnership: (req, res, next) => next()
 }))
 
 jest.mock('../middleware/planGuard', () => ({
