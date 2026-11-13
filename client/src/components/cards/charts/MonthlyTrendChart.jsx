@@ -4,7 +4,8 @@ const BAR_COLOR = '#12284a' // azul-marinho: o que saiu nos cartões
 const BAR_SOFT = '#a9b8cc' // os outros meses, quando um mês está escolhido
 
 const brl = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-const short = (v) => (v >= 1000 ? `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${Math.round(v)}`)
+// Abaixo de mil, mostra os centavos quando a marca tem (R$ 2,5), em vez de arredondar e repetir valores
+const short = (v) => (v >= 1000 ? `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`)
 
 /** Marcas redondas no eixo (0, 1 mil, 2 mil...) em vez das que o gráfico calcula sozinho */
 const niceTicks = (data) => {

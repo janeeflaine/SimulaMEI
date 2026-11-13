@@ -33,6 +33,12 @@ const formatDate = (value) => {
 const shortDate = (value) => formatDate(value).slice(0, 5)
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 const daysInMonth = (year, month) => new Date(year, month, 0).getDate()
+// Uso do limite: abaixo de 10% com uma casa (0,2%), para não mostrar 0% com fatura aberta
+const limitUse = (total, limit) => {
+    const pct = (total / limit) * 100
+    if (pct > 0 && pct < 0.1) return 'menos de 0,1%'
+    return `${pct.toLocaleString('pt-BR', { maximumFractionDigits: pct < 10 ? 1 : 0 })}%`
+}
 
 // "1.234,56", "45,9", "R$ 10" → número. Volta NaN se não for valor.
 const parseMoney = (text) => {
@@ -663,7 +669,7 @@ export default function CardDashboard() {
                                     <Stat
                                         icon={Gauge}
                                         label="Uso do limite"
-                                        value={stats.last ? `${Math.round((stats.last.total / stats.limit) * 100)}%` : '—'}
+                                        value={stats.last ? limitUse(stats.last.total, stats.limit) : '—'}
                                         note={stats.last ? `fatura de ${lastMonthName}, de ${brl(stats.limit)}` : null}
                                     />
                                 ) : (
