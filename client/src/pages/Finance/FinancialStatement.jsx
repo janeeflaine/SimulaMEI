@@ -736,6 +736,7 @@ export default function FinancialStatement() {
                 isEditModalOpen && (
                     <FinanceQuickActionModal
                         initialData={editingTransaction}
+                        onWalletCreated={fetchWallets}
                         onClose={() => {
                             setIsEditModalOpen(false)
                             setEditingTransaction(null)
@@ -753,6 +754,7 @@ export default function FinancialStatement() {
                 isCreateModalOpen && (
                     <FinanceQuickActionModal
                         onClose={() => setIsCreateModalOpen(false)}
+                        onWalletCreated={fetchWallets}
                         onSuccess={() => {
                             fetchTransactions()
                         }}

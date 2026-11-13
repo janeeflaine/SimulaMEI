@@ -485,6 +485,7 @@ export default function BillsToPay() {
             {isFinanceModalOpen && (
                 <FinanceQuickActionModal
                     onClose={() => setIsFinanceModalOpen(false)}
+                    onWalletCreated={fetchWallets}
                     onSuccess={() => {
                         fetchBills()
                     }}

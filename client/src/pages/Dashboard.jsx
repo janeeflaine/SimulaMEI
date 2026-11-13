@@ -1176,6 +1176,12 @@ export default function Dashboard() {
             {isFinanceModalOpen && (
                 <FinanceQuickActionModal
                     onClose={() => setIsFinanceModalOpen(false)}
+                    onWalletCreated={() => {
+                        if (userPlan?.features?.multi_carteiras || user?.isInTrial) {
+                            fetchWallets()
+                            fetchWalletBreakdown()
+                        }
+                    }}
                     onSuccess={() => {
                         fetchTransactions()
                         fetchStats()
