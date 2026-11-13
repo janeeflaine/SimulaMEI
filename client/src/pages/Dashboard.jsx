@@ -1,47 +1,34 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import FeatureLock from '../components/FeatureLock'
 import FinanceQuickActionModal from '../components/FinanceQuickActionModal'
+import { useConfirmDialog } from '../components/ui/ConfirmDialog'
+import { tierOf } from '../components/plans/planFeatures'
 import './Dashboard.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
-    LayoutDashboard,
-    PlusCircle,
-    TrendingUp,
-    TrendingDown,
-    Wallet,
-    PieChart as PieChartIcon,
-    BarChart3,
-    ArrowUpRight,
-    ArrowDownRight,
+    Plus,
     Calendar,
-    Clock,
-    AlertCircle,
-    CheckCircle2,
-    FileDown,
+    ChevronDown,
+    ChevronLeft,
     ChevronRight,
-    Search,
-    History,
+    Calculator,
+    Scale,
     CreditCard,
-    Filter,
-    ChevronDown
+    FileDown,
+    Lock,
+    Camera
 } from 'lucide-react'
 import {
     ResponsiveContainer,
-    AreaChart,
-    Area,
     XAxis,
     YAxis,
     CartesianGrid,
     Tooltip,
-    PieChart,
-    Pie,
-    Cell,
     BarChart,
-    Bar,
-    Legend
+    Bar
 } from 'recharts'
 
 // Helper: get date range for a filter preset
@@ -73,15 +60,168 @@ const getDateRange = (preset) => {
 }
 
 const FILTER_LABELS = {
-    thisMonth: 'Este Mês',
-    lastMonth: 'Mês Passado',
-    thisYear: 'Este Ano',
+    thisMonth: 'Este mês',
+    lastMonth: 'Mês passado',
+    thisYear: 'Este ano',
     all: 'Tudo',
     custom: 'Personalizado'
 }
 
+const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+
+/** "1 conta vencida" / "2 contas vencidas" */
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
+/** Período escolhido no filtro, em palavras: "novembro de 2026", "2026", "todo o período"... */
+const describePeriod = (preset, startDate, endDate) => {
+    const now = new Date()
+    if (preset === 'thisMonth') return `${MONTH_NAMES[now.getMonth()]} de ${now.getFullYear()}`
+    if (preset === 'lastMonth') {
+        const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        return `${MONTH_NAMES[d.getMonth()]} de ${d.getFullYear()}`
+    }
+    if (preset === 'thisYear') return String(now.getFullYear())
+    if (preset === 'all' || (!startDate && !endDate)) return 'todo o período'
+    const br = (s) => s ? s.split('-').reverse().join('/') : '...'
+    return `${br(startDate)} a ${br(endDate)}`
+}
+
+/** Eixo do gráfico: "R$ 6 mil" */
+const compactBRL = (v) => {
+    if (!v) return 'R$ 0'
+    if (Math.abs(v) >= 1000) return `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`
+    return `R$ ${Math.round(v)}`
+}
+
+const EMPTY_WALLET = { name: '', account_type: 'PF', document: '', photo_url: '' }
+
+/**
+ * Janela "Nova carteira" no padrão das janelas do site (mesma moldura do ConfirmDialog):
+ * no computador fica no meio da tela; no celular sobe de baixo.
+ */
+function NewWalletDialog({ form, setForm, saving, onSave, onClose }) {
+    const overlayRef = useRef(null)
+    const nameRef = useRef(null)
+    const isPJ = form.account_type === 'PJ'
+    const onCloseRef = useRef(onClose)
+    onCloseRef.current = onClose
+
+    useEffect(() => {
+        const previouslyFocused = document.activeElement
+        nameRef.current?.focus()
+        const { overflow } = document.body.style
+        document.body.style.overflow = 'hidden'
+        const onKey = (e) => {
+            if (e.key !== 'Escape') return
+            // Se um aviso do site estiver aberto por cima, o Esc fecha só o aviso
+            const overlays = document.querySelectorAll('.cd-overlay')
+            if (overlays[overlays.length - 1] !== overlayRef.current) return
+            e.preventDefault()
+            onCloseRef.current()
+        }
+        document.addEventListener('keydown', onKey)
+        return () => {
+            document.removeEventListener('keydown', onKey)
+            document.body.style.overflow = overflow
+            if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus()
+        }
+    }, [])
+
+    const setType = (type) => setForm(prev => ({ ...prev, account_type: type, document: '' }))
+
+    const onDocument = (e) => {
+        let v = e.target.value.replace(/\D/g, '')
+        if (form.account_type === 'PF') {
+            v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
+        } else {
+            v = v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2').slice(0, 18)
+        }
+        setForm(prev => ({ ...prev, document: v }))
+    }
+
+    const onPhoto = (e) => {
+        const file = e.target.files[0]
+        if (file) {
+            const reader = new FileReader()
+            reader.onload = () => setForm(prev => ({ ...prev, photo_url: reader.result }))
+            reader.readAsDataURL(file)
+            e.target.value = null
+        }
+    }
+
+    const initial = (form.name || '').trim().charAt(0).toUpperCase()
+
+    return (
+        <div ref={overlayRef} className="cd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+            <form
+                className="cd-box wd-box"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="wd-title"
+                onSubmit={(e) => { e.preventDefault(); if (!saving && form.name.trim()) onSave() }}
+            >
+                <h2 id="wd-title" className="cd-title">Nova carteira</h2>
+                <p className="cd-message">Use uma carteira para o MEI e outra para o pessoal. Em cada lançamento você escolhe de qual carteira é.</p>
+
+                <fieldset className="wd-field wd-types">
+                    <legend>Tipo</legend>
+                    <label className={`wd-type ${!isPJ ? 'is-on' : ''}`}>
+                        <input type="radio" name="wd-type" checked={!isPJ} onChange={() => setType('PF')} />
+                        <span><strong>Pessoal</strong><small>Com CPF</small></span>
+                    </label>
+                    <label className={`wd-type ${isPJ ? 'is-on' : ''}`}>
+                        <input type="radio" name="wd-type" checked={isPJ} onChange={() => setType('PJ')} />
+                        <span><strong>Empresa (MEI)</strong><small>Com CNPJ</small></span>
+                    </label>
+                </fieldset>
+
+                <label className="wd-field">
+                    <span>{isPJ ? 'Nome da empresa' : 'Nome da carteira'}</span>
+                    <input
+                        ref={nameRef}
+                        type="text"
+                        placeholder={isPJ ? 'Ex.: Doces da Ana' : 'Ex.: Conta pessoal'}
+                        value={form.name}
+                        onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                </label>
+
+                <label className="wd-field">
+                    <span>{isPJ ? 'CNPJ' : 'CPF'} <em>(opcional)</em></span>
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder={isPJ ? '00.000.000/0000-00' : '000.000.000-00'}
+                        value={form.document}
+                        onChange={onDocument}
+                    />
+                </label>
+
+                <div className="wd-field wd-photo">
+                    <span className="wd-photo__preview" aria-hidden="true">
+                        {form.photo_url ? <img src={form.photo_url} alt="" /> : (initial || <Camera size={20} />)}
+                    </span>
+                    <label className="wd-photo__btn">
+                        {form.photo_url ? 'Trocar foto' : 'Escolher foto'}
+                        <input type="file" accept="image/*" onChange={onPhoto} />
+                    </label>
+                    <small>Opcional</small>
+                </div>
+
+                <div className="cd-actions">
+                    <button type="button" className="cd-btn" onClick={onClose}>Cancelar</button>
+                    <button type="submit" className="cd-btn cd-btn--primary" disabled={saving || !form.name.trim()}>
+                        {saving ? 'Criando...' : 'Criar carteira'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    )
+}
+
 export default function Dashboard() {
     const { user } = useAuth()
+    const { notify, dialog } = useConfirmDialog()
     const [simulations, setSimulations] = useState([])
     const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
@@ -417,7 +557,6 @@ export default function Dashboard() {
         return Object.entries(categories).map(([name, value]) => ({ name, value }))
     }, [transactions])
 
-    const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6']
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -452,25 +591,25 @@ export default function Dashboard() {
         if (totalPages <= 1) return null
 
         return (
-            <div className="pagination-controls">
+            <nav className="painel-pages" aria-label="Páginas">
                 <button
-                    className="btn-outline"
+                    type="button"
+                    className="painel-btn painel-btn--quiet"
                     disabled={current === 1}
                     onClick={() => onPageChange(current - 1)}
                 >
-                    Anterior
+                    <ChevronLeft size={16} aria-hidden="true" /> Anterior
                 </button>
-                <span>
-                    Página <strong>{current}</strong> de {totalPages}
-                </span>
+                <span><span className="painel-pages__word">Página </span>{current} de {totalPages}</span>
                 <button
-                    className="btn-outline"
+                    type="button"
+                    className="painel-btn painel-btn--quiet"
                     disabled={current === totalPages}
                     onClick={() => onPageChange(current + 1)}
                 >
-                    Próxima
+                    Próxima <ChevronRight size={16} aria-hidden="true" />
                 </button>
-            </div>
+            </nav>
         )
     }
 
@@ -515,57 +654,183 @@ export default function Dashboard() {
         }
     }
 
+    // Nova carteira (antes avisava erro com a janela do navegador)
+    const closeWalletDialog = () => {
+        setShowNewWalletModal(false)
+        setNewWalletForm(EMPTY_WALLET)
+    }
+
+    const handleCreateWallet = async () => {
+        setSavingWallet(true)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/finance/business-units', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    name: newWalletForm.name,
+                    account_type: newWalletForm.account_type,
+                    cnpj: newWalletForm.document,
+                    photo_url: newWalletForm.photo_url
+                })
+            })
+            if (res.ok) {
+                setShowNewWalletModal(false)
+                setNewWalletForm(EMPTY_WALLET)
+                fetchWalletBreakdown()
+                fetchWallets()
+            } else {
+                const err = await res.json().catch(() => ({}))
+                notify({
+                    title: 'Não foi possível criar a carteira',
+                    message: err.message || 'Tente de novo em instantes.',
+                    tone: 'error'
+                })
+            }
+        } catch (err) {
+            console.error(err)
+            notify({
+                title: 'Sem conexão com o servidor',
+                message: 'Confira a internet e tente de novo. Nada foi salvo.',
+                tone: 'error'
+            })
+        } finally {
+            setSavingWallet(false)
+        }
+    }
+
+    // Menu de período: fecha ao tocar fora ou com Esc
+    const filterRef = useRef(null)
+    useEffect(() => {
+        if (!isFilterOpen) return undefined
+        const onDown = (e) => {
+            if (filterRef.current && !filterRef.current.contains(e.target)) setIsFilterOpen(false)
+        }
+        const onKey = (e) => { if (e.key === 'Escape') setIsFilterOpen(false) }
+        document.addEventListener('mousedown', onDown)
+        document.addEventListener('touchstart', onDown)
+        document.addEventListener('keydown', onKey)
+        return () => {
+            document.removeEventListener('mousedown', onDown)
+            document.removeEventListener('touchstart', onDown)
+            document.removeEventListener('keydown', onKey)
+        }
+    }, [isFilterOpen])
+
+    // ── Dados já calculados, só arrumados para a tela ──────────────────────
+    const canFilter = userPlan?.features?.multi_carteiras || user?.isInTrial
+    const canSeeCharts = userPlan?.features?.historico || user?.isInTrial
+    const canSeeCards = (userPlan?.features?.cartoes || user?.isInTrial) && cardSummary?.cards?.length > 0
+    const firstName = user?.name?.split(' ')[0]
+    const periodText = describePeriod(filterPreset, startDate, endDate)
+    const selectedWallet = wallets.find(w => String(w.id) === String(walletId))
+    const pjWallets = wallets.filter(w => w.account_type === 'PJ')
+    const pfWallets = wallets.filter(w => w.account_type === 'PF')
+
+    const { totalRevenue, totalExpense, balance, profitPJ, revenuePJ, expensePF, expensePJ } = financialSummary
+    const flowMax = Math.max(totalRevenue, totalExpense, 1)
+    const margin = revenuePJ > 0 ? Math.round((profitPJ / revenuePJ) * 100) : null
+    const resultCaption = totalRevenue === 0 && totalExpense === 0
+        ? 'Nenhum lançamento pago neste período.'
+        : balance >= 0 ? 'Entrou mais dinheiro do que saiu.' : 'Saiu mais dinheiro do que entrou.'
+
+    // O servidor manda o mês em inglês ("Feb") e os valores como texto; aqui viram "Fev" e número.
+    // No ano atual, os meses que ainda não chegaram ficam de fora do gráfico.
+    const nowYear = new Date().getFullYear()
+    const chartData = memoizedCashFlowData
+        .map((m, i) => ({ name: MONTH_NAMES[i] ? MONTH_NAMES[i].slice(0, 3).replace(/^./, c => c.toUpperCase()) : m.name, entrada: Number(m.entrada) || 0, saida: Number(m.saida) || 0 }))
+        .slice(0, cashFlowYear === nowYear ? new Date().getMonth() + 1 : 12)
+
+    const sortedCats = [...categoryData].sort((a, b) => b.value - a.value)
+    const catTotal = sortedCats.reduce((acc, c) => acc + c.value, 0) || 1
+    const shownCats = sortedCats.length > 6
+        ? [...sortedCats.slice(0, 5), { name: 'Outras', value: sortedCats.slice(5).reduce((acc, c) => acc + c.value, 0) }]
+        : sortedCats
+    const catMax = Math.max(...shownCats.map(c => c.value), 1)
+
+    const walletMax = Math.max(...walletBreakdown.map(w => Number(w.total) || 0), 1)
+
+    const planName = userPlan?.name || user?.plan || 'Gratuito'
+    const tier = tierOf(planName)
+    const planNote = {
+        gratuito: 'Com o Prata você usa o assistente no WhatsApp, contas a pagar com lembrete e várias carteiras.',
+        prata: 'Com o Ouro você também manda áudio, foto de boleto e comprovante pelo WhatsApp.',
+        ouro: 'Você tem todos os recursos do EuSempreMEI liberados.'
+    }[tier]
+
+    const dueTitle = (() => {
+        if (!showDueTodayAlert || dueTodayBills.length === 0) return null
+        const overdue = dueTodayBills.filter(b => b.alertType === 'OVERDUE').length
+        const today = dueTodayBills.filter(b => b.alertType === 'DUE_TODAY').length
+        if (overdue && today) return `${plural(overdue, 'conta vencida', 'contas vencidas')} e ${today} ${today === 1 ? 'vence' : 'vencem'} hoje`
+        if (overdue) return plural(overdue, 'conta vencida', 'contas vencidas')
+        return `${plural(today, 'conta vence', 'contas vencem')} hoje`
+    })()
+
     return (
-        <div className="dashboard-page">
-            <div className="dashboard-container">
+        <div className="painel">
+            <div className="painel-container">
 
-                {/* Header Section */}
-                <div className="dashboard-header">
-                    <div className="header-welcome">
-                        <h1>Olá, {user?.name?.split(' ')[0]} 👋</h1>
-                        <p>Bem-vindo à sua central de inteligência financeira.</p>
-                    </div>
-                    <div className="header-actions">
-                        {/* Smart Filters — guiado por features */}
-                        {(userPlan?.features?.multi_carteiras || user?.isInTrial) && (
+                {/* Topo: saudação, filtros e novo lançamento */}
+                <header className="painel-head">
+                    <h1 className="painel-title">Olá, {firstName}</h1>
+                    <div className="painel-actions">
+                        {canFilter && (
                             <>
-                                {/* Wallet Filter */}
-                                <select
-                                    className="dashboard-filter-select"
-                                    value={walletId}
-                                    onChange={e => setWalletId(e.target.value)}
-                                >
-                                    <option value="">🏦 Todas as Carteiras</option>
-                                    {wallets.filter(w => w.account_type === 'PJ').map(w => (
-                                        <option key={w.id} value={w.id}>🏢 {w.name}</option>
-                                    ))}
-                                    {wallets.filter(w => w.account_type === 'PF').map(w => (
-                                        <option key={w.id} value={w.id}>👤 {w.name}</option>
-                                    ))}
-                                </select>
+                                <label className="painel-select">
+                                    <span className="painel-sr">Carteira</span>
+                                    <select value={walletId} onChange={e => setWalletId(e.target.value)}>
+                                        <option value="">Todas as carteiras</option>
+                                        {pjWallets.length > 0 && (
+                                            <optgroup label="MEI">
+                                                {pjWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                            </optgroup>
+                                        )}
+                                        {pfWallets.length > 0 && (
+                                            <optgroup label="Pessoal">
+                                                {pfWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                            </optgroup>
+                                        )}
+                                    </select>
+                                    <ChevronDown size={16} aria-hidden="true" />
+                                </label>
 
-                                {/* Date Filter */}
-                                <div className="dashboard-filter-wrapper">
+                                <div className="painel-filter" ref={filterRef}>
                                     <button
-                                        className="dashboard-filter-btn"
+                                        type="button"
+                                        className="painel-btn painel-btn--ghost"
+                                        aria-haspopup="true"
+                                        aria-expanded={isFilterOpen}
                                         onClick={() => setIsFilterOpen(!isFilterOpen)}
                                     >
-                                        <Calendar size={16} />
-                                        <span>📅 {FILTER_LABELS[filterPreset]}</span>
-                                        <ChevronDown size={14} />
+                                        <Calendar size={16} aria-hidden="true" />
+                                        {FILTER_LABELS[filterPreset]}
+                                        <ChevronDown size={16} aria-hidden="true" />
                                     </button>
 
                                     {isFilterOpen && (
-                                        <div className="dashboard-filter-dropdown">
-                                            <button className={`filter-option ${filterPreset === 'thisMonth' ? 'active' : ''}`} onClick={() => applyPreset('thisMonth')}>📆 Este Mês</button>
-                                            <button className={`filter-option ${filterPreset === 'lastMonth' ? 'active' : ''}`} onClick={() => applyPreset('lastMonth')}>⏪ Mês Passado</button>
-                                            <button className={`filter-option ${filterPreset === 'thisYear' ? 'active' : ''}`} onClick={() => applyPreset('thisYear')}>📅 Este Ano</button>
-                                            <button className={`filter-option ${filterPreset === 'all' ? 'active' : ''}`} onClick={() => applyPreset('all')}>♾️ Tudo</button>
-                                            <div className="filter-divider"></div>
-                                            <div className="filter-custom">
-                                                <span className="filter-custom-label">Personalizado</span>
-                                                <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setFilterPreset('custom') }} />
-                                                <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setFilterPreset('custom') }} />
+                                        <div className="painel-menu">
+                                            {['thisMonth', 'lastMonth', 'thisYear', 'all'].map(p => (
+                                                <button
+                                                    key={p}
+                                                    type="button"
+                                                    className={`painel-menu__item ${filterPreset === p ? 'is-on' : ''}`}
+                                                    aria-pressed={filterPreset === p}
+                                                    onClick={() => applyPreset(p)}
+                                                >
+                                                    {FILTER_LABELS[p]}
+                                                </button>
+                                            ))}
+                                            <div className="painel-menu__custom">
+                                                <span>Outro período</span>
+                                                <label>
+                                                    De
+                                                    <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setFilterPreset('custom') }} />
+                                                </label>
+                                                <label>
+                                                    Até
+                                                    <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setFilterPreset('custom') }} />
+                                                </label>
                                             </div>
                                         </div>
                                     )}
@@ -573,486 +838,338 @@ export default function Dashboard() {
                             </>
                         )}
 
-                        <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
-                            <PlusCircle size={18} /> Novo Lançamento
+                        <button type="button" className="painel-btn painel-btn--primary" onClick={() => setIsFinanceModalOpen(true)}>
+                            <Plus size={18} aria-hidden="true" /> Novo lançamento
                         </button>
                     </div>
-                </div>
+                </header>
 
-                {/* Trial Expiration Alert */}
+                {/* Avisos */}
                 {user?.trialExpired && user?.plan === 'Gratuito' && (
-                    <div className="due-alert-banner trial-expired">
-                        <div className="alert-icon-ring" style={{ background: '#fee2e2' }}>
-                            <AlertCircle size={20} color="#ef4444" />
+                    <div className="painel-notice" role="status">
+                        <div className="painel-notice__text">
+                            <strong>Seu teste grátis terminou</strong>
+                            <span>Para continuar com finanças, alertas e gráficos, escolha um plano.</span>
                         </div>
-                        <div style={{ flex: 1 }}>
-                            <strong style={{ display: 'block', color: '#991b1b' }}>Seu período de avaliação terminou</strong>
-                            <span style={{ fontSize: '0.875rem', color: '#b91c1c' }}>
-                                Para continuar usando os recursos premium (Finanças, Alertas e Gráficos), faça o upgrade para o plano Ouro.
-                            </span>
-                        </div>
-                        <Link to="/planos" className="btn btn-primary btn-sm" style={{ background: '#ef4444', border: 'none' }}>
-                            Fazer Upgrade
-                        </Link>
-                    </div>
-                )}
-
-                {/* Critical Notifications */}
-                {showDueTodayAlert && dueTodayBills.length > 0 && (() => {
-                    const overdue = dueTodayBills.filter(b => b.alertType === 'OVERDUE')
-                    const today = dueTodayBills.filter(b => b.alertType === 'DUE_TODAY')
-                    const hasOverdue = overdue.length > 0
-                    const hasToday = today.length > 0
-
-                    // Red tone for overdue, amber for today-only
-                    const bannerBg = hasOverdue ? '#fef2f2' : '#fffbeb'
-                    const bannerBorder = hasOverdue ? '#fecaca' : '#fde68a'
-                    const titleColor = hasOverdue ? '#991b1b' : '#92400e'
-                    const subtitleColor = hasOverdue ? '#b91c1c' : '#b45309'
-                    const btnBg = hasOverdue ? '#dc2626' : '#b45309'
-                    const iconRingBg = hasOverdue ? '#fee2e2' : '#fef3c7'
-                    const iconRingColor = hasOverdue ? '#dc2626' : '#f59e0b'
-
-                    let title = ''
-                    let subtitle = ''
-
-                    if (hasOverdue && hasToday) {
-                        title = '⚠️ Pagamentos vencidos e vencendo hoje'
-                        subtitle = `Você possui ${overdue.length} conta(s) vencida(s) e ${today.length} vencendo hoje.`
-                    } else if (hasOverdue) {
-                        title = '🚨 Pagamentos vencidos'
-                        subtitle = `Você possui ${overdue.length} conta(s) vencida(s) aguardando pagamento.`
-                    } else {
-                        title = 'Pagamentos vencendo hoje'
-                        subtitle = `Você possui ${today.length} conta(s) pendente(s) para hoje.`
-                    }
-
-                    return (
-                        <div className="due-alert-banner" style={{ background: bannerBg, borderColor: bannerBorder }}>
-                            <div className="alert-icon-ring" style={{ background: iconRingBg, color: iconRingColor }}>
-                                <Calendar size={20} />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <strong style={{ display: 'block', color: titleColor }}>{title}</strong>
-                                <span style={{ fontSize: '0.875rem', color: subtitleColor }}>
-                                    {subtitle}
-                                </span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button onClick={handleSnooze} className="btn-snooze">Adiar 1h</button>
-                                <Link to="/financas/contas" className="btn btn-primary btn-sm" style={{ background: btnBg, boxShadow: 'none' }}>Ver Contas</Link>
-                            </div>
-                        </div>
-                    )
-                })()}
-
-                {/* Master Financial Summary — disponível para todos os planos */}
-                {true ? (
-                    <div className="financial-summary-section">
-                        <div className="summary-grid">
-                            <div className="summary-card revenue">
-                                <div className="card-header">
-                                    <div className="card-icon"><TrendingUp size={20} /></div>
-                                    <span className="card-label">Receita Bruta</span>
-                                </div>
-                                <div className="card-value">{formatCurrency(financialSummary.totalRevenue)}</div>
-                                <div className="card-subtext">
-                                    <span className="text-success"><ArrowUpRight size={14} /> +12%</span> em relação ao mês anterior
-                                </div>
-                            </div>
-                            <div className="summary-card expense">
-                                <div className="card-header">
-                                    <div className="card-icon"><TrendingDown size={20} /></div>
-                                    <span className="card-label">Despesas Totais</span>
-                                </div>
-                                <div className="card-value">{formatCurrency(financialSummary.totalExpense)}</div>
-                                <div className="card-subtext">
-                                    PF: {formatCurrency(financialSummary.expensePF)} | PJ: {formatCurrency(financialSummary.expensePJ)}
-                                </div>
-                            </div>
-                            <div className="summary-card profit">
-                                <div className="card-header">
-                                    <div className="card-icon"><BarChart3 size={20} /></div>
-                                    <span className="card-label">Lucro Empresa</span>
-                                </div>
-                                <div className="card-value">{formatCurrency(financialSummary.profitPJ)}</div>
-                                <div className="card-subtext">Margem operacional de 45%</div>
-                            </div>
-                            <div className="summary-card balance">
-                                <div className="card-header">
-                                    <div className="card-icon"><Wallet size={20} /></div>
-                                    <span className="card-label">Saldo Disponível</span>
-                                </div>
-                                <div className="card-value">{formatCurrency(financialSummary.balance)}</div>
-                                <div className="card-subtext">Consolidado (PF + PJ)</div>
-                            </div>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="stats-grid" style={{ marginBottom: '40px' }}>
-                        <div className="stat-card">
-                            <div className="stat-card-label">Simulações</div>
-                            <div className="stat-card-value">{stats.totalSimulations}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-card-label">Faturamento Médio</div>
-                            <div className="stat-card-value text-primary">{formatCurrency(stats.avgRevenue)}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-card-label">Status do Limite</div>
-                            <div className="stat-card-value">
-                                <span className={`badge badge-${stats.limitStatus}`}>
-                                    {stats.limitStatus === 'success' ? 'Normal' : 'Atenção'}
-                                </span>
-                            </div>
+                        <div className="painel-notice__actions">
+                            <Link to="/planos" className="painel-btn painel-btn--primary">Ver planos</Link>
                         </div>
                     </div>
                 )}
 
-                {/* Wallet Breakdown Section */}
-                {(userPlan?.features?.multi_carteiras || user?.isInTrial) && (
-                    <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9', marginBottom: '24px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '1.5rem' }}>👥</span>
-                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>
-                                    {walletBreakdownType === 'DESPESA' ? 'Gastos' : 'Receitas'} por Carteira
-                                </h3>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {/* Toggle Despesas / Receitas */}
-                                <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                                    <button
-                                        onClick={() => { setWalletBreakdownType('DESPESA'); }}
-                                        style={{ padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer', background: walletBreakdownType === 'DESPESA' ? '#ef4444' : '#f8fafc', color: walletBreakdownType === 'DESPESA' ? 'white' : '#64748b', transition: 'all 0.2s' }}
-                                    >Despesas</button>
-                                    <button
-                                        onClick={() => { setWalletBreakdownType('RECEITA'); }}
-                                        style={{ padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer', background: walletBreakdownType === 'RECEITA' ? '#10b981' : '#f8fafc', color: walletBreakdownType === 'RECEITA' ? 'white' : '#64748b', transition: 'all 0.2s' }}
-                                    >Receitas</button>
-                                </div>
-                                {/* Adicionar Carteira */}
-                                <button onClick={() => setShowNewWalletModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', cursor: 'pointer', transition: 'all 0.2s' }}>
-                                    + Adicionar Carteira
-                                </button>
-                            </div>
+                {dueTitle && (
+                    <div className="painel-notice" role="status">
+                        <div className="painel-notice__text">
+                            <strong>{dueTitle}</strong>
+                            <span>Os valores e as datas estão em Contas a pagar.</span>
                         </div>
-
-                        {walletBreakdown.length > 0 ? (
-                            <div style={{ display: 'flex', gap: '24px', overflowX: 'auto', paddingBottom: '8px' }}>
-                                {walletBreakdown.map(w => (
-                                    <div key={w.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '100px', gap: '8px' }}>
-                                        {/* Circle Avatar */}
-                                        <div style={{
-                                            width: '80px', height: '80px', borderRadius: '50%',
-                                            background: w.logo_url ? 'transparent' : (walletBreakdownType === 'DESPESA'
-                                                ? 'linear-gradient(135deg, #f97316, #ef4444)'
-                                                : 'linear-gradient(135deg, #10b981, #3b82f6)'),
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '2rem', boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
-                                            border: `3px solid ${walletBreakdownType === 'DESPESA' ? '#fecaca' : '#bbf7d0'}`,
-                                            overflow: 'hidden', flexShrink: 0
-                                        }}>
-                                            {w.logo_url ? (
-                                                <img src={w.logo_url} alt={w.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                            ) : (
-                                                w.account_type === 'PJ' ? '🏢' : '👤'
-                                            )}
-                                        </div>
-                                        {/* Name */}
-                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155', textAlign: 'center', maxWidth: '100px', lineHeight: '1.3', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                            {w.name}
-                                        </span>
-                                        {/* Value */}
-                                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: walletBreakdownType === 'DESPESA' ? '#ef4444' : '#10b981' }}>
-                                            {formatCurrency(w.total)}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '0.9rem' }}>
-                                Nenhuma carteira cadastrada. Crie uma carteira para visualizar o breakdown.
-                            </div>
-                        )}
+                        <div className="painel-notice__actions">
+                            <button type="button" className="painel-btn painel-btn--quiet" onClick={handleSnooze}>Lembrar em 1 hora</button>
+                            <Link to="/financas/contas" className="painel-btn painel-btn--primary">Ver contas a pagar</Link>
+                        </div>
                     </div>
                 )}
 
-                {/* Visual Analysis */}
-                {(userPlan?.features?.historico || user?.isInTrial) ? (
-                    <div className="charts-grid">
-                        <div className="chart-container">
-                            <div className="chart-header">
-                                <h3>Fluxo de Caixa Anual</h3>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {/* Resultado do período: o destaque da página */}
+                <section className="painel-result" aria-labelledby="painel-result-title">
+                    <div className="painel-result__main">
+                        <h2 id="painel-result-title" className="painel-result__label">
+                            Resultado de {periodText}
+                            {selectedWallet && <span>Carteira {selectedWallet.name}</span>}
+                        </h2>
+                        <p className="painel-result__value">{formatCurrency(balance)}</p>
+                        <p className="painel-result__caption">{resultCaption} Conta só os lançamentos já pagos.</p>
+                    </div>
+                    <dl className="painel-result__flow">
+                        <div className="painel-flow painel-flow--in">
+                            <dt>Entrou</dt>
+                            <dd>
+                                <span className="painel-flow__value">{formatCurrency(totalRevenue)}</span>
+                                <span className="painel-flow__bar" aria-hidden="true"><i style={{ width: `${(totalRevenue / flowMax) * 100}%` }} /></span>
+                            </dd>
+                        </div>
+                        <div className="painel-flow painel-flow--out">
+                            <dt>Saiu</dt>
+                            <dd>
+                                <span className="painel-flow__value">{formatCurrency(totalExpense)}</span>
+                                <span className="painel-flow__bar" aria-hidden="true"><i style={{ width: `${(totalExpense / flowMax) * 100}%` }} /></span>
+                                <small>{formatCurrency(expensePJ)} do MEI e {formatCurrency(expensePF)} pessoal</small>
+                            </dd>
+                        </div>
+                        <div className="painel-flow painel-flow--profit">
+                            <dt>Lucro do MEI</dt>
+                            <dd>
+                                <span className="painel-flow__value">{formatCurrency(profitPJ)}</span>
+                                {margin !== null && <small>Margem de {margin}% sobre o que o MEI recebeu</small>}
+                            </dd>
+                        </div>
+                    </dl>
+                </section>
+
+                {/* Gráficos */}
+                {canSeeCharts ? (
+                    <section className="painel-block painel-charts" aria-label="Gráficos">
+                        <div className="painel-chart">
+                            <div className="painel-block__head">
+                                <h2 className="painel-h2">Entradas e saídas em {cashFlowYear}</h2>
+                                <div className="painel-year">
+                                    <button type="button" className="painel-icon-btn" onClick={() => setCashFlowYear(prev => prev - 1)} aria-label="Ano anterior">
+                                        <ChevronLeft size={18} aria-hidden="true" />
+                                    </button>
                                     <button
-                                        onClick={() => setCashFlowYear(prev => prev - 1)}
-                                        style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '2px 8px', cursor: 'pointer', color: '#64748b', fontSize: '14px', lineHeight: '1.5' }}
-                                        title="Ano anterior"
-                                    >◀</button>
-                                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#334155', minWidth: '44px', textAlign: 'center' }}>{cashFlowYear}</span>
-                                    <button
+                                        type="button"
+                                        className="painel-icon-btn"
                                         onClick={() => setCashFlowYear(prev => prev + 1)}
-                                        disabled={cashFlowYear >= new Date().getFullYear()}
-                                        style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '2px 8px', cursor: cashFlowYear >= new Date().getFullYear() ? 'not-allowed' : 'pointer', color: cashFlowYear >= new Date().getFullYear() ? '#cbd5e1' : '#64748b', fontSize: '14px', lineHeight: '1.5' }}
-                                        title="Próximo ano"
-                                    >▶</button>
+                                        disabled={cashFlowYear >= nowYear}
+                                        aria-label="Próximo ano"
+                                    >
+                                        <ChevronRight size={18} aria-hidden="true" />
+                                    </button>
                                 </div>
                             </div>
-                            <div style={{ width: '100%', height: 300 }}>
+                            <p className="painel-muted">Todas as carteiras, só lançamentos pagos.</p>
+                            <ul className="painel-legend" aria-hidden="true">
+                                <li className="is-in">Entrou</li>
+                                <li className="is-out">Saiu</li>
+                            </ul>
+                            <div className="painel-chart__area">
                                 <ResponsiveContainer>
-                                    <AreaChart data={memoizedCashFlowData}>
-                                        <defs>
-                                            <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
-                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                            </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                    <BarChart data={chartData} barGap={2} barCategoryGap="24%" margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+                                        <CartesianGrid vertical={false} stroke="#E3E8EF" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#5B6B80', fontSize: 12 }} interval="preserveStartEnd" minTickGap={6} />
+                                        <YAxis axisLine={false} tickLine={false} width={72} tick={{ fill: '#5B6B80', fontSize: 12 }} tickFormatter={compactBRL} />
                                         <Tooltip
-                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                                            formatter={(value) => formatCurrency(value)}
+                                            cursor={{ fill: 'rgba(18, 40, 74, 0.05)' }}
+                                            formatter={(value, name) => [formatCurrency(value), name === 'entrada' ? 'Entrou' : 'Saiu']}
+                                            contentStyle={{ borderRadius: 12, border: '1px solid #E3E8EF', boxShadow: '0 10px 24px -12px rgba(18, 40, 74, 0.35)', fontSize: 13 }}
                                         />
-                                        <Area type="monotone" dataKey="entrada" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorEntrada)" />
-                                        <Area type="monotone" dataKey="saida" stroke="#ef4444" strokeWidth={3} fill="transparent" />
-                                    </AreaChart>
+                                        <Bar dataKey="entrada" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                                        <Bar dataKey="saida" fill="#12284A" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                                    </BarChart>
                                 </ResponsiveContainer>
                             </div>
                         </div>
 
-                        <div className="chart-container">
-                            <div className="chart-header">
-                                <h3>Gastos por Categoria</h3>
-                                <PieChartIcon size={18} color="var(--color-slate-400)" />
-                            </div>
-                            <div style={{ width: '100%', height: 300 }}>
-                                {categoryData.length > 0 ? (
-                                    <ResponsiveContainer>
-                                        <PieChart>
-                                            <Pie
-                                                data={categoryData}
-                                                innerRadius={60}
-                                                outerRadius={80}
-                                                paddingAngle={5}
-                                                dataKey="value"
-                                            >
-                                                {categoryData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip formatter={(value) => formatCurrency(value)} />
-                                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="empty-state">
-                                        <p>Sem dados de despesas</p>
-                                    </div>
-                                )}
-                            </div>
+                        <div className="painel-cats">
+                            <h2 className="painel-h2">Despesas por categoria</h2>
+                            <p className="painel-muted">Em {periodText}, contando também as contas ainda não pagas.</p>
+                            {shownCats.length > 0 ? (
+                                <ol className="painel-cats__list">
+                                    {shownCats.map(c => (
+                                        <li key={c.name}>
+                                            <span className="painel-cats__name">{c.name}</span>
+                                            <span className="painel-cats__value">{formatCurrency(c.value)}</span>
+                                            <span className="painel-cats__bar" aria-hidden="true"><i style={{ width: `${(c.value / catMax) * 100}%` }} /></span>
+                                            <span className="painel-cats__pct">{Math.round((c.value / catTotal) * 100)}%</span>
+                                        </li>
+                                    ))}
+                                </ol>
+                            ) : (
+                                <p className="painel-empty">Nenhuma despesa neste período.</p>
+                            )}
                         </div>
-                    </div>
+                    </section>
                 ) : (
-                    <div className="admin-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2.5rem', textAlign: 'center', gap: '1rem', marginBottom: '24px' }}>
-                        <span style={{ fontSize: '2.5rem' }}>📊</span>
-                        <h3 style={{ margin: 0 }}>Análise Avançada</h3>
-                        <p className="text-secondary" style={{ maxWidth: '360px', margin: 0 }}>
-                            Gráficos de Fluxo de Caixa Anual e Gastos por Categoria disponíveis no plano <strong>Prata</strong> ou superior.
-                        </p>
-                        <a href="/planos" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>Ver Planos</a>
-                    </div>
+                    <section className="painel-block painel-locked">
+                        <Lock size={18} aria-hidden="true" />
+                        <div>
+                            <h2 className="painel-h2">Gráficos de entradas, saídas e categorias</h2>
+                            <p className="painel-muted">Fazem parte dos planos Prata e Ouro.</p>
+                        </div>
+                        <Link to="/planos" className="painel-btn painel-btn--ghost">Ver planos</Link>
+                    </section>
                 )}
 
-                {/* Credit Cards Summary */}
-                {(userPlan?.features?.cartoes || user?.isInTrial) && cardSummary?.cards?.length > 0 && (
-                    <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9', marginBottom: '24px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <CreditCard size={24} color="#6366f1" />
-                                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>
-                                    Resumo de Cartões
-                                </h3>
-                            </div>
-                            <Link to="/financas/cartoes" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#6366f1', textDecoration: 'none', background: '#e0e7ff', padding: '6px 12px', borderRadius: '8px' }}>Gerenciar Cartões &rarr;</Link>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'thin' }}>
-                            {cardSummary.cards.map(card => (
-                                <Link to={`/financas/cartoes/${card.id}`} key={card.id} style={{
-                                    textDecoration: 'none',
-                                    minWidth: '260px',
-                                    border: '1px solid #e2e8f0',
-                                    borderRadius: '12px',
-                                    padding: '16px',
-                                    background: 'linear-gradient(to bottom right, #ffffff, #f8fafc)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '12px',
-                                    transition: 'all 0.2s',
-                                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                                }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <div>
-                                            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>{card.name}</div>
-                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Final {card.lastFour || '****'}</div>
-                                        </div>
-                                        <div style={{ background: '#e0e7ff', color: '#4f46e5', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}>{card.brand || 'CARTÃO'}</div>
-                                    </div>
-
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Fatura Atual</span>
-                                            <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#e11d48' }}>{formatCurrency(card.currentMonthTotal)}</span>
-                                            <span style={{ fontSize: '0.7rem', color: card.currentMonthStatus === 'PAID' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
-                                                {card.currentMonthStatus === 'PAID' ? 'Paga' : 'Aberta/Pendente'}
-                                            </span>
-                                        </div>
-                                        <div style={{ background: '#f1f5f9', padding: '8px 12px', borderRadius: '8px', textAlign: 'center' }}>
-                                            <span style={{ display: 'block', fontSize: '0.65rem', color: '#64748b', fontWeight: 700 }}>VENCE DIA</span>
-                                            <span style={{ display: 'block', fontSize: '0.95rem', color: '#334155', fontWeight: 800 }}>{card.dueDate || '--'}</span>
-                                        </div>
-                                    </div>
-
-                                    {card.nextMonthTotal > 0 && (
-                                        <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '8px', marginTop: '4px', fontSize: '0.75rem', color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span>Próximo mês:</span>
-                                            <span style={{ fontWeight: 700, color: '#475569' }}>{formatCurrency(card.nextMonthTotal)}</span>
-                                        </div>
-                                    )}
-                                </Link>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Bottom Section: History & Side Panel */}
-                <div className="bottom-grid">
-                    <div className="main-content-area">
-                        {/* Últimos Lançamentos — disponível para todos os planos */}
-                        <div className="dashboard-section">
-                            <div className="section-header">
-                                <h2>Últimos Lançamentos</h2>
-                                <Link to="/financas/extrato" className="text-primary text-sm font-semibold flex items-center gap-1">
-                                    Ver Tudo <ChevronRight size={14} />
-                                </Link>
+                <div className="painel-columns">
+                    <div className="painel-col">
+                        {/* Últimos lançamentos — disponível para todos os planos */}
+                        <section className="painel-block" aria-labelledby="painel-tx-title">
+                            <div className="painel-block__head">
+                                <h2 id="painel-tx-title" className="painel-h2">Últimos lançamentos</h2>
+                                <Link to="/financas/extrato" className="painel-link">Ver extrato</Link>
                             </div>
                             {transactions.length === 0 ? (
-                                <div className="empty-state">
-                                    <Clock size={40} className="text-slate-300" />
-                                    <p>Nenhuma transação registrada ainda.</p>
+                                <div className="painel-empty">
+                                    <p>Nenhum lançamento em {periodText}.</p>
+                                    <button type="button" className="painel-btn painel-btn--ghost" onClick={() => setIsFinanceModalOpen(true)}>
+                                        <Plus size={16} aria-hidden="true" /> Novo lançamento
+                                    </button>
                                 </div>
                             ) : (
-                                <div className="history-list">
+                                <ul className="painel-list">
                                     {paginate(transactions, transPage).map((t) => (
-                                        <div key={t.id} className="history-item">
-                                            <div className="item-date">{formatDate(t.date)}</div>
-                                            <div className="item-info">
-                                                <span className="item-title">{t.categoryName || 'Transação'}</span>
-                                                <span className="item-subtitle">
-                                                    {t.target === 'BUSINESS' ? '🏢 PJ' : '👤 PF'} • {t.description || (t.type === 'RECEITA' ? 'Recebimento' : 'Pagamento')}
+                                        <li key={t.id} className="painel-row">
+                                            <span className="painel-row__date">{formatDate(t.date)}</span>
+                                            <span className="painel-row__info">
+                                                <strong>{t.categoryName || 'Sem categoria'}</strong>
+                                                <span>
+                                                    <em className="painel-tag">{t.target === 'BUSINESS' ? 'MEI' : 'PF'}</em>
+                                                    {t.description || (t.type === 'RECEITA' ? 'Recebimento' : 'Pagamento')}
                                                 </span>
-                                            </div>
-                                            <div className={`item-amount ${t.type === 'RECEITA' ? 'positive' : 'negative'}`}>
-                                                {t.type === 'RECEITA' ? '+' : '-'} {formatCurrency(t.amount)}
-                                            </div>
-                                            <div className="item-status">
-                                                <span className={`badge badge-${t.status === 'PAID' ? 'success' : 'warning'}`}>
-                                                    {t.status === 'PAID' ? 'Pago' : 'Pendente'}
+                                            </span>
+                                            <span className="painel-row__end">
+                                                <span className={`painel-amount ${t.type === 'RECEITA' ? 'is-in' : 'is-out'}`}>
+                                                    {t.type === 'RECEITA' ? '+' : '−'} {formatCurrency(t.amount)}
                                                 </span>
-                                            </div>
-                                        </div>
+                                                {t.status !== 'PAID' && <span className="painel-chip painel-chip--warn">Pendente</span>}
+                                            </span>
+                                        </li>
                                     ))}
-                                </div>
+                                </ul>
                             )}
                             <PaginationControls current={transPage} total={transactions.length} onPageChange={setTransPage} />
-                        </div>
+                        </section>
 
-                        {/* Histórico de Simulações — Prata+ */}
-                        <div className="dashboard-section" style={{ marginTop: '1.5rem' }}>
-                            <div className="section-header">
-                                <h2>Histórico de Simulações</h2>
+                        {/* Simulações salvas — Prata+ */}
+                        <section className="painel-block" aria-labelledby="painel-sim-title">
+                            <div className="painel-block__head">
+                                <h2 id="painel-sim-title" className="painel-h2">Simulações salvas</h2>
+                                <Link to="/simular" className="painel-link">Nova simulação</Link>
                             </div>
                             {!hasFeature('historico') ? (
-                                <div className="premium-lock-banner">
-                                    <History size={40} style={{ marginBottom: '15px', opacity: 0.5 }} />
-                                    <h3>Rastreie suas Simulações</h3>
-                                    <p style={{ opacity: 0.7, marginBottom: '20px' }}>No plano Prata você pode salvar e comparar todas as suas simulações MEI.</p>
-                                    <Link to="/planos" className="btn btn-primary">Fazer Upgrade</Link>
+                                <div className="painel-locked painel-locked--inline">
+                                    <Lock size={18} aria-hidden="true" />
+                                    <p className="painel-muted">Salvar e comparar suas simulações faz parte dos planos Prata e Ouro.</p>
+                                    <Link to="/planos" className="painel-btn painel-btn--ghost">Ver planos</Link>
                                 </div>
+                            ) : simulations.length === 0 ? (
+                                <p className="painel-empty">Nenhuma simulação salva ainda.</p>
                             ) : (
-                                <div className="history-list">
-                                    {paginate(simulations, simPage).map((s) => (
-                                        <div key={s.id} className="history-item" style={{ gridTemplateColumns: '80px 1fr 120px' }}>
-                                            <div className="item-date">{formatDate(s.createdAt)}</div>
-                                            <div className="item-info">
-                                                <span className="item-title text-capitalize">{s.activityType}</span>
-                                                <span className="item-subtitle">Faturamento: {formatCurrency(s.revenue)}</span>
-                                            </div>
-                                            <div className="item-amount">
-                                                <span className={`badge badge-${s.limitPercentage < 90 ? 'success' : 'danger'}`}>
-                                                    {s.limitPercentage.toFixed(1)}% do Limite
+                                <ul className="painel-list">
+                                    {paginate(simulations, simPage).map((s) => {
+                                        const pct = Number(s.limitPercentage) || 0
+                                        return (
+                                            <li key={s.id} className="painel-row">
+                                                <span className="painel-row__date">{formatDate(s.createdAt)}</span>
+                                                <span className="painel-row__info">
+                                                    <strong className="painel-cap">{s.activityType}</strong>
+                                                    <span>Faturamento de {formatCurrency(s.revenue)}</span>
                                                 </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                                <span className={`painel-row__end painel-limit ${pct >= 90 ? 'is-warn' : ''}`}>
+                                                    <span>{pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% do limite</span>
+                                                    <span className="painel-limit__bar" aria-hidden="true"><i style={{ width: `${Math.min(pct, 100)}%` }} /></span>
+                                                </span>
+                                            </li>
+                                        )
+                                    })}
+                                </ul>
                             )}
                             <PaginationControls current={simPage} total={simulations.length} onPageChange={setSimPage} />
-                        </div>
+                        </section>
                     </div>
 
-                    <div className="side-panel">
-                        {/* Quick Actions / Shortcuts */}
-                        <div className="dashboard-section">
-                            <div className="section-header">
-                                <h2>Acesso Rápido</h2>
-                            </div>
-                            <div className="quick-feature-grid">
-                                <Link to="/simular" className="quick-feature-card">
-                                    <div className="quick-icon"><LayoutDashboard size={18} /></div>
-                                    <span className="quick-label">Simular</span>
-                                </Link>
-                                <Link to="/comparativo" className="quick-feature-card">
-                                    <div className="quick-icon"><BarChart3 size={18} /></div>
-                                    <span className="quick-label">MEI x ME</span>
-                                </Link>
-                                <Link to="/financas/cartoes" className="quick-feature-card">
-                                    <div className="quick-icon"><CreditCard size={18} /></div>
-                                    <span className="quick-label">Cartões</span>
-                                </Link>
-                                {hasFeature('pdf') ? (
-                                    <button onClick={generatePDF} className="quick-feature-card">
-                                        <div className="quick-icon"><FileDown size={18} /></div>
-                                        <span className="quick-label">PDF</span>
+                    <aside className="painel-col painel-side">
+                        {/* Por carteira */}
+                        {canFilter && (
+                            <section className="painel-block" aria-labelledby="painel-wallet-title">
+                                <div className="painel-block__head">
+                                    <h2 id="painel-wallet-title" className="painel-h2">Por carteira</h2>
+                                    <button type="button" className="painel-link" onClick={() => setShowNewWalletModal(true)}>
+                                        <Plus size={16} aria-hidden="true" /> Nova carteira
                                     </button>
+                                </div>
+                                <div className="painel-seg" role="group" aria-label="Mostrar por carteira">
+                                    <button type="button" aria-pressed={walletBreakdownType === 'DESPESA'} onClick={() => setWalletBreakdownType('DESPESA')}>Despesas</button>
+                                    <button type="button" aria-pressed={walletBreakdownType === 'RECEITA'} onClick={() => setWalletBreakdownType('RECEITA')}>Receitas</button>
+                                </div>
+                                {walletBreakdown.length > 0 ? (
+                                    <ul className="painel-wallets">
+                                        {walletBreakdown.map(w => {
+                                            const total = Number(w.total) || 0
+                                            return (
+                                                <li key={w.id}>
+                                                    <span className="painel-avatar" aria-hidden="true">
+                                                        {w.logo_url ? <img src={w.logo_url} alt="" /> : (w.name || '?').trim().charAt(0).toUpperCase()}
+                                                    </span>
+                                                    <span className="painel-wallets__info">
+                                                        <strong>{w.name}</strong>
+                                                        <small>{w.account_type === 'PJ' ? 'MEI' : 'Pessoal'}</small>
+                                                    </span>
+                                                    <span className="painel-wallets__value">{formatCurrency(total)}</span>
+                                                    <span className={`painel-wallets__bar ${walletBreakdownType === 'RECEITA' ? 'is-in' : 'is-out'}`} aria-hidden="true">
+                                                        <i style={{ width: `${(total / walletMax) * 100}%` }} />
+                                                    </span>
+                                                </li>
+                                            )
+                                        })}
+                                    </ul>
                                 ) : (
-                                    <a href="/planos" className="quick-feature-card" title="Disponível no plano Prata ou superior" style={{ opacity: 0.5, cursor: 'not-allowed', textDecoration: 'none' }}>
-                                        <div className="quick-icon"><FileDown size={18} /></div>
-                                        <span className="quick-label">PDF 🔒</span>
-                                    </a>
+                                    <p className="painel-empty">Nenhuma carteira ainda. Crie uma para separar o dinheiro do MEI do pessoal.</p>
                                 )}
-                            </div>
-                        </div>
+                            </section>
+                        )}
 
-                        {/* Plan Card */}
-                        <div className="dashboard-section" style={{ background: 'linear-gradient(135deg, #10b981 0%, #3b82f6 100%)', color: 'white', border: 'none' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
-                                <AlertCircle size={24} />
-                                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px' }}>
-                                    {userPlan?.name?.toUpperCase()}
-                                </span>
-                            </div>
-                            <h3 style={{ fontSize: '1.1rem', marginBottom: '5px' }}>Plano {userPlan?.name}</h3>
-                            <p style={{ fontSize: '0.8rem', opacity: 0.9, marginBottom: '20px' }}>
-                                {userPlan?.price === 0 ? 'Mude para o Prata e salve seu histórico.' : 'Você tem acesso total aos recursos premium.'}
-                            </p>
-                            {userPlan?.price === 0 && (
-                                <Link to="/planos" className="btn btn-sm" style={{ background: 'white', color: '#10b981', border: 'none', width: '100%' }}>Ver Planos</Link>
-                            )}
-                        </div>
-                    </div>
+                        {/* Cartões */}
+                        {canSeeCards && (
+                            <section className="painel-block" aria-labelledby="painel-cards-title">
+                                <div className="painel-block__head">
+                                    <h2 id="painel-cards-title" className="painel-h2">Cartões de crédito</h2>
+                                    <Link to="/financas/cartoes" className="painel-link">Ver cartões</Link>
+                                </div>
+                                <ul className="painel-cards">
+                                    {cardSummary.cards.map(card => {
+                                        const paid = card.currentMonthStatus === 'PAID'
+                                        return (
+                                            <li key={card.id}>
+                                                <Link to={`/financas/cartoes/${card.id}`} className="painel-card">
+                                                    <span className="painel-card__name">
+                                                        <strong>{card.name}</strong>
+                                                        <small>{card.brand ? `${card.brand}, final ${card.lastFour || '****'}` : `Final ${card.lastFour || '****'}`}</small>
+                                                    </span>
+                                                    <span className="painel-card__bill">
+                                                        <small>Fatura atual</small>
+                                                        <strong>{formatCurrency(card.currentMonthTotal)}</strong>
+                                                    </span>
+                                                    <span className="painel-card__meta">
+                                                        <span className={`painel-chip ${paid ? 'painel-chip--ok' : 'painel-chip--warn'}`}>{paid ? 'Paga' : 'Em aberto'}</span>
+                                                        <span>Vence dia {card.dueDate || '--'}</span>
+                                                    </span>
+                                                    {card.nextMonthTotal > 0 && (
+                                                        <small className="painel-card__next">Próximo mês: {formatCurrency(card.nextMonthTotal)}</small>
+                                                    )}
+                                                </Link>
+                                            </li>
+                                        )
+                                    })}
+                                </ul>
+                            </section>
+                        )}
+
+                        {/* Atalhos */}
+                        <section className="painel-block" aria-labelledby="painel-short-title">
+                            <h2 id="painel-short-title" className="painel-h2">Atalhos</h2>
+                            <ul className="painel-shortcuts">
+                                <li>
+                                    <Link to="/simular"><Calculator size={18} aria-hidden="true" /> Simular imposto</Link>
+                                </li>
+                                <li>
+                                    <Link to="/comparativo"><Scale size={18} aria-hidden="true" /> Comparar MEI e ME</Link>
+                                </li>
+                                <li>
+                                    <Link to="/financas/cartoes"><CreditCard size={18} aria-hidden="true" /> Cartões de crédito</Link>
+                                </li>
+                                <li>
+                                    {hasFeature('pdf') ? (
+                                        <button type="button" onClick={generatePDF}><FileDown size={18} aria-hidden="true" /> Baixar relatório em PDF</button>
+                                    ) : (
+                                        <Link to="/planos" className="is-locked">
+                                            <Lock size={18} aria-hidden="true" /> Relatório em PDF
+                                            <small>a partir do Prata</small>
+                                        </Link>
+                                    )}
+                                </li>
+                            </ul>
+                        </section>
+
+                        {/* Plano */}
+                        <section className={`painel-block painel-plan painel-plan--${tier}`} aria-labelledby="painel-plan-title">
+                            <h2 id="painel-plan-title" className="painel-h2">Seu plano: {planName}</h2>
+                            <p className="painel-muted">{planNote}</p>
+                            <Link to={tier === 'ouro' ? '/conta' : '/planos'} className="painel-link">
+                                {tier === 'ouro' ? 'Ver minha conta' : 'Comparar planos'}
+                            </Link>
+                        </section>
+                    </aside>
                 </div>
             </div>
 
@@ -1068,150 +1185,17 @@ export default function Dashboard() {
                 />
             )}
 
-            {/* New Wallet Modal */}
             {showNewWalletModal && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(4px)' }}
-                    onClick={(e) => { if (e.target === e.currentTarget) { setShowNewWalletModal(false); setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' }); } }}
-                >
-                    <div style={{ background: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '420px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
-                        {/* Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                            <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: '#1e293b' }}>Nova Conta</h2>
-                            <button onClick={() => { setShowNewWalletModal(false); setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' }); }} style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: '#94a3b8', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
-                        </div>
-
-                        <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '0 0 24px 0' }} />
-
-                        {/* Type Toggle */}
-                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>Tipo de Conta</label>
-                        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-                            <button
-                                type="button"
-                                onClick={() => setNewWalletForm(prev => ({ ...prev, account_type: 'PF', document: '' }))}
-                                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderRadius: '10px', border: `2px solid ${newWalletForm.account_type === 'PF' ? '#10b981' : '#e2e8f0'}`, background: newWalletForm.account_type === 'PF' ? '#f0fdf4' : 'white', cursor: 'pointer', transition: 'all 0.2s' }}
-                            >
-                                <span style={{ width: '18px', height: '18px', borderRadius: '50%', border: `2px solid ${newWalletForm.account_type === 'PF' ? '#10b981' : '#cbd5e1'}`, background: newWalletForm.account_type === 'PF' ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {newWalletForm.account_type === 'PF' && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'white' }} />}
-                                </span>
-                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>👤 Pessoa Física</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setNewWalletForm(prev => ({ ...prev, account_type: 'PJ', document: '' }))}
-                                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderRadius: '10px', border: `2px solid ${newWalletForm.account_type === 'PJ' ? '#10b981' : '#e2e8f0'}`, background: newWalletForm.account_type === 'PJ' ? '#f0fdf4' : 'white', cursor: 'pointer', transition: 'all 0.2s' }}
-                            >
-                                <span style={{ width: '18px', height: '18px', borderRadius: '50%', border: `2px solid ${newWalletForm.account_type === 'PJ' ? '#10b981' : '#cbd5e1'}`, background: newWalletForm.account_type === 'PJ' ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {newWalletForm.account_type === 'PJ' && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'white' }} />}
-                                </span>
-                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>🏢 Pessoa Jurídica</span>
-                            </button>
-                        </div>
-
-                        {/* Name */}
-                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
-                            {newWalletForm.account_type === 'PJ' ? 'Razão Social' : 'Nome da Conta'}
-                        </label>
-                        <input
-                            type="text"
-                            placeholder={newWalletForm.account_type === 'PJ' ? 'Ex: Empresa LTDA' : 'Ex: João da Silva'}
-                            value={newWalletForm.name}
-                            onChange={(e) => setNewWalletForm(prev => ({ ...prev, name: e.target.value }))}
-                            style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', marginBottom: '16px', outline: 'none', boxSizing: 'border-box' }}
-                        />
-
-                        {/* Document */}
-                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
-                            {newWalletForm.account_type === 'PJ' ? 'CNPJ' : 'CPF'}
-                        </label>
-                        <input
-                            type="text"
-                            placeholder={newWalletForm.account_type === 'PJ' ? '00.000.000/0000-00' : '000.000.000-00'}
-                            value={newWalletForm.document}
-                            onChange={(e) => {
-                                let v = e.target.value.replace(/\D/g, '')
-                                if (newWalletForm.account_type === 'PF') {
-                                    v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
-                                } else {
-                                    v = v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2').slice(0, 18)
-                                }
-                                setNewWalletForm(prev => ({ ...prev, document: v }))
-                            }}
-                            style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', marginBottom: '16px', outline: 'none', boxSizing: 'border-box' }}
-                        />
-
-                        {/* Photo Upload */}
-                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>Foto do Perfil</label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '24px' }}>
-                            <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: '2px solid #e2e8f0', flexShrink: 0 }}>
-                                {newWalletForm.photo_url ? (
-                                    <img src={newWalletForm.photo_url} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                    <span style={{ fontSize: '1.4rem', color: '#94a3b8' }}>📷</span>
-                                )}
-                            </div>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#64748b', cursor: 'pointer', fontWeight: 500 }}>
-                                ⬆ Carregar Foto
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    style={{ display: 'none' }}
-                                    onChange={(e) => {
-                                        const file = e.target.files[0]
-                                        if (file) {
-                                            const reader = new FileReader()
-                                            reader.onload = () => setNewWalletForm(prev => ({ ...prev, photo_url: reader.result }))
-                                            reader.readAsDataURL(file)
-                                            e.target.value = null
-                                        }
-                                    }}
-                                />
-                            </label>
-                        </div>
-
-                        {/* Actions */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
-                            <button
-                                onClick={() => { setShowNewWalletModal(false); setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' }); }}
-                                style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: 'transparent', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}
-                            >Cancelar</button>
-                            <button
-                                disabled={savingWallet || !newWalletForm.name}
-                                onClick={async () => {
-                                    setSavingWallet(true)
-                                    try {
-                                        const token = localStorage.getItem('token')
-                                        const res = await fetch('/api/finance/business-units', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                            body: JSON.stringify({
-                                                name: newWalletForm.name,
-                                                account_type: newWalletForm.account_type,
-                                                cnpj: newWalletForm.document,
-                                                photo_url: newWalletForm.photo_url
-                                            })
-                                        })
-                                        if (res.ok) {
-                                            setShowNewWalletModal(false)
-                                            setNewWalletForm({ name: '', account_type: 'PF', document: '', photo_url: '' })
-                                            fetchWalletBreakdown()
-                                            fetchWallets()
-                                        } else {
-                                            const err = await res.json()
-                                            alert(err.message || 'Erro ao criar carteira.')
-                                        }
-                                    } catch (err) {
-                                        console.error(err)
-                                        alert('Erro de rede ao salvar.')
-                                    } finally {
-                                        setSavingWallet(false)
-                                    }
-                                }}
-                                style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white', fontWeight: 600, fontSize: '0.9rem', cursor: savingWallet || !newWalletForm.name ? 'not-allowed' : 'pointer', opacity: savingWallet || !newWalletForm.name ? 0.6 : 1, transition: 'all 0.2s' }}
-                            >{savingWallet ? 'Salvando...' : 'Salvar Conta'}</button>
-                        </div>
-                    </div>
-                </div>
+                <NewWalletDialog
+                    form={newWalletForm}
+                    setForm={setNewWalletForm}
+                    saving={savingWallet}
+                    onSave={handleCreateWallet}
+                    onClose={closeWalletDialog}
+                />
             )}
+
+            {dialog}
         </div>
     )
 }
