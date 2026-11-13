@@ -30,6 +30,122 @@ const upload = multer({
 })
 
 // =============================================
+// === CONFERÊNCIA DOS DADOS ===================
+// =============================================
+
+const MAX_DESCRIPTION = 200
+const MAX_AMOUNT = 100000000 // R$ 100 milhões: acima disso é erro de digitação
+const MAX_BULK_IDS = 500
+
+// Número inteiro positivo que cabe numa coluna INTEGER do banco
+const toId = (value) => {
+    const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
+    return Number.isInteger(n) && n > 0 && n <= 2147483647 ? n : null
+}
+
+const isValidDate = (value) => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const d = new Date(`${value}T12:00:00Z`)
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value
+}
+
+// Valor de compra: pode ser negativo (estorno), nunca zero nem absurdo
+const isValidItemAmount = (value) => {
+    if (value === null || value === '' || typeof value === 'boolean') return false
+    const n = Number(value)
+    return Number.isFinite(n) && n !== 0 && Math.abs(n) <= MAX_AMOUNT
+}
+
+// Confere os campos de um item. partial = edição (só confere o que veio).
+function itemDataError(body, partial) {
+    if (!partial || body.description !== undefined) {
+        if (typeof body.description !== 'string' || !body.description.trim()) return 'Escreva a descrição da compra.'
+        if (body.description.trim().length > MAX_DESCRIPTION) return `A descrição pode ter até ${MAX_DESCRIPTION} letras.`
+    }
+    if (!partial || body.amount !== undefined) {
+        if (!isValidItemAmount(body.amount)) return 'Informe um valor diferente de zero.'
+    }
+    if (body.transactionDate !== undefined && body.transactionDate !== null && body.transactionDate !== '') {
+        if (!isValidDate(body.transactionDate)) return 'A data da compra não é válida.'
+    }
+    if (body.isConfirmed !== undefined && typeof body.isConfirmed !== 'boolean') return 'Campo de confirmação inválido.'
+    if (body.categoryName !== undefined && body.categoryName !== null && typeof body.categoryName !== 'string') return 'Categoria inválida.'
+    if (body.categoryId !== undefined && body.categoryId !== null && body.categoryId !== '' && !toId(body.categoryId)) return 'Categoria inválida.'
+    return null
+}
+
+// Ids inválidos na URL viram 404 (antes viravam erro 500 no banco)
+router.param('id', (req, res, next, value) => toId(value) ? next() : res.status(404).json({ message: 'Fatura não encontrada' }))
+router.param('itemId', (req, res, next, value) => toId(value) ? next() : res.status(404).json({ message: 'Item não encontrado' }))
+router.param('cardId', (req, res, next, value) => toId(value) ? next() : res.status(404).json({ message: 'Cartão não encontrado' }))
+
+// Soma os itens e grava o total da fatura
+async function recalcInvoiceTotal(q, invoiceId) {
+    const { rows: [totals] } = await q.query(
+        'SELECT COALESCE(SUM(amount), 0) as "totalAmount" FROM invoice_items WHERE "invoiceId" = $1',
+        [invoiceId]
+    )
+    await q.query(
+        'UPDATE card_invoices SET "totalAmount" = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2',
+        [totals?.totalAmount || 0, invoiceId]
+    )
+}
+
+// Item confirmado aparece no Extrato (finance_transactions); não confirmado sai de lá.
+// cardInfo: { cardId, business_unit_id, account_type, invoiceDueDate }
+async function syncItemToStatement(q, userId, item, cardInfo) {
+    if (!item.isConfirmed) {
+        await q.query('DELETE FROM finance_transactions WHERE invoice_item_id = $1 AND "userId" = $2', [item.id, userId])
+        return
+    }
+    if (!cardInfo || !cardInfo.business_unit_id) return
+
+    const targetType = cardInfo.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL'
+    const transactionDate = item.transactionDate || new Date()
+    // A compra entra no Extrato na data de vencimento da fatura
+    const billingDate = cardInfo.invoiceDueDate || transactionDate
+
+    const existCheck = await q.query('SELECT id FROM finance_transactions WHERE invoice_item_id = $1', [item.id])
+
+    if (existCheck.rows.length > 0) {
+        await q.query(`
+            UPDATE finance_transactions
+            SET amount = $1, date = $2, "categoryId" = $3, description = $4, "business_unit_id" = $5, target = $6, "billing_date" = $7
+            WHERE invoice_item_id = $8
+        `, [item.amount, transactionDate, item.categoryId, item.description, cardInfo.business_unit_id, targetType, billingDate, item.id])
+    } else {
+        await q.query(`
+            INSERT INTO finance_transactions
+            ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, status, "business_unit_id", "invoice_item_id", "billing_date")
+            VALUES ($1, 'DESPESA', $2, $3, $4, $5, 'Cartão de Crédito', $6, $7, 'PAID', $8, $9, $10)
+        `, [userId, targetType, item.amount, transactionDate, item.categoryId, cardInfo.cardId, item.description, cardInfo.business_unit_id, item.id, billingDate])
+    }
+}
+
+// Tipo de categoria que combina com a carteira do cartão
+const categoryTypeFor = (accountType) => accountType === 'PJ' ? 'DESPESA_MEI' : 'DESPESA_PESSOAL'
+
+// Roda fn dentro de uma transação: ou tudo é gravado, ou nada.
+async function withTransaction(fn) {
+    const client = await pool.connect()
+    try {
+        await client.query('BEGIN')
+        const result = await fn(client)
+        await client.query('COMMIT')
+        return result
+    } catch (err) {
+        try { await client.query('ROLLBACK') } catch { /* conexão já caiu */ }
+        throw err
+    } finally {
+        client.release()
+    }
+}
+
+class HttpError extends Error {
+    constructor(status, message) { super(message); this.status = status }
+}
+
+// =============================================
 // === INVOICES CRUD ===========================
 // =============================================
 
@@ -45,13 +161,16 @@ router.get('/', authMiddleware, cartoesGuard, async (req, res) => {
         `
         const params = [req.user.id]
 
-        if (cardId) {
-            params.push(cardId)
+        if (cardId !== undefined) {
+            if (!toId(cardId)) return res.status(400).json({ message: 'Cartão inválido.' })
+            params.push(toId(cardId))
             query += ` AND ci."cardId" = $${params.length}`
         }
 
-        if (year) {
-            params.push(year)
+        if (year !== undefined) {
+            const y = Number(year)
+            if (!Number.isInteger(y) || y < 2000 || y > 2100) return res.status(400).json({ message: 'Ano inválido.' })
+            params.push(y)
             query += ` AND ci."referenceYear" = $${params.length}`
         }
 
@@ -68,11 +187,29 @@ router.get('/', authMiddleware, cartoesGuard, async (req, res) => {
 // POST /api/finance/invoices — Create a new invoice
 router.post('/', authMiddleware, cartoesGuard, async (req, res) => {
     try {
-        const { cardId, referenceMonth, referenceYear, totalAmount, dueDate, closingDate } = req.body
+        const { totalAmount, dueDate, closingDate } = req.body
+        const cardId = toId(req.body.cardId)
+        const referenceMonth = Number(req.body.referenceMonth)
+        const referenceYear = Number(req.body.referenceYear)
+
+        if (!cardId) return res.status(404).json({ message: 'Cartão não encontrado' })
+        if (!Number.isInteger(referenceMonth) || referenceMonth < 1 || referenceMonth > 12) {
+            return res.status(400).json({ message: 'Mês da fatura inválido.' })
+        }
+        if (!Number.isInteger(referenceYear) || referenceYear < 2000 || referenceYear > 2100) {
+            return res.status(400).json({ message: 'Ano da fatura inválido.' })
+        }
+        for (const d of [dueDate, closingDate]) {
+            if (d !== undefined && d !== null && d !== '' && !isValidDate(d)) {
+                return res.status(400).json({ message: 'Data da fatura inválida.' })
+            }
+        }
 
         // Validate totalAmount
-        if (totalAmount !== undefined && totalAmount < 0) {
-            return res.status(400).json({ message: 'O valor total não pode ser negativo' })
+        if (totalAmount !== undefined && totalAmount !== null) {
+            const n = Number(totalAmount)
+            if (!Number.isFinite(n) || n < 0) return res.status(400).json({ message: 'O valor total não pode ser negativo' })
+            if (n > MAX_AMOUNT) return res.status(400).json({ message: 'Valor total muito alto.' })
         }
 
         // Check card exists and belongs to user
@@ -98,11 +235,15 @@ router.post('/', authMiddleware, cartoesGuard, async (req, res) => {
             `INSERT INTO card_invoices ("userId", "cardId", "referenceMonth", "referenceYear", "totalAmount", "dueDate", "closingDate")
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING *`,
-            [req.user.id, cardId, referenceMonth, referenceYear, totalAmount || 0, dueDate || null, closingDate || null]
+            [req.user.id, cardId, referenceMonth, referenceYear, Number(totalAmount) || 0, dueDate || null, closingDate || null]
         )
 
         res.status(201).json(newInvoice)
     } catch (err) {
+        // Duas abas criando a mesma fatura ao mesmo tempo: a segunda bate no UNIQUE
+        if (err && err.code === '23505') {
+            return res.status(409).json({ message: 'Fatura já existe para este mês/ano neste cartão' })
+        }
         console.error('Erro ao criar fatura:', err)
         res.status(500).json({ message: 'Erro ao criar fatura' })
     }
@@ -139,35 +280,18 @@ router.get('/:id/items', authMiddleware, cartoesGuard, async (req, res) => {
     }
 })
 
-// DELETE /api/finance/invoices/:id — Delete an entire invoice (and cascade items)
-router.delete('/:id', authMiddleware, cartoesGuard, async (req, res) => {
-    try {
-        const { id } = req.params
-
-        // Check invoice belongs to user
-        const invoiceResult = await db.query(
-            'SELECT id FROM card_invoices WHERE id = $1 AND "userId" = $2',
-            [id, req.user.id]
-        )
-        if (invoiceResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Fatura não encontrada' })
-        }
-
-        // Delete invoice (items will cascade if foreign key is setup with ON DELETE CASCADE, which is true in db.js)
-        await db.query('DELETE FROM card_invoices WHERE id = $1', [id])
-
-        res.json({ message: 'Fatura excluída com sucesso' })
-    } catch (err) {
-        console.error('Erro ao excluir fatura:', err)
-        res.status(500).json({ message: 'Erro ao excluir fatura' })
-    }
-})
-
 // PATCH /api/finance/invoices/:id/confirm — Confirm/pay an invoice
 router.patch('/:id/confirm', authMiddleware, cartoesGuard, async (req, res) => {
     try {
         const { id } = req.params
         const { paidAmount } = req.body
+
+        if (paidAmount !== undefined && paidAmount !== null) {
+            const n = Number(paidAmount)
+            if (paidAmount === '' || typeof paidAmount === 'boolean' || !Number.isFinite(n) || n < 0 || n > MAX_AMOUNT) {
+                return res.status(400).json({ message: 'Valor pago inválido.' })
+            }
+        }
 
         // Check invoice exists and belongs to user
         const invoiceResult = await db.query(
@@ -179,11 +303,11 @@ router.patch('/:id/confirm', authMiddleware, cartoesGuard, async (req, res) => {
         }
 
         const invoice = invoiceResult.rows[0]
-        const finalPaidAmount = paidAmount !== undefined ? paidAmount : invoice.totalAmount
-        const newStatus = finalPaidAmount >= invoice.totalAmount ? 'PAID' : 'PARTIAL'
+        const finalPaidAmount = paidAmount !== undefined && paidAmount !== null ? Number(paidAmount) : (Number(invoice.totalAmount) || 0)
+        const newStatus = finalPaidAmount >= (Number(invoice.totalAmount) || 0) ? 'PAID' : 'PARTIAL'
 
         const { rows: [updated] } = await db.query(
-            `UPDATE card_invoices 
+            `UPDATE card_invoices
              SET status = $1, "paidAmount" = $2, "paidAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
              WHERE id = $3 AND "userId" = $4
              RETURNING *`,
@@ -204,7 +328,7 @@ router.get('/:id/dashboard', authMiddleware, cartoesGuard, async (req, res) => {
 
         // Get category breakdown for this invoice
         const { rows: categories } = await db.query(
-            `SELECT 
+            `SELECT
                 COALESCE(fc.name, ii."aiCategory", 'Sem Categoria') as category,
                 SUM(ii.amount) as total,
                 COUNT(ii.id) as count
@@ -262,41 +386,48 @@ router.delete('/:id', authMiddleware, cartoesGuard, async (req, res) => {
 // === INVOICE ITEMS CRUD ======================
 // =============================================
 
+// Dados do cartão e da carteira de uma fatura (para categoria e Extrato)
+const INVOICE_CARD_SQL = `
+    SELECT ci.id, ci."dueDate" as "invoiceDueDate", c.id as "cardId", c.business_unit_id, b.account_type
+    FROM card_invoices ci
+    JOIN credit_cards c ON c.id = ci."cardId"
+    LEFT JOIN business_units b ON b.id = c.business_unit_id
+    WHERE ci.id = $1 AND ci."userId" = $2
+`
+
 // POST /api/finance/invoices/:id/items — Add item to invoice
 router.post('/:id/items', authMiddleware, cartoesGuard, validateReferenceOwnership, async (req, res) => {
+    const problem = itemDataError(req.body, false)
+    if (problem) return res.status(400).json({ message: problem })
+
     try {
-        const { id: invoiceId } = req.params
-        const { description, amount, transactionDate, categoryId, aiCategory, aiConfidence, installment } = req.body
+        const invoiceId = toId(req.params.id)
+        const { transactionDate, categoryId, aiCategory, aiConfidence, installment } = req.body
+        const isConfirmed = req.body.isConfirmed === true
 
-        // Check invoice exists and belongs to user
-        const invoiceResult = await db.query(
-            'SELECT id FROM card_invoices WHERE id = $1 AND "userId" = $2',
-            [invoiceId, req.user.id]
-        )
-        if (invoiceResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Fatura não encontrada' })
-        }
+        const newItem = await withTransaction(async (client) => {
+            // Check invoice exists and belongs to user
+            const { rows: [cardInfo] } = await client.query(`${INVOICE_CARD_SQL} FOR UPDATE OF ci`, [invoiceId, req.user.id])
+            if (!cardInfo) throw new HttpError(404, 'Fatura não encontrada')
 
-        // Insert item
-        const { rows: [newItem] } = await db.query(
-            `INSERT INTO invoice_items ("invoiceId", "userId", description, amount, "transactionDate", "categoryId", "aiCategory", "aiConfidence", installment)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-             RETURNING *`,
-            [invoiceId, req.user.id, description, amount, transactionDate || null, categoryId || null, aiCategory || null, aiConfidence || 0, installment || null]
-        )
+            const { rows: [item] } = await client.query(
+                `INSERT INTO invoice_items ("invoiceId", "userId", description, amount, "transactionDate", "categoryId", "aiCategory", "aiConfidence", installment, "isConfirmed")
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 RETURNING *`,
+                [invoiceId, req.user.id, req.body.description.trim(), Number(req.body.amount), transactionDate || null,
+                    toId(categoryId), typeof aiCategory === 'string' ? aiCategory.slice(0, 80) : null,
+                    Number(aiConfidence) || 0, typeof installment === 'string' ? installment.slice(0, 20) : null, isConfirmed]
+            )
 
-        // Recalculate invoice totalAmount
-        const { rows: [totals] } = await db.query(
-            'SELECT COALESCE(SUM(amount), 0) as "totalAmount" FROM invoice_items WHERE "invoiceId" = $1',
-            [invoiceId]
-        )
-        await db.query(
-            'UPDATE card_invoices SET "totalAmount" = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2',
-            [totals.totalAmount, invoiceId]
-        )
+            // Item lançado à mão já confirmado vai direto para o Extrato
+            await syncItemToStatement(client, req.user.id, item, cardInfo)
+            await recalcInvoiceTotal(client, invoiceId)
+            return item
+        })
 
         res.status(201).json(newItem)
     } catch (err) {
+        if (err instanceof HttpError) return res.status(err.status).json({ message: err.message })
         console.error('Erro ao adicionar item:', err)
         res.status(500).json({ message: 'Erro ao adicionar item à fatura' })
     }
@@ -304,120 +435,96 @@ router.post('/:id/items', authMiddleware, cartoesGuard, validateReferenceOwnersh
 
 // PATCH /api/finance/invoices/items/:itemId — Update an item
 router.patch('/items/:itemId', authMiddleware, cartoesGuard, validateReferenceOwnership, async (req, res) => {
+    const problem = itemDataError(req.body, true)
+    if (problem) return res.status(400).json({ message: problem })
+
     try {
-        const { itemId } = req.params
-        const { categoryId, categoryName, isConfirmed, description, amount } = req.body
+        const itemId = toId(req.params.itemId)
+        const { categoryId, categoryName, isConfirmed, description, amount, transactionDate } = req.body
 
-        // Check item exists and belongs to user
-        const itemResult = await db.query(
-            'SELECT * FROM invoice_items WHERE id = $1 AND "userId" = $2',
-            [itemId, req.user.id]
-        )
-        if (itemResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Item não encontrado' })
-        }
-
-        // Resolve categoryName to categoryId
-        let finalCategoryId = categoryId
-        let finalAiCategory = undefined
-
-        if (categoryName !== undefined) {
-            if (categoryName) {
-                const catRes = await db.query(
-                    'SELECT id FROM finance_categories WHERE name = $1 AND "userId" = $2 AND type = $3',
-                    [categoryName, req.user.id, 'DESPESA_PESSOAL']
-                )
-                if (catRes.rows.length > 0) {
-                    finalCategoryId = catRes.rows[0].id
-                } else {
-                    finalCategoryId = null
-                    finalAiCategory = categoryName // Fallback to storing as text if not mapped
-                }
-            } else {
-                finalCategoryId = null
-            }
-        }
-
-        // Build dynamic update
-        const updates = []
-        const values = []
-        let paramIdx = 1
-
-        if (finalCategoryId !== undefined) {
-            updates.push(`"categoryId" = $${paramIdx++}`)
-            values.push(finalCategoryId)
-        }
-        if (finalAiCategory !== undefined) {
-            updates.push(`"aiCategory" = $${paramIdx++}`)
-            values.push(finalAiCategory)
-        }
-        if (isConfirmed !== undefined) {
-            updates.push(`"isConfirmed" = $${paramIdx++}`)
-            values.push(isConfirmed)
-        }
-        if (description !== undefined) {
-            updates.push(`description = $${paramIdx++}`)
-            values.push(description)
-        }
-        if (amount !== undefined) {
-            updates.push(`amount = $${paramIdx++}`)
-            values.push(amount)
-        }
-
-        if (updates.length === 0) {
-            return res.status(400).json({ message: 'Nenhum campo para atualizar' })
-        }
-
-        values.push(itemId, req.user.id)
-        const query = `UPDATE invoice_items SET ${updates.join(', ')} WHERE id = $${paramIdx++} AND "userId" = $${paramIdx} RETURNING *`
-
-        const { rows: [updated] } = await db.query(query, values)
-
-        // --- SYNCHRONIZATION WITH FINANCE_TRANSACTIONS ---
-        if (updated.isConfirmed) {
-            const cardInfoRes = await db.query(
-                `SELECT c.id as "cardId", c.business_unit_id, b.account_type,
-                        ci."dueDate" as "invoiceDueDate"
+        const updated = await withTransaction(async (client) => {
+            // Check item exists and belongs to user (com os dados do cartão)
+            const { rows: [current] } = await client.query(
+                `SELECT ii.*, ci."dueDate" as "invoiceDueDate", c.id as "cardId", c.business_unit_id, b.account_type
                  FROM invoice_items ii
                  JOIN card_invoices ci ON ci.id = ii."invoiceId"
                  JOIN credit_cards c ON c.id = ci."cardId"
                  LEFT JOIN business_units b ON b.id = c.business_unit_id
-                 WHERE ii.id = $1`, [itemId]
+                 WHERE ii.id = $1 AND ii."userId" = $2
+                 FOR UPDATE OF ii`,
+                [itemId, req.user.id]
             )
+            if (!current) throw new HttpError(404, 'Item não encontrado')
 
-            const cardInfo = cardInfoRes?.rows?.[0]
+            // Resolve categoryName to categoryId (categoria do tipo da carteira do cartão)
+            let finalCategoryId = categoryId === undefined ? undefined : (categoryId === null || categoryId === '' ? null : toId(categoryId))
+            let finalAiCategory = undefined
 
-            if (cardInfo && cardInfo.business_unit_id) {
-                const targetType = cardInfo.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL'
-                const transactionDate = updated.transactionDate || new Date()
-
-                // For invoice items, billing_date = the invoice's actual due date.
-                // This is the simplest and most reliable approach — the invoice already
-                // stores the exact due date extracted from the PDF by the AI.
-                const billingDate = cardInfo.invoiceDueDate || transactionDate
-
-                const existCheck = await db.query('SELECT id FROM finance_transactions WHERE invoice_item_id = $1', [itemId])
-
-                if (existCheck.rows.length > 0) {
-                    await db.query(`
-                        UPDATE finance_transactions 
-                        SET amount = $1, date = $2, "categoryId" = $3, description = $4, "business_unit_id" = $5, target = $6, "billing_date" = $7
-                        WHERE invoice_item_id = $8
-                     `, [updated.amount, transactionDate, updated.categoryId, updated.description, cardInfo.business_unit_id, targetType, billingDate, itemId])
+            if (categoryName !== undefined) {
+                const name = typeof categoryName === 'string' ? categoryName.trim() : ''
+                if (name) {
+                    const catRes = await client.query(
+                        'SELECT id FROM finance_categories WHERE name = $1 AND "userId" = $2 AND type = $3 ORDER BY id LIMIT 1',
+                        [name, req.user.id, categoryTypeFor(current.account_type)]
+                    )
+                    if (catRes.rows.length > 0) {
+                        finalCategoryId = catRes.rows[0].id
+                    } else {
+                        finalCategoryId = null
+                        finalAiCategory = name.slice(0, 80) // Fallback to storing as text if not mapped
+                    }
                 } else {
-                    await db.query(`
-                        INSERT INTO finance_transactions 
-                        ("userId", type, target, amount, date, "categoryId", "paymentMethod", "cardId", description, status, "business_unit_id", "invoice_item_id", "billing_date")
-                        VALUES ($1, 'DESPESA', $2, $3, $4, $5, 'Cartão de Crédito', $6, $7, 'PAID', $8, $9, $10)
-                    `, [req.user.id, targetType, updated.amount, transactionDate, updated.categoryId, cardInfo.cardId, updated.description, cardInfo.business_unit_id, itemId, billingDate])
+                    finalCategoryId = null
                 }
             }
-        } else {
-            await db.query('DELETE FROM finance_transactions WHERE invoice_item_id = $1', [itemId])
-        }
+
+            // Build dynamic update
+            const updates = []
+            const values = []
+            let paramIdx = 1
+
+            if (finalCategoryId !== undefined) {
+                updates.push(`"categoryId" = $${paramIdx++}`)
+                values.push(finalCategoryId)
+            }
+            if (finalAiCategory !== undefined) {
+                updates.push(`"aiCategory" = $${paramIdx++}`)
+                values.push(finalAiCategory)
+            }
+            if (isConfirmed !== undefined) {
+                updates.push(`"isConfirmed" = $${paramIdx++}`)
+                values.push(isConfirmed)
+            }
+            if (description !== undefined) {
+                updates.push(`description = $${paramIdx++}`)
+                values.push(description.trim())
+            }
+            if (amount !== undefined) {
+                updates.push(`amount = $${paramIdx++}`)
+                values.push(Number(amount))
+            }
+            if (transactionDate !== undefined) {
+                updates.push(`"transactionDate" = $${paramIdx++}`)
+                values.push(transactionDate || null)
+            }
+
+            if (updates.length === 0) throw new HttpError(400, 'Nenhum campo para atualizar')
+
+            values.push(itemId, req.user.id)
+            const { rows: [row] } = await client.query(
+                `UPDATE invoice_items SET ${updates.join(', ')} WHERE id = $${paramIdx++} AND "userId" = $${paramIdx} RETURNING *`,
+                values
+            )
+
+            await syncItemToStatement(client, req.user.id, row, current)
+            // Valor mudou: o total da fatura acompanha
+            if (amount !== undefined) await recalcInvoiceTotal(client, current.invoiceId)
+            return row
+        })
 
         res.json(updated)
     } catch (err) {
+        if (err instanceof HttpError) return res.status(err.status).json({ message: err.message })
         console.error('Erro ao atualizar item:', err)
         res.status(500).json({ message: 'Erro ao atualizar item' })
     }
@@ -426,34 +533,27 @@ router.patch('/items/:itemId', authMiddleware, cartoesGuard, validateReferenceOw
 // DELETE /api/finance/invoices/items/:itemId — Delete an item
 router.delete('/items/:itemId', authMiddleware, cartoesGuard, async (req, res) => {
     try {
-        const { itemId } = req.params
+        const itemId = toId(req.params.itemId)
 
-        // Check item exists and belongs to user
-        const itemResult = await db.query(
-            'SELECT * FROM invoice_items WHERE id = $1 AND "userId" = $2',
-            [itemId, req.user.id]
-        )
-        if (itemResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Item não encontrado' })
-        }
+        await withTransaction(async (client) => {
+            // Check item exists and belongs to user
+            const itemResult = await client.query(
+                'SELECT * FROM invoice_items WHERE id = $1 AND "userId" = $2 FOR UPDATE',
+                [itemId, req.user.id]
+            )
+            if (itemResult.rows.length === 0) throw new HttpError(404, 'Item não encontrado')
 
-        const invoiceId = itemResult.rows[0].invoiceId
+            const invoiceId = itemResult.rows[0].invoiceId
 
-        // Delete item
-        await db.query('DELETE FROM invoice_items WHERE id = $1 AND "userId" = $2', [itemId, req.user.id])
-
-        // Recalculate invoice totalAmount
-        const { rows: [totals] } = await db.query(
-            'SELECT COALESCE(SUM(amount), 0) as "totalAmount" FROM invoice_items WHERE "invoiceId" = $1',
-            [invoiceId]
-        )
-        await db.query(
-            'UPDATE card_invoices SET "totalAmount" = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2',
-            [totals.totalAmount, invoiceId]
-        )
+            // A compra sai do Extrato junto com o item
+            await client.query('DELETE FROM finance_transactions WHERE invoice_item_id = $1 AND "userId" = $2', [itemId, req.user.id])
+            await client.query('DELETE FROM invoice_items WHERE id = $1 AND "userId" = $2', [itemId, req.user.id])
+            await recalcInvoiceTotal(client, invoiceId)
+        })
 
         res.json({ message: 'Item excluído com sucesso' })
     } catch (err) {
+        if (err instanceof HttpError) return res.status(err.status).json({ message: err.message })
         console.error('Erro ao excluir item:', err)
         res.status(500).json({ message: 'Erro ao excluir item' })
     }
@@ -465,36 +565,39 @@ router.post('/items/bulk-delete', authMiddleware, cartoesGuard, async (req, res)
     if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ message: 'Nenhum item selecionado.' })
     }
+    if (ids.length > MAX_BULK_IDS) {
+        return res.status(400).json({ message: `Selecione até ${MAX_BULK_IDS} itens por vez.` })
+    }
+    const cleanIds = [...new Set(ids.map(toId))]
+    if (cleanIds.some(id => id === null)) {
+        return res.status(400).json({ message: 'Seleção de itens inválida.' })
+    }
     try {
-        // Get invoiceIds for recalculation (before deleting)
-        const { rows: affectedItems } = await db.query(
-            'SELECT DISTINCT "invoiceId" FROM invoice_items WHERE id = ANY($1::int[]) AND "userId" = $2',
-            [ids, req.user.id]
-        )
-
-        // Delete linked finance_transactions
-        await db.query(
-            'DELETE FROM finance_transactions WHERE invoice_item_id = ANY($1::int[]) AND "userId" = $2',
-            [ids, req.user.id]
-        )
-
-        // Delete invoice items
-        const { rowCount } = await db.query(
-            'DELETE FROM invoice_items WHERE id = ANY($1::int[]) AND "userId" = $2',
-            [ids, req.user.id]
-        )
-
-        // Recalculate totals for affected invoices
-        for (const row of affectedItems) {
-            const { rows: [totals] } = await db.query(
-                'SELECT COALESCE(SUM(amount), 0) as "totalAmount" FROM invoice_items WHERE "invoiceId" = $1',
-                [row.invoiceId]
+        const rowCount = await withTransaction(async (client) => {
+            // Get invoiceIds for recalculation (before deleting)
+            const { rows: affectedItems } = await client.query(
+                'SELECT DISTINCT "invoiceId" FROM invoice_items WHERE id = ANY($1::int[]) AND "userId" = $2',
+                [cleanIds, req.user.id]
             )
-            await db.query(
-                'UPDATE card_invoices SET "totalAmount" = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2',
-                [totals.totalAmount, row.invoiceId]
+
+            // Delete linked finance_transactions
+            await client.query(
+                'DELETE FROM finance_transactions WHERE invoice_item_id = ANY($1::int[]) AND "userId" = $2',
+                [cleanIds, req.user.id]
             )
-        }
+
+            // Delete invoice items
+            const { rowCount: deleted } = await client.query(
+                'DELETE FROM invoice_items WHERE id = ANY($1::int[]) AND "userId" = $2',
+                [cleanIds, req.user.id]
+            )
+
+            // Recalculate totals for affected invoices
+            for (const row of affectedItems) {
+                await recalcInvoiceTotal(client, row.invoiceId)
+            }
+            return deleted
+        })
 
         res.json({ message: `${rowCount} item(ns) excluído(s) com sucesso.`, deletedCount: rowCount })
     } catch (err) {
@@ -510,13 +613,18 @@ router.post('/items/bulk-delete', authMiddleware, cartoesGuard, async (req, res)
 // GET /api/finance/invoices/card/:cardId/summary — Full card dashboard data
 router.get('/card/:cardId/summary', authMiddleware, cartoesGuard, async (req, res) => {
     try {
-        const { cardId } = req.params
-        const { year } = req.query
-        const targetYear = year || new Date().getFullYear()
+        const cardId = toId(req.params.cardId)
+        const targetYear = req.query.year === undefined ? new Date().getFullYear() : Number(req.query.year)
+        if (!Number.isInteger(targetYear) || targetYear < 2000 || targetYear > 2100) {
+            return res.status(400).json({ message: 'Ano inválido.' })
+        }
 
-        // Check card belongs to user
+        // Check card belongs to user (com o tipo da carteira, para as categorias)
         const cardResult = await db.query(
-            'SELECT * FROM credit_cards WHERE id = $1 AND "userId" = $2',
+            `SELECT c.*, b.account_type as "walletType", b.name as "walletName"
+             FROM credit_cards c
+             LEFT JOIN business_units b ON b.id = c.business_unit_id
+             WHERE c.id = $1 AND c."userId" = $2`,
             [cardId, req.user.id]
         )
         if (cardResult.rows.length === 0) {
@@ -527,7 +635,7 @@ router.get('/card/:cardId/summary', authMiddleware, cartoesGuard, async (req, re
 
         // Monthly totals (bar chart data)
         const { rows: monthlyTotals } = await db.query(
-            `SELECT "referenceMonth", "totalAmount", status
+            `SELECT "referenceMonth", "totalAmount", status, "dueDate"
              FROM card_invoices
              WHERE "cardId" = $1 AND "userId" = $2 AND "referenceYear" = $3
              ORDER BY "referenceMonth" ASC`,
@@ -536,7 +644,7 @@ router.get('/card/:cardId/summary', authMiddleware, cartoesGuard, async (req, re
 
         // Category breakdown (donut chart data) — aggregate across all invoices of the year
         const { rows: categoryBreakdown } = await db.query(
-            `SELECT 
+            `SELECT
                 COALESCE(fc.name, ii."aiCategory", 'Sem Categoria') as category,
                 SUM(ii.amount) as total,
                 COUNT(ii.id) as count
@@ -551,6 +659,8 @@ router.get('/card/:cardId/summary', authMiddleware, cartoesGuard, async (req, re
 
         // Total spent this year
         const totalSpent = monthlyTotals.reduce((sum, m) => sum + (parseFloat(m.totalAmount) || 0), 0)
+        const creditLimit = Number(card.creditLimit) || 0
+        const monthsWithInvoice = monthlyTotals.length
 
         res.json({
             card,
@@ -558,9 +668,10 @@ router.get('/card/:cardId/summary', authMiddleware, cartoesGuard, async (req, re
             monthlyTotals,
             categoryBreakdown,
             totalSpent,
-            creditLimit: card.creditLimit || 0,
-            utilizationPercent: card.creditLimit > 0
-                ? Math.round((totalSpent / 12 / card.creditLimit) * 100)
+            creditLimit,
+            // Média dos meses com fatura em relação ao limite (antes dividia sempre por 12)
+            utilizationPercent: creditLimit > 0 && monthsWithInvoice > 0
+                ? Math.round((totalSpent / monthsWithInvoice / creditLimit) * 100)
                 : null
         })
     } catch (err) {

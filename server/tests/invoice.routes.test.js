@@ -481,27 +481,25 @@ describe('Invoice CRUD — Happy Path', () => {
 
 describe('Invoice Items — CRUD', () => {
 
+    // Itens agora são gravados numa transação (pool.connect): cliente simulado
+    const txClient = (handler) => {
+        const client = { query: jest.fn(async (sql, params) => handler(sql.replace(/\s+/g, ' ').trim(), params) || { rows: [], rowCount: 1 }), release: jest.fn() }
+        mockPool.connect.mockResolvedValue(client)
+        return client
+    }
+
     // Add item to invoice
     test('should add a new item to an invoice', async () => {
         if (!invoiceRoutes) return console.log('⏳ Skipping — route not implemented')
 
-        // Mock: invoice exists and belongs to user
-        mockDb.query.mockResolvedValueOnce({
-            rows: [{ id: 1, userId: 1, cardId: 1 }]
+        const client = txClient((q) => {
+            // invoice exists and belongs to user
+            if (q.includes('FROM card_invoices ci')) return { rows: [{ id: 1, cardId: 1, business_unit_id: null }] }
+            if (q.startsWith('INSERT INTO invoice_items')) return {
+                rows: [{ id: 1, invoiceId: 1, description: 'UBER *TRIP', amount: 25.90, aiCategory: 'Transporte', isConfirmed: false }]
+            }
+            if (q.startsWith('SELECT COALESCE(SUM(amount)')) return { rows: [{ totalAmount: 25.90 }] }
         })
-        // Mock: INSERT item
-        mockDb.query.mockResolvedValueOnce({
-            rows: [{
-                id: 1,
-                invoiceId: 1,
-                description: 'UBER *TRIP',
-                amount: 25.90,
-                aiCategory: 'Transporte',
-                isConfirmed: false
-            }]
-        })
-        // Mock: update totalAmount
-        mockDb.query.mockResolvedValueOnce({ rows: [{ totalAmount: 25.90 }] })
 
         const res = await request(app)
             .post('/api/finance/invoices/1/items')
@@ -516,19 +514,18 @@ describe('Invoice Items — CRUD', () => {
 
         expect(res.statusCode).toBe(201)
         expect(res.body).toHaveProperty('description', 'UBER *TRIP')
+        expect(client.query.mock.calls.map(c => c[0].trim())).toContain('COMMIT')
+        expect(client.release).toHaveBeenCalled()
     })
 
     // Update item (confirm / change category)
     test('should update an invoice item category', async () => {
         if (!invoiceRoutes) return console.log('⏳ Skipping — route not implemented')
 
-        // Mock: item exists and belongs to user
-        mockDb.query.mockResolvedValueOnce({
-            rows: [{ id: 1, invoiceId: 1, userId: 1 }]
-        })
-        // Mock: UPDATE
-        mockDb.query.mockResolvedValueOnce({
-            rows: [{ id: 1, categoryId: 5, isConfirmed: true }]
+        txClient((q) => {
+            // item exists and belongs to user
+            if (q.startsWith('SELECT ii.*')) return { rows: [{ id: 1, invoiceId: 1, userId: 1, cardId: 1, business_unit_id: null }] }
+            if (q.startsWith('UPDATE invoice_items')) return { rows: [{ id: 1, categoryId: 5, isConfirmed: true }] }
         })
 
         const res = await request(app)
@@ -544,14 +541,11 @@ describe('Invoice Items — CRUD', () => {
     test('should delete an invoice item', async () => {
         if (!invoiceRoutes) return console.log('⏳ Skipping — route not implemented')
 
-        // Mock: item exists and belongs to user
-        mockDb.query.mockResolvedValueOnce({
-            rows: [{ id: 1, invoiceId: 1, userId: 1 }]
+        txClient((q) => {
+            // item exists and belongs to user
+            if (q.startsWith('SELECT * FROM invoice_items')) return { rows: [{ id: 1, invoiceId: 1, userId: 1 }] }
+            if (q.startsWith('SELECT COALESCE(SUM(amount)')) return { rows: [{ totalAmount: 0 }] }
         })
-        // Mock: DELETE
-        mockDb.query.mockResolvedValueOnce({ rowCount: 1 })
-        // Mock: recalc total
-        mockDb.query.mockResolvedValueOnce({ rows: [{ totalAmount: 0 }] })
 
         const res = await request(app)
             .delete('/api/finance/invoices/items/1')

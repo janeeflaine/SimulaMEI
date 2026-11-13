@@ -1,6 +1,7 @@
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
+import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 
 const BAR_COLOR = '#12284a' // azul-marinho: o que saiu nos cartões
+const BAR_SOFT = '#a9b8cc' // os outros meses, quando um mês está escolhido
 
 const brl = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const short = (v) => (v >= 1000 ? `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${Math.round(v)}`)
@@ -28,7 +29,11 @@ const CustomTooltip = ({ active, payload, label }) => {
     )
 }
 
-export default function MonthlyTrendChart({ data }) {
+/**
+ * Barras mês a mês. Opcional: activeMonth destaca um mês e onSelect(mês)
+ * deixa clicar na barra (o Painel do cartão usa para abrir as compras do mês).
+ */
+export default function MonthlyTrendChart({ data, activeMonth = null, onSelect }) {
     if (!data || data.length === 0) return null
     const ticks = niceTicks(data)
 
@@ -40,7 +45,18 @@ export default function MonthlyTrendChart({ data }) {
                     <XAxis dataKey="label" tick={{ fill: '#5b6b80', fontSize: 12 }} axisLine={false} tickLine={false} />
                     <YAxis ticks={ticks} domain={[0, ticks[ticks.length - 1]]} tickFormatter={short} tick={{ fill: '#5b6b80', fontSize: 12 }} axisLine={false} tickLine={false} width={64} />
                     <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(18, 40, 74, 0.05)' }} />
-                    <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} maxBarSize={32} />
+                    <Bar
+                        dataKey="total"
+                        fill={BAR_COLOR}
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={32}
+                        cursor={onSelect ? 'pointer' : undefined}
+                        onClick={onSelect ? (_, index) => { if (data[index]?.total) onSelect(data[index].month) } : undefined}
+                    >
+                        {data.map(d => (
+                            <Cell key={d.month ?? d.label} fill={activeMonth && d.month !== activeMonth ? BAR_SOFT : BAR_COLOR} />
+                        ))}
+                    </Bar>
                 </BarChart>
             </ResponsiveContainer>
         </div>

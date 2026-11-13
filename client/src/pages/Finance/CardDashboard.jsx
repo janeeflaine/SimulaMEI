@@ -1,1015 +1,1020 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, Legend
-} from 'recharts'
+    ChevronLeft, ChevronRight, Wallet, TrendingUp, TrendingDown, CalendarDays, CalendarCheck, ReceiptText,
+    Tags, ShoppingBag, Gauge, Lightbulb, BarChart3, PieChart, Table2, Plus, Upload, Lock, Pencil, Trash2,
+    Search, CreditCard, X
+} from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import FeatureLock from '../../components/FeatureLock'
+import Select from '../../components/ui/Select'
+import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { Stat, Block, BarList } from '../../components/cards/CardsSummaryPanel'
+import MonthlyTrendChart from '../../components/cards/charts/MonthlyTrendChart'
+import { buildMonthlyTrend } from '../../utils/cardsDashboard/buildMonthlyTrend'
 import './CardDashboard.css'
 
-const COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16']
-const MONTH_NAMES = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-const MONTH_FULL = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+const MONTHS = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+const MONTHS_SHORT = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+const STATUS = { PAID: 'Paga', PARTIAL: 'Paga em parte', OVERDUE: 'Atrasada', PENDING: 'Aberta' }
+const BRANDS = { Amex: 'American Express', Outro: '' }
+const MAX_AMOUNT = 100000000
+const REVIEW_BELOW = 0.6 // categoria sugerida pela leitura da fatura com pouca certeza
 
-const formatBRL = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const plural = (n, one, many) => `${n.toLocaleString('pt-BR')} ${n === 1 ? one : many}`
+const pad = (n) => String(n).padStart(2, '0')
+const todayISO = () => new Date().toLocaleDateString('sv-SE')
+const formatDate = (value) => {
+    if (!value) return '—'
+    const [y, m, d] = String(value).slice(0, 10).split('-')
+    return y && m && d ? `${d}/${m}/${y}` : '—'
 }
+const shortDate = (value) => formatDate(value).slice(0, 5)
+const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
+const daysInMonth = (year, month) => new Date(year, month, 0).getDate()
+
+// "1.234,56", "45,9", "R$ 10" → número. Volta NaN se não for valor.
+const parseMoney = (text) => {
+    let s = String(text ?? '').replace(/[R$\s]/g, '')
+    if (!s) return NaN
+    if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
+    return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : NaN
+}
+const toMoneyText = (n) => Math.abs(Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// Plano mais barato que libera um recurso (o admin decide os recursos de cada plano)
+const planWith = (plans, feature, fallback) => {
+    const found = (plans || []).filter(p => p.features?.[feature]).sort((a, b) => Number(a.price) - Number(b.price))[0]
+    return found?.name || fallback
+}
+
+const emptyForm = { description: '', amount: '', refund: false, transactionDate: '', category: '', month: '' }
 
 export default function CardDashboard() {
     const { id: cardId } = useParams()
     const navigate = useNavigate()
     const { user } = useAuth()
-    const [loading, setLoading] = useState(true)
+    const { confirm, notify, dialog } = useConfirmDialog()
+    const token = localStorage.getItem('token')
+    const authHeaders = useMemo(() => ({ 'Authorization': `Bearer ${token}` }), [token])
+
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const maxYear = currentYear + (now.getMonth() === 11 ? 1 : 0) // em dezembro já existe a fatura de janeiro
+
+    const [year, setYear] = useState(currentYear)
     const [data, setData] = useState(null)
-    const [year, setYear] = useState(new Date().getFullYear())
+    const [invoices, setInvoices] = useState([]) // faturas do ano (id, mês, vencimento)
+    const [loadState, setLoadState] = useState('loading') // loading | ok | notfound | error
     const [selectedMonth, setSelectedMonth] = useState(null)
     const [items, setItems] = useState([])
-    const [itemsLoading, setItemsLoading] = useState(false)
-
-    // Edit and Category States
+    const [itemsState, setItemsState] = useState('idle') // idle | loading | ok | error
+    const [search, setSearch] = useState('')
+    const [selectedIds, setSelectedIds] = useState(new Set())
+    const [busy, setBusy] = useState(false)
     const [categories, setCategories] = useState([])
-    const [editingItemId, setEditingItemId] = useState(null)
-    const [editForm, setEditForm] = useState({ description: '', amount: '', categoryName: '' })
-    const [actionLoading, setActionLoading] = useState(null)
-    const [showNewCatModal, setShowNewCatModal] = useState(false)
-    const [newCatName, setNewCatName] = useState('')
-    const [creatingCat, setCreatingCat] = useState(false)
-    const [selectedItemIds, setSelectedItemIds] = useState(new Set())
-    const [bulkDeleting, setBulkDeleting] = useState(false)
+    const [plans, setPlans] = useState([])
 
-    const API = import.meta.env.VITE_API_URL || ''
-    const token = localStorage.getItem('token')
+    const [form, setForm] = useState(null) // null = janela fechada; { mode: 'add' | 'edit', item? }
+    const [formData, setFormData] = useState(emptyForm)
+    const [formError, setFormError] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [newCat, setNewCat] = useState(null) // null = fechado; texto do nome da categoria nova
+    const [creatingCat, setCreatingCat] = useState(false)
+
+    const summaryReq = useRef(0)
+    const itemsReq = useRef(0)
+    const monthsRef = useRef(null)
+
     const hasCartoes = user?.planFeatures?.cartoes || user?.isInTrial || user?.role === 'ADMIN'
     const hasUploadFaturas = user?.planFeatures?.upload_faturas || user?.isInTrial || user?.role === 'ADMIN'
 
-    // Upgrade promo modal
-    const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+    // Planos: para dizer em qual plano está cada recurso
+    useEffect(() => {
+        fetch('/api/plans').then(r => (r.ok ? r.json() : [])).then(list => setPlans(Array.isArray(list) ? list : [])).catch(() => {})
+    }, [])
 
-    // Manual item modal state
-    const [showManualModal, setShowManualModal] = useState(false)
-    const [manualForm, setManualForm] = useState({ description: '', amount: '', transactionDate: '', categoryName: '' })
-    const [manualSaving, setManualSaving] = useState(false)
-    const [manualError, setManualError] = useState('')
-
-    // Fetch card dashboard data
-    const fetchDashboard = useCallback(async () => {
+    // Resumo do ano + faturas do ano (para achar a fatura de cada mês)
+    const fetchSummary = useCallback(async ({ keepMonth = false } = {}) => {
+        const req = ++summaryReq.current
+        if (!keepMonth) setLoadState('loading')
         try {
-            setLoading(true)
-            const res = await fetch(`${API}/api/finance/invoices/card/${cardId}/summary?year=${year}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            if (!res.ok) throw new Error('Erro ao carregar dados')
-            const result = await res.json()
+            const [sumRes, invRes] = await Promise.all([
+                fetch(`/api/finance/invoices/card/${cardId}/summary?year=${year}`, { headers: authHeaders }),
+                fetch(`/api/finance/invoices?cardId=${cardId}&year=${year}`, { headers: authHeaders })
+            ])
+            if (req !== summaryReq.current) return
+            if (sumRes.status === 404 || sumRes.status === 400) { setLoadState('notfound'); return }
+            if (!sumRes.ok) throw new Error('summary')
+            const result = await sumRes.json()
+            const list = invRes.ok ? await invRes.json() : []
+            if (req !== summaryReq.current) return
             setData(result)
+            setInvoices(Array.isArray(list) ? list.filter(inv => Number(inv.referenceYear) === Number(year)) : [])
+            setLoadState('ok')
 
-            // Auto-select current month or last with data
-            if (result.monthlyTotals?.length > 0) {
-                const currentMonth = new Date().getMonth() + 1
-                const hasCurrentMonth = result.monthlyTotals.find(m => m.referenceMonth === currentMonth)
-                setSelectedMonth(hasCurrentMonth ? currentMonth : result.monthlyTotals[result.monthlyTotals.length - 1].referenceMonth)
+            if (!keepMonth) {
+                // Abre o mês atual se tiver fatura; senão a última fatura do ano
+                const months = (result.monthlyTotals || []).map(m => Number(m.referenceMonth))
+                const thisMonth = now.getMonth() + 1
+                let pick = null
+                if (year === currentYear && months.includes(thisMonth)) pick = thisMonth
+                else if (months.length) pick = months[months.length - 1]
+                else if (year === currentYear) pick = thisMonth
+                setSelectedMonth(pick)
+                setSelectedIds(new Set())
+                setSearch('')
             }
         } catch (err) {
-            console.error('Dashboard error:', err)
-        } finally {
-            setLoading(false)
+            if (req !== summaryReq.current) return
+            console.error('Painel do cartão:', err)
+            setLoadState('error')
         }
-    }, [cardId, year, token, API])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cardId, year, authHeaders, currentYear])
 
-    // Fetch items for selected month
+    const invoiceOf = useCallback((month) => invoices.find(inv => Number(inv.referenceMonth) === Number(month)), [invoices])
+
     const fetchItems = useCallback(async () => {
-        if (!selectedMonth || !data?.monthlyTotals) return
-
-        const invoice = data.monthlyTotals.find(m => m.referenceMonth === selectedMonth)
-        if (!invoice) {
-            setItems([])
-            return
-        }
-
-        // We need the invoice ID — fetch invoices list
+        const req = ++itemsReq.current
+        const invoice = selectedMonth ? invoiceOf(selectedMonth) : null
+        if (!invoice) { setItems([]); setItemsState('ok'); return }
+        setItemsState('loading')
         try {
-            setItemsLoading(true)
-            const res = await fetch(`${API}/api/finance/invoices?cardId=${cardId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            if (!res.ok) return
-
-            const invoices = await res.json()
-            const target = invoices.find(inv =>
-                inv.referenceMonth === selectedMonth && inv.referenceYear === year
-            )
-
-            if (target) {
-                const itemsRes = await fetch(`${API}/api/finance/invoices/${target.id}/items`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                })
-                if (itemsRes.ok) {
-                    setItems(await itemsRes.json())
-                }
-            } else {
-                setItems([])
-            }
+            const res = await fetch(`/api/finance/invoices/${invoice.id}/items`, { headers: authHeaders })
+            if (req !== itemsReq.current) return
+            if (!res.ok) throw new Error('items')
+            const list = await res.json()
+            if (req !== itemsReq.current) return
+            setItems(Array.isArray(list) ? list : [])
+            setItemsState('ok')
         } catch (err) {
-            console.error('Items error:', err)
-        } finally {
-            setItemsLoading(false)
+            if (req !== itemsReq.current) return
+            console.error('Compras da fatura:', err)
+            setItemsState('error')
         }
-    }, [selectedMonth, data, cardId, year, token, API])
+    }, [selectedMonth, invoiceOf, authHeaders])
 
-    // Fetch user PF categories
     const fetchCategories = useCallback(async () => {
         try {
-            const res = await fetch(`${API}/api/finance/categories`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            if (res.ok) {
-                const data = await res.json()
-                const pfCategories = data.filter(c => c.type === 'DESPESA_PESSOAL')
-                const uniqueNames = [...new Set(pfCategories.map(c => c.name))]
-                setCategories(uniqueNames)
-            }
-        } catch { /* ignore */ }
-    }, [API, token])
+            const res = await fetch('/api/finance/categories', { headers: authHeaders })
+            if (res.ok) setCategories(await res.json())
+        } catch { /* sem categorias, o campo fica só com "Sem categoria" */ }
+    }, [authHeaders])
 
-    useEffect(() => { fetchDashboard(); fetchCategories() }, [fetchDashboard, fetchCategories])
-    useEffect(() => { fetchItems() }, [fetchItems])
+    useEffect(() => { if (hasCartoes) fetchSummary() }, [hasCartoes, fetchSummary])
+    useEffect(() => { if (hasCartoes) fetchCategories() }, [hasCartoes, fetchCategories])
+    useEffect(() => { if (loadState === 'ok') fetchItems() }, [loadState, fetchItems])
 
-    // Table Actions
-    const handleEditClick = (item) => {
-        setEditingItemId(item.id)
-        setEditForm({
-            description: item.description,
-            amount: item.amount,
-            categoryName: item.categoryName || item.aiCategory || 'Outros'
-        })
+    // No celular os meses rolam de lado: mostra o mês escolhido
+    useEffect(() => {
+        const box = monthsRef.current
+        const chip = box?.querySelector('.pc-month.is-active')
+        if (!box || !chip) return
+        box.scrollLeft = Math.max(0, chip.offsetLeft - box.offsetLeft - (box.clientWidth - chip.offsetWidth) / 2)
+    }, [selectedMonth, loadState])
+
+    const refresh = async () => {
+        await fetchSummary({ keepMonth: true })
     }
 
-    const handleCancelEdit = () => {
-        setEditingItemId(null)
-        setEditForm({ description: '', amount: '', categoryName: '' })
-    }
+    const card = data?.card
+    // Categorias que combinam com a carteira do cartão: MEI usa despesas do MEI
+    const categoryType = card?.walletType === 'PJ' ? 'DESPESA_MEI' : 'DESPESA_PESSOAL'
+    const cardCategories = useMemo(() => {
+        const seen = new Set()
+        return categories
+            .filter(c => c.type === categoryType)
+            .filter(c => { const k = c.name.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true })
+            .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+    }, [categories, categoryType])
 
-    const handleCategoryChange = (val, originalCategory) => {
-        if (val === 'NEW_CATEGORY') {
-            setShowNewCatModal(true)
-            // Revert select back to previous value to prevent it showing "NEW_CATEGORY"
-            setEditForm(prev => ({ ...prev, categoryName: originalCategory || 'Outros' }))
-        } else {
-            setEditForm(prev => ({ ...prev, categoryName: val }))
+    // ── Números do ano ──────────────────────────────────────────────────
+    const stats = useMemo(() => {
+        if (!data) return null
+        const months = (data.monthlyTotals || [])
+            .map(m => ({ month: Number(m.referenceMonth), total: Number(m.totalAmount) || 0, status: m.status, dueDate: m.dueDate }))
+            .sort((a, b) => a.month - b.month)
+        const withSpend = months.filter(m => m.total > 0)
+        const totalSpent = Number(data.totalSpent) || 0
+        const average = withSpend.length ? totalSpent / withSpend.length : 0
+        const top = withSpend.reduce((a, m) => (!a || m.total > a.total ? m : a), null)
+        const low = withSpend.length > 1 ? withSpend.reduce((a, m) => (!a || m.total < a.total ? m : a), null) : null
+        const last = months.length ? months[months.length - 1] : null
+        const previous = last ? months.find(m => m.month === last.month - 1) : null
+        const change = last && previous && previous.total > 0 ? Math.round(((last.total - previous.total) / previous.total) * 100) : null
+
+        const categoriesYear = (data.categoryBreakdown || []).map(c => ({ name: c.category, total: Number(c.total) || 0, count: Number(c.count) || 0 }))
+        const purchases = categoriesYear.reduce((s, c) => s + c.count, 0)
+        const namedCategories = categoriesYear.filter(c => c.name !== 'Sem Categoria' && c.total > 0)
+        const topCategory = namedCategories.sort((a, b) => b.total - a.total)[0] || null
+        const uncategorized = categoriesYear.find(c => c.name === 'Sem Categoria')
+        const limit = Number(data.creditLimit) || 0
+
+        return { months, withSpend, totalSpent, average, top, low, last, previous, change, categoriesYear, purchases, topCategory, uncategorized, limit }
+    }, [data])
+
+    const insights = useMemo(() => {
+        if (!stats || !stats.withSpend.length) return []
+        const list = []
+        if (stats.top && stats.withSpend.length > 1 && stats.average > 0) {
+            const above = Math.round(((stats.top.total - stats.average) / stats.average) * 100)
+            if (above > 0) list.push(`${capitalize(MONTHS[stats.top.month])} foi o mês mais caro: ${brl(stats.top.total)}, ${above}% acima da média.`)
         }
+        if (stats.topCategory && stats.totalSpent > 0) {
+            const share = Math.round((stats.topCategory.total / stats.totalSpent) * 100)
+            list.push(`${stats.topCategory.name} levou ${share}% do que foi gasto no cartão em ${year}.`)
+        }
+        if (stats.change !== null && stats.change !== 0 && stats.last && stats.previous) {
+            const diff = Math.abs(stats.last.total - stats.previous.total)
+            list.push(`A fatura de ${MONTHS[stats.last.month]} ficou ${brl(diff)} ${stats.change > 0 ? 'maior' : 'menor'} que a de ${MONTHS[stats.previous.month]}.`)
+        }
+        if (stats.uncategorized && stats.uncategorized.count > 0) {
+            list.push(`${plural(stats.uncategorized.count, 'compra está', 'compras estão')} sem categoria (${brl(stats.uncategorized.total)}). Com categoria, os relatórios ficam mais certos.`)
+        }
+        return list
+    }, [stats, year])
+
+    // ── Compras do mês escolhido ────────────────────────────────────────
+    const selectedInvoice = selectedMonth ? invoiceOf(selectedMonth) : null
+    const monthTotal = items.reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    const toReview = items.filter(i => !i.categoryId || (Number(i.aiConfidence) > 0 && Number(i.aiConfidence) < REVIEW_BELOW)).length
+    const visibleItems = useMemo(() => {
+        const q = search.trim().toLowerCase()
+        if (!q) return items
+        return items.filter(i => `${i.description} ${i.categoryName || i.aiCategory || ''}`.toLowerCase().includes(q))
+    }, [items, search])
+    const selectedTotal = items.filter(i => selectedIds.has(i.id)).reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    const allVisibleSelected = visibleItems.length > 0 && visibleItems.every(i => selectedIds.has(i.id))
+
+    const chooseMonth = (month) => {
+        setSelectedMonth(month)
+        setSelectedIds(new Set())
+        setSearch('')
     }
+
+    const toggleItem = (id) => setSelectedIds(prev => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+    })
+
+    const toggleAllVisible = () => setSelectedIds(prev => {
+        const next = new Set(prev)
+        if (allVisibleSelected) visibleItems.forEach(i => next.delete(i.id))
+        else visibleItems.forEach(i => next.add(i.id))
+        return next
+    })
+
+    // ── Janela de compra (adicionar / editar) ───────────────────────────
+    const categoryValueOf = (item) => {
+        if (item.categoryId) return `id:${item.categoryId}`
+        if (item.aiCategory) return `ai:${item.aiCategory}`
+        return ''
+    }
+
+    const openAdd = () => {
+        const month = selectedMonth || (year === currentYear ? now.getMonth() + 1 : 12)
+        setFormData({ ...emptyForm, transactionDate: todayISO(), month: String(month) })
+        setFormError('')
+        setNewCat(null)
+        setForm({ mode: 'add' })
+    }
+
+    const openEdit = (item) => {
+        const amount = Number(item.amount) || 0
+        setFormData({
+            description: item.description || '',
+            amount: toMoneyText(amount),
+            refund: amount < 0,
+            transactionDate: item.transactionDate ? String(item.transactionDate).slice(0, 10) : '',
+            category: categoryValueOf(item),
+            month: String(selectedMonth)
+        })
+        setFormError('')
+        setNewCat(null)
+        setForm({ mode: 'edit', item })
+    }
+
+    const closeForm = useCallback(() => { if (!saving) { setForm(null); setNewCat(null) } }, [saving])
+    const setField = (field, value) => setFormData(prev => ({ ...prev, [field]: value }))
+
+    // Esc fecha a janela (se um aviso estiver por cima, o Esc é dele)
+    useEffect(() => {
+        if (!form) return undefined
+        const onKey = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return
+            if (newCat !== null) { setNewCat(null); return }
+            closeForm()
+        }
+        window.addEventListener('keydown', onKey)
+        const { overflow } = document.body.style
+        document.body.style.overflow = 'hidden'
+        return () => {
+            window.removeEventListener('keydown', onKey)
+            document.body.style.overflow = overflow
+        }
+    }, [form, newCat, closeForm])
+
+    const categoryOptions = useMemo(() => {
+        const options = [{ value: '', label: 'Sem categoria' }]
+        const current = form?.mode === 'edit' ? form.item : null
+        // Categoria atual que não está na lista (de outro tipo, ou sugestão da leitura)
+        if (current?.categoryId && !cardCategories.some(c => c.id === current.categoryId)) {
+            options.push({ value: `id:${current.categoryId}`, label: current.categoryName || 'Categoria atual' })
+        }
+        if (current && !current.categoryId && current.aiCategory) {
+            options.push({ value: `ai:${current.aiCategory}`, label: `${current.aiCategory} (sugerida)` })
+        }
+        if (cardCategories.length) {
+            options.push({
+                group: card?.walletType === 'PJ' ? 'Despesas do MEI' : 'Despesas pessoais',
+                options: cardCategories.map(c => ({ value: `id:${c.id}`, label: c.name }))
+            })
+        }
+        return options
+    }, [cardCategories, form, card?.walletType])
+
+    const monthOptions = Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: `${capitalize(MONTHS[i + 1])} de ${year}` }))
 
     const handleCreateCategory = async () => {
-        if (!newCatName.trim()) return
+        const name = (newCat || '').trim()
+        if (!name) return
+        if (name.length > 60) { setFormError('O nome da categoria pode ter até 60 letras.'); return }
         setCreatingCat(true)
+        setFormError('')
         try {
-            const res = await fetch(`${API}/api/finance/categories`, {
+            const res = await fetch('/api/finance/categories', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ name: newCatName.trim(), type: 'DESPESA_PESSOAL' })
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, type: categoryType })
             })
-            if (res.ok) {
-                const newCat = await res.json()
-                setCategories(prev => [...prev, newCat.name])
-                setEditForm(prev => ({ ...prev, categoryName: newCat.name }))
-                setShowNewCatModal(false)
-                setNewCatName('')
-            } else {
-                alert('Erro ao criar categoria')
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok || !body?.id) {
+                setFormError(body.message || 'Não deu para criar a categoria. Tente de novo.')
+                return
             }
-        } catch (err) {
-            alert('Erro de conexão ao criar categoria')
+            setCategories(prev => [...prev, body])
+            setField('category', `id:${body.id}`)
+            setNewCat(null)
+        } catch {
+            setFormError('Sem conexão. Verifique a internet e tente de novo.')
         } finally {
             setCreatingCat(false)
         }
     }
 
-    const handleSaveEdit = async () => {
-        if (!editForm.description || !editForm.amount) return
-        setActionLoading(editingItemId)
-        try {
-            const res = await fetch(`${API}/api/finance/invoices/items/${editingItemId}`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    description: editForm.description,
-                    amount: parseFloat(editForm.amount),
-                    categoryName: editForm.categoryName
-                })
-            })
-
-            if (res.ok) {
-                await fetchItems() // refresh items
-                await fetchDashboard() // refresh dashboard totals
-                handleCancelEdit()
-            } else {
-                alert('Erro ao atualizar item')
-            }
-        } catch (err) {
-            alert('Erro de conexão')
-        } finally {
-            setActionLoading(null)
-        }
-    }
-
-    const handleDelete = async (itemId) => {
-        if (!window.confirm('Tem certeza que deseja excluir este item?')) return
-        setActionLoading(itemId)
-        try {
-            const res = await fetch(`${API}/api/finance/invoices/items/${itemId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            if (res.ok) {
-                await fetchItems()
-                await fetchDashboard()
-            } else {
-                alert('Erro ao excluir item')
-            }
-        } catch (err) {
-            alert('Erro de conexão')
-        } finally {
-            setActionLoading(null)
-        }
-    }
-
-    // --- BULK SELECT & DELETE ---
-    const toggleSelectItem = (id) => {
-        setSelectedItemIds(prev => {
-            const next = new Set(prev)
-            if (next.has(id)) next.delete(id)
-            else next.add(id)
-            return next
+    // Fatura do mês: usa a que existe ou cria (vencimento no dia do cartão, sem passar do fim do mês)
+    const ensureInvoice = async (month) => {
+        const existing = invoiceOf(month)
+        if (existing) return existing
+        const day = Math.min(Number(card?.dueDate) || 10, daysInMonth(year, month))
+        const res = await fetch('/api/finance/invoices', {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cardId: Number(cardId), referenceMonth: month, referenceYear: year, dueDate: `${year}-${pad(month)}-${pad(day)}` })
         })
-    }
-
-    const toggleSelectAllItems = () => {
-        if (selectedItemIds.size === items.length) {
-            setSelectedItemIds(new Set())
-        } else {
-            setSelectedItemIds(new Set(items.map(i => i.id)))
+        if (res.status === 409) {
+            // Criada agora por outra aba: busca de novo
+            const list = await fetch(`/api/finance/invoices?cardId=${cardId}&year=${year}`, { headers: authHeaders }).then(r => (r.ok ? r.json() : []))
+            const found = list.find(inv => Number(inv.referenceMonth) === month && Number(inv.referenceYear) === year)
+            if (found) return found
         }
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok || !body?.id) throw new Error(body.message || 'Não deu para abrir a fatura desse mês.')
+        return body
     }
 
-    const handleBulkDelete = async () => {
-        if (selectedItemIds.size === 0) return
-        if (!window.confirm(`Tem certeza que deseja excluir ${selectedItemIds.size} item(ns)? Esta ação não pode ser desfeita.`)) return
-        setBulkDeleting(true)
+    const handleSave = async (e) => {
+        e.preventDefault()
+        const description = formData.description.trim()
+        const value = parseMoney(formData.amount)
+        if (!description) { setFormError('Escreva a descrição da compra.'); return }
+        if (!Number.isFinite(value) || value <= 0) { setFormError('Informe o valor da compra, por exemplo 45,90.'); return }
+        if (value > MAX_AMOUNT) { setFormError('Esse valor está alto demais. Confira os números.'); return }
+        const amount = formData.refund ? -value : value
+
+        const category = formData.category
+        const categoryPart = category.startsWith('id:')
+            ? { categoryId: Number(category.slice(3)) }
+            : category.startsWith('ai:') ? { categoryName: category.slice(3) } : { categoryId: null }
+
+        setSaving(true)
+        setFormError('')
         try {
-            const res = await fetch(`${API}/api/finance/invoices/items/bulk-delete`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ ids: Array.from(selectedItemIds) })
-            })
-            if (res.ok) {
-                const data = await res.json()
-                setSelectedItemIds(new Set())
-                await fetchItems()
-                await fetchDashboard()
-                alert(data.message)
-            } else {
-                const data = await res.json()
-                alert(data.message || 'Erro ao excluir itens')
-            }
-        } catch (err) {
-            console.error(err)
-            alert('Erro de conexão ao excluir itens.')
-        } finally {
-            setBulkDeleting(false)
-        }
-    }
-
-    // --- ADD MANUAL ITEM ---
-    const handleAddManualItem = async () => {
-        if (!manualForm.description || !manualForm.amount) {
-            setManualError('Descrição e valor são obrigatórios.')
-            return
-        }
-        setManualSaving(true)
-        setManualError('')
-        try {
-            // Find or create invoice for selected month
-            const now = new Date()
-            const refMonth = selectedMonth || (now.getMonth() + 1)
-            const refYear = year
-
-            // Find the card's dueDate to set invoice due date
-            const dueDateDay = data?.card?.dueDate || 10
-            const invoiceDueDate = `${refYear}-${String(refMonth).padStart(2,'0')}-${String(dueDateDay).padStart(2,'0')}`
-
-            // Try to find existing invoice
-            const listRes = await fetch(`${API}/api/finance/invoices?cardId=${cardId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            const invoices = listRes.ok ? await listRes.json() : []
-            let invoice = invoices.find(inv => inv.referenceMonth === refMonth && inv.referenceYear === refYear)
-
-            if (!invoice) {
-                // Create invoice for this month
-                const createRes = await fetch(`${API}/api/finance/invoices`, {
+            if (form.mode === 'add') {
+                const month = Number(formData.month)
+                const invoice = await ensureInvoice(month)
+                const res = await fetch(`/api/finance/invoices/${invoice.id}/items`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cardId, referenceMonth: refMonth, referenceYear: refYear, dueDate: invoiceDueDate })
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        description,
+                        amount,
+                        transactionDate: formData.transactionDate || null,
+                        categoryId: categoryPart.categoryId ?? null,
+                        isConfirmed: true
+                    })
                 })
-                if (!createRes.ok) throw new Error('Erro ao criar fatura')
-                invoice = await createRes.json()
-            }
-
-            // Resolve categoryName to id
-            let categoryId = null
-            if (manualForm.categoryName) {
-                const catMatch = (await fetch(`${API}/api/finance/categories`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }).then(r => r.json()).catch(() => [])).find(c => c.name === manualForm.categoryName)
-                if (catMatch) categoryId = catMatch.id
-            }
-
-            // Add item
-            const itemRes = await fetch(`${API}/api/finance/invoices/${invoice.id}/items`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    description: manualForm.description,
-                    amount: parseFloat(manualForm.amount),
-                    transactionDate: manualForm.transactionDate || null,
-                    categoryId,
-                    isConfirmed: true
+                const body = await res.json().catch(() => ({}))
+                if (!res.ok) { setFormError(body.message || 'Não deu para adicionar a compra. Tente de novo.'); return }
+                setForm(null)
+                if (month !== selectedMonth) chooseMonth(month)
+                await refresh() // as faturas novas fazem a lista de compras recarregar
+            } else {
+                const res = await fetch(`/api/finance/invoices/items/${form.item.id}`, {
+                    method: 'PATCH',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description, amount, transactionDate: formData.transactionDate || null, ...categoryPart })
                 })
-            })
-            if (!itemRes.ok) throw new Error('Erro ao adicionar item')
-
-            setShowManualModal(false)
-            setManualForm({ description: '', amount: '', transactionDate: '', categoryName: '' })
-            await fetchDashboard()
-            await fetchItems()
+                const body = await res.json().catch(() => ({}))
+                if (!res.ok) { setFormError(body.message || 'Não deu para salvar a compra. Tente de novo.'); return }
+                setForm(null)
+                await refresh()
+            }
         } catch (err) {
-            setManualError(err.message || 'Erro de conexão')
+            setFormError(err?.message && err.message !== 'Failed to fetch' ? err.message : 'Sem conexão. Verifique a internet e tente de novo.')
         } finally {
-            setManualSaving(false)
+            setSaving(false)
         }
     }
 
+    // ── Excluir ─────────────────────────────────────────────────────────
+    const deleteItems = async (ids, label) => {
+        const ok = await confirm({
+            title: ids.length === 1 ? `Excluir ${label}?` : `Excluir ${ids.length} compras?`,
+            message: ids.length === 1
+                ? 'A compra sai da fatura e do Extrato. Isso não pode ser desfeito.'
+                : 'As compras saem da fatura e do Extrato. Isso não pode ser desfeito.',
+            details: ids.length > 1 ? [{ label: 'Total das compras', value: brl(selectedTotal), strong: true }] : [],
+            confirmLabel: ids.length === 1 ? 'Excluir compra' : `Excluir ${ids.length} compras`,
+            tone: 'danger'
+        })
+        if (!ok) return
+        setBusy(true)
+        try {
+            const res = ids.length === 1
+                ? await fetch(`/api/finance/invoices/items/${ids[0]}`, { method: 'DELETE', headers: authHeaders })
+                : await fetch('/api/finance/invoices/items/bulk-delete', {
+                    method: 'POST',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                })
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}))
+                notify({ title: 'Não deu para excluir', message: body.message || 'Tente de novo em instantes.', tone: 'error' })
+                return
+            }
+            setSelectedIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next })
+            await refresh()
+        } catch {
+            notify({ title: 'Sem conexão', message: 'Não deu para excluir. Verifique a internet e tente de novo.', tone: 'error' })
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    const askUpgrade = async () => {
+        const plan = planWith(plans, 'upload_faturas', 'Prata')
+        const ok = await confirm({
+            title: 'Leitura de faturas com IA',
+            message: `Envie o PDF ou a foto da fatura e as compras entram sozinhas, já com categoria. Está no plano ${plan}.`,
+            confirmLabel: 'Ver planos',
+            cancelLabel: 'Agora não'
+        })
+        if (ok) navigate('/planos')
+    }
+
+    // ── Telas sem dados ─────────────────────────────────────────────────
     if (!hasCartoes) {
         return (
-            <div className="container py-8">
-                <FeatureLock
-                    featureName="Dashboard do Cartão"
-                    requiredPlan="Gratuito"
-                    description="Visualize gráficos detalhados de gastos e categorias por cartão."
-                    icon="📊"
-                />
+            <div className="painel-cartao">
+                <div className="pc-container">
+                    <FeatureLock
+                        featureName="Painel do cartão"
+                        requiredPlan={planWith(plans, 'cartoes', 'Prata')}
+                        description="Veja os gastos de cada cartão mês a mês, por categoria, e as compras de cada fatura."
+                        icon={<CreditCard size={28} aria-hidden="true" />}
+                    />
+                </div>
             </div>
         )
     }
 
-    if (loading) {
+    if (loadState === 'notfound') {
         return (
-            <div className="card-dashboard-page">
-                <div className="card-dashboard-container">
-                    <div className="cd-loading">
-                        <div className="loader"></div>
-                        <p>Carregando dashboard...</p>
+            <div className="painel-cartao">
+                <div className="pc-container">
+                    <div className="pc-empty">
+                        <span className="pc-empty__icon" aria-hidden="true"><CreditCard size={26} /></span>
+                        <h1>Cartão não encontrado</h1>
+                        <p>Esse cartão não existe ou não é da sua conta.</p>
+                        <Link to="/financas/cartoes" className="btn btn-primary">Ver meus cartões</Link>
                     </div>
                 </div>
             </div>
         )
     }
 
-    if (!data?.card) {
+    if (loadState === 'error' && !data) {
         return (
-            <div className="card-dashboard-page">
-                <div className="card-dashboard-container">
-                    <div className="cd-empty">
-                        <span className="empty-icon">❌</span>
-                        <h3>Cartão não encontrado</h3>
-                        <p>Este cartão não existe ou não pertence à sua conta.</p>
-                        <Link to="/financas/cartoes" className="btn btn-primary">← Voltar aos Cartões</Link>
+            <div className="painel-cartao">
+                <div className="pc-container">
+                    <Link to="/financas/cartoes" className="pc-back"><ChevronLeft size={18} aria-hidden="true" /> Cartões</Link>
+                    <div className="csp-message" role="alert">
+                        <p>Não deu para carregar o painel do cartão.</p>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => fetchSummary()}>Tentar de novo</button>
                     </div>
                 </div>
             </div>
         )
     }
 
-    const card = data.card
-    const monthlyData = (data.monthlyTotals || []).map(m => ({
-        ...m,
-        name: MONTH_NAMES[m.referenceMonth],
-        total: parseFloat(m.totalAmount) || 0
-    }))
-
-    const categoryData = (data.categoryBreakdown || []).map((c, i) => ({
-        name: c.category,
-        value: parseFloat(c.total) || 0,
-        count: parseInt(c.count),
-        fill: COLORS[i % COLORS.length]
-    }))
-
-    const totalSpent = data.totalSpent || 0
-    const creditLimit = data.creditLimit || 0
-    const utilizationPercent = data.utilizationPercent || 0
-    const avgMonthly = monthlyData.length > 0 ? totalSpent / monthlyData.length : 0
-    const maxMonth = monthlyData.length > 0 ? Math.max(...monthlyData.map(m => m.total)) : 0
-
-    const getUtilClass = (pct) => {
-        if (pct >= 80) return 'danger'
-        if (pct >= 50) return 'warn'
-        return 'safe'
-    }
-
-    // Custom tooltip for bar chart
-    const BarTooltip = ({ active, payload }) => {
-        if (active && payload && payload.length) {
-            return (
-                <div style={{
-                    background: 'white', padding: '0.75rem 1rem', borderRadius: '0.75rem',
-                    border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'
-                }}>
-                    <p style={{ fontWeight: 700, color: '#0f172a', marginBottom: '0.25rem' }}>
-                        {payload[0].payload.name} / {year}
-                    </p>
-                    <p style={{ color: '#10b981', fontWeight: 600 }}>{formatBRL(payload[0].value)}</p>
-                </div>
-            )
-        }
-        return null
-    }
-
-    // Custom tooltip for pie chart
-    const PieTooltip = ({ active, payload }) => {
-        if (active && payload && payload.length) {
-            const total = categoryData.reduce((s, c) => s + c.value, 0)
-            const pct = total > 0 ? ((payload[0].value / total) * 100).toFixed(1) : 0
-            return (
-                <div style={{
-                    background: 'white', padding: '0.75rem 1rem', borderRadius: '0.75rem',
-                    border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'
-                }}>
-                    <p style={{ fontWeight: 700, color: '#0f172a' }}>{payload[0].name}</p>
-                    <p style={{ color: payload[0].payload.fill, fontWeight: 600 }}>{formatBRL(payload[0].value)} ({pct}%)</p>
-                </div>
-            )
-        }
-        return null
-    }
+    const loadingFirst = !data
+    const brand = card ? (BRANDS[card.brand] ?? card.brand ?? '') : ''
+    const isPJ = card?.walletType === 'PJ'
+    const hasYearData = !!stats && stats.months.length > 0
+    const trend = buildMonthlyTrend((stats?.months || []).map(m => ({ month: m.month, total: m.total })))
+    const lastMonthName = stats?.last ? MONTHS[stats.last.month] : ''
 
     return (
-        <div className="card-dashboard-page">
-            <div className="card-dashboard-container">
+        <div className="painel-cartao">
+            <div className="pc-container">
+                <Link to="/financas/cartoes" className="pc-back"><ChevronLeft size={18} aria-hidden="true" /> Cartões</Link>
 
-                {/* Back Link */}
-                <Link to="/financas/cartoes" className="dashboard-back-link">
-                    ← Voltar aos Cartões
-                </Link>
-
-                {/* Card Hero */}
-                <div className="card-hero">
-                    <div className="card-hero-visual" style={{
-                        backgroundImage: card.imageUrl ? `url(${card.imageUrl})` : undefined
-                    }}>
-                        <div className="hero-brand">{card.brand || 'CARTÃO'}</div>
-                        <div className="hero-number">•••• •••• •••• {card.lastFour || '0000'}</div>
-                        <div className="hero-holder">{card.name || 'TITULAR'}</div>
-                    </div>
-                    <div className="card-hero-info">
-                        <h1>{card.name}</h1>
-                        <p>Dashboard de gastos e análises do cartão</p>
-                        <div style={{ marginBottom: '0.75rem', marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => {
-                                    setManualForm({ description: '', amount: '', transactionDate: new Date().toISOString().split('T')[0], categoryName: categories[0] || '' })
-                                    setManualError('')
-                                    setShowManualModal(true)
-                                }}
-                            >
-                                ➕ Adicionar Item
-                            </button>
-                            {hasUploadFaturas ? (
-                                <Link
-                                    to={`/financas/cartoes/${cardId}/upload`}
-                                    className="btn btn-primary btn-sm"
-                                    style={{ textDecoration: 'none' }}
-                                >
-                                    📤 Upload de Fatura IA
-                                </Link>
-                            ) : (
-                                <button
-                                    className="btn btn-sm"
-                                    style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', cursor: 'pointer' }}
-                                    onClick={() => setShowUpgradeModal(true)}
-                                >
-                                    🔒 Cadastrar Fatura com IA
-                                </button>
-                            )}
-                        </div>
-                        <div className="hero-meta">
-                            <div className="hero-meta-item">
-                                <span className="meta-label">Bandeira</span>
-                                <span className="meta-value">{card.brand || '—'}</span>
-                            </div>
-                            <div className="hero-meta-item">
-                                <span className="meta-label">Vencimento</span>
-                                <span className="meta-value">Dia {card.dueDate || '—'}</span>
-                            </div>
-                            <div className="hero-meta-item">
-                                <span className="meta-label">Fechamento</span>
-                                <span className="meta-value">Dia {card.closingDay || '—'}</span>
-                            </div>
-                            {creditLimit > 0 && (
-                                <div className="hero-meta-item">
-                                    <span className="meta-label">Limite</span>
-                                    <span className="meta-value">{formatBRL(creditLimit)}</span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Year Selector */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
-                    <div className="year-selector">
-                        <button className="year-nav-btn" onClick={() => setYear(y => y - 1)}>‹</button>
-                        <span className="year-label">{year}</span>
-                        <button className="year-nav-btn" onClick={() => setYear(y => y + 1)} disabled={year >= new Date().getFullYear()}>›</button>
-                    </div>
-                </div>
-
-                {/* Summary Stats */}
-                <div className="dashboard-stats-grid">
-                    <div className="dash-stat-card">
-                        <div className="stat-icon red">💳</div>
-                        <div className="stat-label">Total Gasto ({year})</div>
-                        <div className="stat-value">{formatBRL(totalSpent)}</div>
-                        <div className="stat-sub">{monthlyData.length} faturas no ano</div>
-                    </div>
-                    <div className="dash-stat-card">
-                        <div className="stat-icon blue">📊</div>
-                        <div className="stat-label">Média Mensal</div>
-                        <div className="stat-value">{formatBRL(avgMonthly)}</div>
-                        <div className="stat-sub">Baseado em {monthlyData.length} meses</div>
-                    </div>
-                    <div className="dash-stat-card">
-                        <div className="stat-icon amber">🔥</div>
-                        <div className="stat-label">Mês Mais Caro</div>
-                        <div className="stat-value">{formatBRL(maxMonth)}</div>
-                        <div className="stat-sub">{monthlyData.find(m => m.total === maxMonth)?.name || '—'}</div>
-                    </div>
-                    <div className="dash-stat-card">
-                        <div className="stat-icon green">📁</div>
-                        <div className="stat-label">Categorias</div>
-                        <div className="stat-value">{categoryData.length}</div>
-                        <div className="stat-sub">categorias identificadas</div>
-                    </div>
-                </div>
-
-                {/* Limit Usage Bar */}
-                {creditLimit > 0 && (
-                    <div className="limit-usage-section">
-                        <div className="limit-card">
-                            <div className="limit-info">
-                                <div className="limit-title">Uso do Limite (Média)</div>
-                                <div className="limit-value">{formatBRL(avgMonthly)}</div>
-                                <div className="limit-sub">de {formatBRL(creditLimit)} disponível</div>
-                            </div>
-                            <div className="limit-progress-wrapper">
-                                <div className="limit-bar-bg">
-                                    <div
-                                        className={`limit-bar-fill ${getUtilClass(utilizationPercent)}`}
-                                        style={{ width: `${Math.min(100, utilizationPercent)}%` }}
-                                    ></div>
-                                </div>
-                                <div className="limit-bar-labels">
-                                    <span>0%</span>
-                                    <span>50%</span>
-                                    <span>100%</span>
-                                </div>
-                            </div>
-                            <div className={`limit-percent ${getUtilClass(utilizationPercent)}`}>
-                                {utilizationPercent}%
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Charts */}
-                {monthlyData.length > 0 ? (
-                    <div className="cd-charts-grid">
-                        {/* Bar Chart — Monthly History */}
-                        <div className="cd-chart-card">
-                            <div className="cd-chart-header">
-                                <h3>📈 Histórico de Faturas</h3>
-                                <span className="chart-badge">{year}</span>
-                            </div>
-                            <ResponsiveContainer width="100%" height={300} minHeight={300}>
-                                <BarChart data={monthlyData} barCategoryGap="20%">
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
-                                    <YAxis
-                                        tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
-                                        tick={{ fill: '#94a3b8', fontSize: 12 }}
-                                        axisLine={false} tickLine={false}
-                                    />
-                                    <Tooltip content={<BarTooltip />} />
-                                    <Bar
-                                        dataKey="total"
-                                        fill="#10b981"
-                                        radius={[6, 6, 0, 0]}
-                                        cursor="pointer"
-                                        onClick={(data) => setSelectedMonth(data.referenceMonth)}
-                                    />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-
-                        {/* Donut Chart — Category Breakdown */}
-                        <div className="cd-chart-card">
-                            <div className="cd-chart-header">
-                                <h3>🍩 Gastos por Categoria</h3>
-                                <span className="chart-badge">{categoryData.length} itens</span>
-                            </div>
-                            {categoryData.length > 0 ? (
-                                <>
-                                    <ResponsiveContainer width="100%" height={220} minHeight={220}>
-                                        <PieChart>
-                                            <Pie
-                                                data={categoryData}
-                                                innerRadius={55}
-                                                outerRadius={90}
-                                                paddingAngle={3}
-                                                dataKey="value"
-                                            >
-                                                {categoryData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip content={<PieTooltip />} />
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                    <div className="donut-legend">
-                                        {categoryData.slice(0, 6).map((cat, i) => (
-                                            <div key={i} className="legend-item">
-                                                <div className="legend-left">
-                                                    <div className="legend-dot" style={{ background: cat.fill }}></div>
-                                                    <span className="legend-name">{cat.name}</span>
-                                                </div>
-                                                <span className="legend-value">{formatBRL(cat.value)}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="cd-empty" style={{ padding: '2rem' }}>
-                                    <p>Sem dados de categorias</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                {/* ── Cartão ── */}
+                {loadingFirst ? (
+                    <div className="pc-hero pc-hero--loading" aria-busy="true"><span /><span /></div>
                 ) : (
-                    <div className="cd-chart-card" style={{ marginBottom: '2rem' }}>
-                        <div className="cd-empty">
-                            <span className="empty-icon">📊</span>
-                            <h3>Sem dados para {year}</h3>
-                            <p>Nenhuma fatura encontrada para este ano. Faça upload de uma fatura ou crie manualmente.</p>
+                    <header className="pc-hero">
+                        {/* O mesmo cartão de plástico da página Cartões */}
+                        <div
+                            className={`cc-plastic pc-plastic ${card.imageUrl ? 'has-image' : ''}`}
+                            style={card.imageUrl ? { backgroundImage: `url("${String(card.imageUrl).replace(/["\\\n]/g, '')}")` } : undefined}
+                            aria-hidden="true"
+                        >
+                            <span className="cc-plastic__top">
+                                <span className="cc-plastic__name">{card.name}</span>
+                                {brand && <span className="cc-plastic__brand">{brand}</span>}
+                            </span>
+                            <span className="cc-plastic__chip" />
+                            <span className="cc-plastic__number">{card.lastFour ? `•••• ${card.lastFour}` : 'Final não informado'}</span>
                         </div>
-                    </div>
-                )}
 
-                {/* Invoice Items Table */}
-                <div className="cd-items-section">
-                    <div className="cd-items-header">
-                        <h3>🧾 Itens da Fatura {selectedMonth ? `— ${MONTH_FULL[selectedMonth]}` : ''}</h3>
-                        {monthlyData.length > 0 && (
-                            <div className="cd-month-selector">
-                                {monthlyData.map(m => (
-                                    <button
-                                        key={m.referenceMonth}
-                                        className={`cd-month-btn ${selectedMonth === m.referenceMonth ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setSelectedMonth(m.referenceMonth)
-                                            setSelectedItemIds(new Set()) // Clear selection on month change
-                                        }}
-                                    >
-                                        {MONTH_NAMES[m.referenceMonth]}
+                        <div className="pc-hero__info">
+                            <h1 className="pc-title">{card.name}</h1>
+                            <p className="pc-wallet">
+                                {card.walletName ? (
+                                    <>
+                                        <span className="cc-tag">{isPJ ? 'MEI' : 'Pessoal'}</span>
+                                        <span className="pc-wallet__name">{card.walletName}</span>
+                                    </>
+                                ) : (
+                                    <span className="cc-tag cc-tag--warn">Sem carteira</span>
+                                )}
+                            </p>
+                            {!card.walletName && (
+                                <p className="pc-hint">
+                                    Sem carteira, as compras deste cartão não entram no Extrato. Escolha uma carteira em <Link to="/financas/cartoes">Cartões</Link>.
+                                </p>
+                            )}
+                            <dl className="cc-days pc-days">
+                                <div><dt>Fecha</dt><dd>dia {card.closingDay || '—'}</dd></div>
+                                <div><dt>Vence</dt><dd>dia {card.dueDate || '—'}</dd></div>
+                                {brand && <div><dt>Bandeira</dt><dd>{brand}</dd></div>}
+                                {stats?.limit > 0 && <div><dt>Limite</dt><dd>{brl(stats.limit)}</dd></div>}
+                            </dl>
+                            <div className="pc-actions">
+                                <button type="button" className="btn btn-primary" onClick={openAdd}>
+                                    <Plus size={18} aria-hidden="true" /> Adicionar compra
+                                </button>
+                                {hasUploadFaturas ? (
+                                    <Link to={`/financas/cartoes/${cardId}/upload`} className="btn btn-secondary">
+                                        <Upload size={18} aria-hidden="true" /> Enviar fatura
+                                    </Link>
+                                ) : (
+                                    <button type="button" className="btn btn-secondary" onClick={askUpgrade}>
+                                        <Lock size={16} aria-hidden="true" /> Enviar fatura
                                     </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {itemsLoading ? (
-                        <div className="cd-loading" style={{ padding: '3rem' }}>
-                            <div className="loader"></div>
-                        </div>
-                    ) : items.length > 0 ? (
-                        <>
-                            <div style={{ overflowX: 'auto' }}>
-                                <table className="cd-items-table">
-                                    <thead>
-                                        <tr>
-                                            <th style={{ width: '40px', textAlign: 'center' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    className="bulk-checkbox"
-                                                    checked={items.length > 0 && selectedItemIds.size === items.length}
-                                                    onChange={toggleSelectAllItems}
-                                                    title="Selecionar todos"
-                                                />
-                                            </th>
-                                            <th>Descrição</th>
-                                            <th>Data</th>
-                                            <th>Categoria</th>
-                                            <th style={{ textAlign: 'right' }}>Valor</th>
-                                            <th>Confiança IA</th>
-                                            <th style={{ textAlign: 'center' }}>Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {items.map(item => {
-                                            const conf = parseFloat(item.aiConfidence) || 0
-                                            const confClass = conf >= 0.8 ? 'confidence-high' : conf >= 0.5 ? 'confidence-medium' : 'confidence-low'
-                                            const isEditing = editingItemId === item.id
-                                            const isDeleting = actionLoading === item.id
-
-                                            return (
-                                                <tr key={item.id} className={`${isEditing ? 'editing-row' : ''} ${selectedItemIds.has(item.id) ? 'row-selected' : ''}`}>
-                                                    <td style={{ textAlign: 'center', width: '40px' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            className="bulk-checkbox"
-                                                            checked={selectedItemIds.has(item.id)}
-                                                            onChange={() => toggleSelectItem(item.id)}
-                                                        />
-                                                    </td>
-                                                    <td className="td-item-desc">
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="text"
-                                                                className="cd-edit-input"
-                                                                value={editForm.description}
-                                                                onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                                                            />
-                                                        ) : (
-                                                            item.description
-                                                        )}
-                                                    </td>
-                                                    <td className="td-item-date">
-                                                        {item.transactionDate ? new Date(item.transactionDate).toLocaleDateString('pt-BR') : '—'}
-                                                    </td>
-                                                    <td>
-                                                        {isEditing ? (
-                                                            <select
-                                                                className="cd-edit-select"
-                                                                value={editForm.categoryName}
-                                                                onChange={e => handleCategoryChange(e.target.value, item.categoryName || item.aiCategory)}
-                                                            >
-                                                                {categories.length > 0 ? (
-                                                                    categories.map((cat, idx) => (
-                                                                        <option key={`${cat}-${idx}`} value={cat}>{cat}</option>
-                                                                    ))
-                                                                ) : (
-                                                                    <option value="Outros">Outros</option>
-                                                                )}
-                                                                <option disabled>──────</option>
-                                                                <option value="NEW_CATEGORY">+ Nova Categoria...</option>
-                                                            </select>
-                                                        ) : (
-                                                            <span className="td-item-category">
-                                                                {item.categoryName || item.aiCategory || 'Sem categoria'}
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="td-item-amount" style={{ textAlign: 'right' }}>
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="number"
-                                                                step="0.01"
-                                                                className="cd-edit-input amount-input"
-                                                                value={editForm.amount}
-                                                                onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
-                                                            />
-                                                        ) : (
-                                                            formatBRL(item.amount)
-                                                        )}
-                                                    </td>
-                                                    <td className={`td-item-confidence ${confClass}`}>
-                                                        {conf > 0 ? `${(conf * 100).toFixed(0)}%` : '—'}
-                                                    </td>
-                                                    <td className="td-item-actions">
-                                                        {isEditing ? (
-                                                            <div className="cd-action-group">
-                                                                <button className="btn-icon save-icon" onClick={handleSaveEdit} title="Salvar" disabled={actionLoading === item.id}>
-                                                                    {actionLoading === item.id ? '⏳' : '✅'}
-                                                                </button>
-                                                                <button className="btn-icon cancel-icon" onClick={handleCancelEdit} title="Cancelar">❌</button>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="cd-action-group">
-                                                                <button className="btn-icon edit-icon" onClick={() => handleEditClick(item)} title="Editar" disabled={!!editingItemId || isDeleting}>
-                                                                    ✏️
-                                                                </button>
-                                                                <button className="btn-icon delete-icon" onClick={() => handleDelete(item.id)} title="Excluir" disabled={!!editingItemId || isDeleting}>
-                                                                    {isDeleting ? '⏳' : '🗑️'}
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
-                                {/* New Category Modal (copied styles logic from InvoiceUpload) */}
-                                {showNewCatModal && (
-                                    <div className="modal-overlay" onClick={() => setShowNewCatModal(false)}>
-                                        <div className="modal-content" onClick={e => e.stopPropagation()}>
-                                            <h3>Nova Categoria</h3>
-                                            <div className="form-group" style={{ marginTop: '1rem' }}>
-                                                <label>Nome da Categoria</label>
-                                                <input
-                                                    type="text"
-                                                    value={newCatName}
-                                                    onChange={e => setNewCatName(e.target.value)}
-                                                    placeholder="Ex: Assinaturas"
-                                                    autoFocus
-                                                />
-                                                <small className="form-help">
-                                                    Será criada automaticamente como categoria Pessoal (PF).
-                                                </small>
-                                            </div>
-                                            <div className="modal-actions">
-                                                <button className="btn-cancel" onClick={() => setShowNewCatModal(false)}>
-                                                    Cancelar
-                                                </button>
-                                                <button
-                                                    className="btn-save"
-                                                    onClick={handleCreateCategory}
-                                                    disabled={creatingCat || !newCatName.trim()}
-                                                >
-                                                    {creatingCat ? 'Criando...' : 'Criar Categoria'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
                                 )}
                             </div>
+                        </div>
+                    </header>
+                )}
 
-                            {/* FLOATING BULK ACTION BAR */}
-                            {selectedItemIds.size > 0 && (
-                                <div className="cd-bulk-action-bar">
-                                    <div className="cd-bulk-info">
-                                        <span>☑️</span>
-                                        <span><strong>{selectedItemIds.size}</strong> item(ns) selecionado(s)</span>
-                                    </div>
-                                    <div className="cd-bulk-actions">
-                                        <button className="cd-bulk-btn cancel" onClick={() => setSelectedItemIds(new Set())}>
-                                            Cancelar
-                                        </button>
-                                        <button
-                                            className="cd-bulk-btn danger"
-                                            onClick={handleBulkDelete}
-                                            disabled={bulkDeleting}
-                                        >
-                                            {bulkDeleting ? '⏳ Excluindo...' : `🗑️ Excluir ${selectedItemIds.size}`}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </>) : (
-                        <div className="cd-empty">
-                            <span className="empty-icon">🧾</span>
-                            <h3>Nenhum item nesta fatura</h3>
-                            <p>
-                                Adicione itens manualmente ou{hasUploadFaturas ? ' faça upload da fatura para extração automática via IA.' : ' faça upgrade para o Prata para usar o Upload IA.'}
-                            </p>
-                            <button className="btn btn-primary btn-sm" style={{ marginTop: '1rem' }} onClick={() => {
-                                setManualForm({ description: '', amount: '', transactionDate: new Date().toISOString().split('T')[0], categoryName: categories[0] || '' })
-                                setManualError('')
-                                setShowManualModal(true)
-                            }}>
-                                ➕ Adicionar Item Manualmente
+                {/* ── Números do ano ── */}
+                <section className="csp csp--flat pc-year" aria-labelledby="pc-year-title">
+                    <div className="csp-head">
+                        <div>
+                            <h2 id="pc-year-title" className="csp-title">Gastos em {year}</h2>
+                            <p className="csp-sub">Soma das faturas deste cartão no ano.</p>
+                        </div>
+                        <div className="csp-year" role="group" aria-label="Ano">
+                            <button type="button" className="csp-year__btn" onClick={() => setYear(y => y - 1)} aria-label="Ano anterior" disabled={year <= 2000}>
+                                <ChevronLeft size={18} aria-hidden="true" />
+                            </button>
+                            <span className="csp-year__label">{year}</span>
+                            <button type="button" className="csp-year__btn" onClick={() => setYear(y => y + 1)} disabled={year >= maxYear} aria-label="Próximo ano">
+                                <ChevronRight size={18} aria-hidden="true" />
                             </button>
                         </div>
+                    </div>
+
+                    {loadState === 'loading' && (
+                        <div className="csp-loading" aria-busy="true">
+                            {Array.from({ length: 8 }, (_, i) => <span key={i} />)}
+                        </div>
                     )}
-                </div>
+
+                    {loadState === 'error' && data && (
+                        <div className="csp-message" role="alert">
+                            <p>Não deu para carregar {year}.</p>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => fetchSummary()}>Tentar de novo</button>
+                        </div>
+                    )}
+
+                    {loadState === 'ok' && !hasYearData && (
+                        <div className="csp-message">
+                            <span className="csp-message__icon" aria-hidden="true"><ReceiptText size={22} /></span>
+                            <p><strong>Nenhuma fatura em {year}.</strong> Adicione uma compra ou envie a fatura do cartão para ver os gastos aqui.</p>
+                        </div>
+                    )}
+
+                    {loadState === 'ok' && hasYearData && (
+                        <>
+                            <dl className="csp-stats">
+                                <Stat
+                                    main
+                                    icon={Wallet}
+                                    label="Total gasto"
+                                    value={brl(stats.totalSpent)}
+                                    note={`em ${plural(stats.withSpend.length, 'mês', 'meses')} com fatura`}
+                                />
+                                <Stat icon={TrendingUp} label="Média por mês" value={brl(stats.average)} note="nos meses com fatura" />
+                                <Stat
+                                    icon={CalendarDays}
+                                    label="Mês mais caro"
+                                    value={stats.top ? MONTHS[stats.top.month] : '—'}
+                                    note={stats.top ? brl(stats.top.total) : null}
+                                />
+                                {stats.limit > 0 ? (
+                                    <Stat
+                                        icon={Gauge}
+                                        label="Uso do limite"
+                                        value={stats.last ? `${Math.round((stats.last.total / stats.limit) * 100)}%` : '—'}
+                                        note={stats.last ? `fatura de ${lastMonthName}, de ${brl(stats.limit)}` : null}
+                                    />
+                                ) : (
+                                    <Stat
+                                        icon={CalendarCheck}
+                                        label="Mês mais barato"
+                                        value={stats.low ? MONTHS[stats.low.month] : '—'}
+                                        note={stats.low ? brl(stats.low.total) : 'precisa de dois meses com fatura'}
+                                    />
+                                )}
+                                <Stat
+                                    icon={ReceiptText}
+                                    label="Última fatura"
+                                    value={stats.last ? brl(stats.last.total) : '—'}
+                                    note={stats.last ? `${lastMonthName}${stats.last.dueDate ? `, vence ${shortDate(stats.last.dueDate)}` : ''}` : null}
+                                />
+                                <Stat
+                                    icon={stats.change !== null && stats.change < 0 ? TrendingDown : TrendingUp}
+                                    label="Comparada à anterior"
+                                    tone={stats.change > 0 ? 'up' : stats.change < 0 ? 'down' : ''}
+                                    value={stats.change === null ? '—' : `${stats.change > 0 ? '+' : stats.change < 0 ? '−' : ''}${Math.abs(stats.change)}%`}
+                                    note={stats.change === null
+                                        ? 'sem fatura no mês anterior'
+                                        : `${brl(Math.abs(stats.last.total - stats.previous.total))} ${stats.change >= 0 ? 'a mais' : 'a menos'} que ${MONTHS[stats.previous.month]}`}
+                                />
+                                <Stat
+                                    icon={Tags}
+                                    label="Categoria com mais gastos"
+                                    value={stats.topCategory?.name || '—'}
+                                    note={stats.topCategory ? `${brl(stats.topCategory.total)}, ${Math.round((stats.topCategory.total / (stats.totalSpent || 1)) * 100)}% do ano` : null}
+                                />
+                                <Stat
+                                    icon={ShoppingBag}
+                                    label="Compras no ano"
+                                    value={stats.purchases.toLocaleString('pt-BR')}
+                                    note={stats.purchases ? `média de ${brl(stats.totalSpent / stats.purchases)} por compra` : null}
+                                />
+                            </dl>
+
+                            {insights.length > 0 && (
+                                <Block icon={Lightbulb} title="Destaques do ano" className="csp-block--insights">
+                                    <ul className="csp-insights">
+                                        {insights.map((text, i) => <li key={i}>{text}</li>)}
+                                    </ul>
+                                </Block>
+                            )}
+
+                            <Block icon={BarChart3} title="Mês a mês" aside={<span className="pc-aside">Clique numa barra para ver as compras do mês</span>}>
+                                <MonthlyTrendChart data={trend} activeMonth={selectedMonth} onSelect={chooseMonth} />
+                            </Block>
+
+                            <div className="csp-split">
+                                <Block icon={PieChart} title="Gasto por categoria">
+                                    <BarList
+                                        emptyLabel="Nenhuma categoria nas faturas."
+                                        rows={stats.categoriesYear.map(c => ({
+                                            key: c.name,
+                                            label: c.name === 'Sem Categoria' ? 'Sem categoria' : c.name,
+                                            total: c.total,
+                                            muted: c.name === 'Outros' || c.name === 'Sem Categoria',
+                                            note: `${plural(c.count, 'compra', 'compras')}, ${Math.round((c.total / (stats.totalSpent || 1)) * 100)}% do ano`
+                                        }))}
+                                    />
+                                </Block>
+                                <Block icon={Table2} title="Faturas do ano">
+                                    <table className="pc-invoices">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Mês</th>
+                                                <th scope="col">Vence</th>
+                                                <th scope="col">Situação</th>
+                                                <th scope="col">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {[...stats.months].reverse().map(m => (
+                                                <tr key={m.month} className={m.month === selectedMonth ? 'is-active' : ''}>
+                                                    <th scope="row">
+                                                        <button type="button" className="pc-link" onClick={() => { chooseMonth(m.month); document.getElementById('pc-compras')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>
+                                                            {capitalize(MONTHS[m.month])}
+                                                        </button>
+                                                    </th>
+                                                    <td>{m.dueDate ? shortDate(m.dueDate) : '—'}</td>
+                                                    <td><span className={`pc-status pc-status--${(m.status || 'PENDING').toLowerCase()}`}>{STATUS[m.status] || 'Aberta'}</span></td>
+                                                    <td className="pc-num">{brl(m.total)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </Block>
+                            </div>
+                        </>
+                    )}
+
+                    {/* ── Compras da fatura ── */}
+                    {loadState === 'ok' && selectedMonth && (
+                        <Block
+                            id="pc-compras"
+                            icon={ShoppingBag}
+                            title={`Compras da fatura de ${MONTHS[selectedMonth]}`}
+                            className="pc-items"
+                            aside={stats?.months.length > 1 ? (
+                                <div className="pc-months" role="group" aria-label="Mês da fatura" ref={monthsRef}>
+                                    {stats.months.map(m => (
+                                        <button
+                                            key={m.month}
+                                            type="button"
+                                            className={`pc-month ${m.month === selectedMonth ? 'is-active' : ''}`}
+                                            aria-pressed={m.month === selectedMonth}
+                                            onClick={() => chooseMonth(m.month)}
+                                        >
+                                            {MONTHS_SHORT[m.month]}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : null}
+                        >
+                            {itemsState === 'loading' && <div className="pc-items__loading" aria-busy="true"><span /><span /><span /></div>}
+
+                            {itemsState === 'error' && (
+                                <div className="csp-message" role="alert">
+                                    <p>Não deu para carregar as compras.</p>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={fetchItems}>Tentar de novo</button>
+                                </div>
+                            )}
+
+                            {itemsState === 'ok' && items.length === 0 && (
+                                <div className="pc-none">
+                                    <p><strong>Nenhuma compra na fatura de {MONTHS[selectedMonth]}.</strong> Adicione as compras à mão ou envie a fatura.</p>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={openAdd}>
+                                        <Plus size={16} aria-hidden="true" /> Adicionar compra
+                                    </button>
+                                </div>
+                            )}
+
+                            {itemsState === 'ok' && items.length > 0 && (
+                                <>
+                                    <div className="pc-toolbar">
+                                        <ul className="pc-facts">
+                                            <li><span>Total</span><strong>{brl(monthTotal)}</strong></li>
+                                            <li><span>Compras</span><strong>{items.length}</strong></li>
+                                            {selectedInvoice?.dueDate && <li><span>Vence</span><strong>{formatDate(selectedInvoice.dueDate)}</strong></li>}
+                                            {toReview > 0 && <li className="is-warn"><span>Para conferir</span><strong>{toReview}</strong></li>}
+                                        </ul>
+                                        {items.length > 5 && (
+                                            <label className="pc-search">
+                                                <Search size={16} aria-hidden="true" />
+                                                <input
+                                                    type="search"
+                                                    value={search}
+                                                    onChange={e => setSearch(e.target.value)}
+                                                    placeholder="Buscar compra"
+                                                    aria-label="Buscar compra pela descrição ou categoria"
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
+
+                                    {visibleItems.length === 0 ? (
+                                        <p className="csp-muted pc-nofind">Nenhuma compra com “{search.trim()}”.</p>
+                                    ) : (
+                                        <table className="pc-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col" className="pc-table__check">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="pc-check"
+                                                            checked={allVisibleSelected}
+                                                            onChange={toggleAllVisible}
+                                                            aria-label="Selecionar todas as compras da lista"
+                                                        />
+                                                    </th>
+                                                    <th scope="col">Data</th>
+                                                    <th scope="col">Descrição</th>
+                                                    <th scope="col">Categoria</th>
+                                                    <th scope="col" className="pc-num">Valor</th>
+                                                    <th scope="col"><span className="sr-only">Ações</span></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {visibleItems.map(item => {
+                                                    const amount = Number(item.amount) || 0
+                                                    const conf = Number(item.aiConfidence) || 0
+                                                    const checked = selectedIds.has(item.id)
+                                                    return (
+                                                        <tr key={item.id} className={checked ? 'is-selected' : ''}>
+                                                            <td className="pc-table__check">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="pc-check"
+                                                                    checked={checked}
+                                                                    onChange={() => toggleItem(item.id)}
+                                                                    aria-label={`Selecionar ${item.description}`}
+                                                                />
+                                                            </td>
+                                                            <td className="pc-table__date">{shortDate(item.transactionDate)}</td>
+                                                            <th scope="row" className="pc-table__desc">
+                                                                {item.description}
+                                                                {item.installment && <span className="pc-installment">{item.installment}</span>}
+                                                            </th>
+                                                            <td className="pc-table__cat">
+                                                                {item.categoryId ? (
+                                                                    <span className="pc-cat">{item.categoryName}</span>
+                                                                ) : item.aiCategory ? (
+                                                                    <span className="pc-cat pc-cat--suggested">{item.aiCategory} <em>sugerida</em></span>
+                                                                ) : (
+                                                                    <span className="pc-cat pc-cat--none">Sem categoria</span>
+                                                                )}
+                                                                {item.categoryId && conf > 0 && conf < REVIEW_BELOW && <span className="pc-flag">conferir</span>}
+                                                            </td>
+                                                            <td className={`pc-num pc-table__amount ${amount < 0 ? 'is-refund' : ''}`}>
+                                                                {amount < 0 ? <><span className="pc-refund">estorno</span>{brl(amount)}</> : brl(amount)}
+                                                            </td>
+                                                            <td className="pc-table__actions">
+                                                                <button type="button" className="cc-icon-btn" onClick={() => openEdit(item)} disabled={busy} aria-label={`Editar ${item.description}`} title="Editar">
+                                                                    <Pencil size={18} aria-hidden="true" />
+                                                                </button>
+                                                                <button type="button" className="cc-icon-btn cc-icon-btn--danger" onClick={() => deleteItems([item.id], item.description)} disabled={busy} aria-label={`Excluir ${item.description}`} title="Excluir">
+                                                                    <Trash2 size={18} aria-hidden="true" />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </>
+                            )}
+                        </Block>
+                    )}
+                </section>
 
             </div>
 
-            {/* Manual Item Modal */}
-            {showManualModal && (
-                <div className="modal-overlay" onClick={() => setShowManualModal(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-                        <button className="close-x" onClick={() => setShowManualModal(false)}>×</button>
-                        <h3>➕ Adicionar Item à Fatura</h3>
-                        <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-                            O item será adicionado à fatura de <strong>{MONTH_FULL[selectedMonth || (new Date().getMonth() + 1)]}/{year}</strong>.
+            {/* Barra das compras selecionadas */}
+            {selectedIds.size > 0 && (
+                <div className="pc-bulk" role="region" aria-label="Compras selecionadas">
+                    <p>
+                        <strong>{plural(selectedIds.size, 'selecionada', 'selecionadas')}</strong>
+                        <span>{brl(selectedTotal)}</span>
+                    </p>
+                    <div className="pc-bulk__actions">
+                        <button type="button" className="pc-bulk__btn" onClick={() => setSelectedIds(new Set())} disabled={busy}>Limpar</button>
+                        <button type="button" className="pc-bulk__btn pc-bulk__btn--danger" onClick={() => deleteItems([...selectedIds], '')} disabled={busy}>
+                            <Trash2 size={16} aria-hidden="true" /> {busy ? 'Excluindo...' : `Excluir ${selectedIds.size}`}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Janela de adicionar / editar compra */}
+            {form && (
+                <div className="cd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) closeForm() }}>
+                    <form className="cd-box cc-box pc-box" role="dialog" aria-modal="true" aria-labelledby="pc-form-title" onSubmit={handleSave} noValidate>
+                        <button type="button" className="pc-box__close" onClick={closeForm} aria-label="Fechar" disabled={saving}><X size={20} aria-hidden="true" /></button>
+                        <h2 id="pc-form-title" className="cd-title">{form.mode === 'add' ? 'Adicionar compra' : 'Editar compra'}</h2>
+                        <p className="cd-message">
+                            {form.mode === 'add'
+                                ? `Fica na fatura do cartão ${card.name}${card.walletName ? ' e entra no Extrato.' : '.'}`
+                                : `Fatura de ${MONTHS[selectedMonth]} de ${year}.`}
                         </p>
 
-                        <div className="form-group">
-                            <label>Descrição *</label>
+                        <label className="cc-field">
+                            <span>Descrição</span>
                             <input
                                 type="text"
                                 autoFocus
-                                required
-                                value={manualForm.description}
-                                onChange={e => setManualForm(p => ({ ...p, description: e.target.value }))}
-                                placeholder="Ex: Netflix, Mercado, Posto de gasolina..."
+                                maxLength={200}
+                                value={formData.description}
+                                onChange={e => setField('description', e.target.value)}
+                                placeholder="Ex.: Mercado, posto, tecido"
                             />
-                        </div>
+                        </label>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <div className="form-group">
-                                <label>Valor (R$) *</label>
+                        <div className="cc-grid-2">
+                            <label className="cc-field">
+                                <span>Valor (R$)</span>
                                 <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0.01"
-                                    required
-                                    value={manualForm.amount}
-                                    onChange={e => setManualForm(p => ({ ...p, amount: e.target.value }))}
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={formData.amount}
+                                    onChange={e => setField('amount', e.target.value.replace(/[^\d.,]/g, ''))}
                                     placeholder="0,00"
                                 />
-                            </div>
-                            <div className="form-group">
-                                <label>Data da Compra</label>
+                            </label>
+                            <label className="cc-field">
+                                <span>Data da compra</span>
                                 <input
                                     type="date"
-                                    value={manualForm.transactionDate}
-                                    onChange={e => setManualForm(p => ({ ...p, transactionDate: e.target.value }))}
+                                    value={formData.transactionDate}
+                                    max={`${maxYear}-12-31`}
+                                    onChange={e => setField('transactionDate', e.target.value)}
                                 />
-                            </div>
+                            </label>
                         </div>
 
-                        <div className="form-group">
-                            <label>Categoria</label>
-                            <select
-                                value={manualForm.categoryName}
-                                onChange={e => setManualForm(p => ({ ...p, categoryName: e.target.value }))}
-                            >
-                                <option value="">Sem categoria</option>
-                                {categories.map((cat, i) => (
-                                    <option key={i} value={cat}>{cat}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <label className="pc-refund-check">
+                            <input type="checkbox" className="pc-check" checked={formData.refund} onChange={e => setField('refund', e.target.checked)} />
+                            <span>É um estorno <em>(dinheiro que voltou para o cartão)</em></span>
+                        </label>
 
-                        {manualError && (
-                            <div className="alert alert-warning" style={{ marginBottom: '1rem' }}>
-                                <span>⚠️</span><span>{manualError}</span>
+                        {form.mode === 'add' && (
+                            <div className="cc-field">
+                                <label htmlFor="pc-month">Fatura</label>
+                                <Select id="pc-month" ariaLabel="Fatura" value={formData.month} onChange={v => setField('month', String(v))} options={monthOptions} />
                             </div>
                         )}
 
-                        <div className="modal-actions">
-                            <button className="btn btn-secondary" onClick={() => setShowManualModal(false)}>Cancelar</button>
-                            <button className="btn btn-primary" onClick={handleAddManualItem} disabled={manualSaving}>
-                                {manualSaving ? 'Salvando...' : '💾 Salvar Item'}
+                        <div className="cc-field">
+                            <label htmlFor="pc-category">Categoria</label>
+                            <Select id="pc-category" ariaLabel="Categoria" value={formData.category} onChange={v => setField('category', String(v))} options={categoryOptions} />
+                            {newCat === null ? (
+                                <button type="button" className="pc-link pc-newcat-open" onClick={() => setNewCat('')}>
+                                    <Plus size={16} aria-hidden="true" /> Criar categoria
+                                </button>
+                            ) : (
+                                <div className="pc-newcat">
+                                    <input
+                                        type="text"
+                                        autoFocus
+                                        maxLength={60}
+                                        value={newCat}
+                                        onChange={e => setNewCat(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory() } }}
+                                        placeholder={isPJ ? 'Ex.: Embalagens' : 'Ex.: Academia'}
+                                        aria-label="Nome da categoria nova"
+                                    />
+                                    <button type="button" className="cd-btn" onClick={() => setNewCat(null)} disabled={creatingCat}>Cancelar</button>
+                                    <button type="button" className="cd-btn cd-btn--primary" onClick={handleCreateCategory} disabled={creatingCat || !newCat.trim()}>
+                                        {creatingCat ? 'Criando...' : 'Criar'}
+                                    </button>
+                                </div>
+                            )}
+                            <small>{isPJ ? 'Categorias de despesas do MEI, porque o cartão é da carteira MEI.' : 'Categorias de despesas pessoais.'}</small>
+                        </div>
+
+                        {formError && <p className="cc-notice" role="alert">{formError}</p>}
+
+                        <div className="cd-actions">
+                            <button type="button" className="cd-btn" onClick={closeForm} disabled={saving}>Cancelar</button>
+                            <button type="submit" className="cd-btn cd-btn--primary" disabled={saving}>
+                                {saving ? 'Salvando...' : form.mode === 'add' ? 'Adicionar compra' : 'Salvar'}
                             </button>
                         </div>
-                    </div>
+                    </form>
                 </div>
             )}
 
-            {/* Upgrade Promo Modal — AI Invoice Upload */}
-            {showUpgradeModal && (
-                <div className="modal-overlay" onClick={() => setShowUpgradeModal(false)}>
-                    <div className="modal" onClick={e => e.stopPropagation()} style={{ textAlign: 'center', maxWidth: '420px' }}>
-                        <div style={{ fontSize: '3.5rem', marginBottom: '0.5rem' }}>🤖</div>
-                        <h2 style={{ marginBottom: '0.5rem' }}>Cadastre Faturas com Inteligência Artificial</h2>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-                            Com o plano <strong style={{ color: '#a78bfa' }}>Prata</strong> ou <strong style={{ color: '#fbbf24' }}>Ouro</strong>, você pode fazer upload do PDF ou imagem da sua fatura e a IA lê e importa todos os itens automaticamente — sem digitar nada.
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(99,102,241,0.08)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
-                                <span style={{ fontSize: '1.25rem' }}>⚡</span>
-                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Importação automática de todos os itens da fatura</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(99,102,241,0.08)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
-                                <span style={{ fontSize: '1.25rem' }}>🏷️</span>
-                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Categorização inteligente das despesas</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(99,102,241,0.08)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
-                                <span style={{ fontSize: '1.25rem' }}>⏱️</span>
-                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Economize tempo — processe faturas em segundos</span>
-                            </div>
-                        </div>
-                        <button className="btn btn-primary" style={{ width: '100%', marginBottom: '0.75rem' }} onClick={() => setShowUpgradeModal(false)}>
-                            ✨ Fazer Upgrade para Prata
-                        </button>
-                        <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setShowUpgradeModal(false)}>
-                            Continuar no Gratuito
-                        </button>
-                    </div>
-                </div>
-            )}
-
-        </div >
+            {dialog}
+        </div>
     )
 }

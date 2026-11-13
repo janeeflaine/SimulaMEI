@@ -63,7 +63,11 @@ describe('Criar e editar cartão: dados conferidos no servidor', () => {
         [{ lastFour: '12345' }, 'final'],
         [{ imageUrl: 'javascript:alert(1)' }, 'Imagem'],
         [{ imageUrl: 'https://x.com/a.png") ; background:url(http://evil' }, 'Imagem'],
-        [{ imageUrl: 'data:text/html;base64,PHNjcmlwdD4=' }, 'Imagem']
+        [{ imageUrl: 'data:text/html;base64,PHNjcmlwdD4=' }, 'Imagem'],
+        [{ creditLimit: -1 }, 'limite'],
+        [{ creditLimit: 'abc' }, 'limite'],
+        [{ creditLimit: 1e12 }, 'limite'],
+        [{ creditLimit: true }, 'limite']
     ])('recusa %p', async (patch, word) => {
         const res = await request(app).post('/api/finance/cards').send({ ...valid, ...patch })
         expect(res.status).toBe(400)
@@ -74,6 +78,23 @@ describe('Criar e editar cartão: dados conferidos no servidor', () => {
     test('imagem PNG em base64 é aceita', async () => {
         const res = await request(app).post('/api/finance/cards').send({ ...valid, imageUrl: 'data:image/png;base64,iVBORw0KGgo=' })
         expect(res.status).toBe(200)
+    })
+
+    test('limite do cartão é gravado ao criar (vazio = sem limite)', async () => {
+        await request(app).post('/api/finance/cards').send({ ...valid, creditLimit: '6000.5' })
+        expect(mockDb.query.mock.calls[0][1][8]).toBe(6000.5)
+        mockDb.query.mockClear()
+        await request(app).post('/api/finance/cards').send({ ...valid, creditLimit: '' })
+        expect(mockDb.query.mock.calls[0][1][8]).toBe(0)
+    })
+
+    test('limite na edição: muda quando vem, fica como está quando não vem', async () => {
+        await request(app).patch('/api/finance/cards/3').send({ creditLimit: 2500 })
+        expect(mockDb.query.mock.calls[0][0]).toContain('"creditLimit" = COALESCE($10, "creditLimit")')
+        expect(mockDb.query.mock.calls[0][1][9]).toBe(2500)
+        mockDb.query.mockClear()
+        await request(app).patch('/api/finance/cards/3').send({ name: 'Inter' })
+        expect(mockDb.query.mock.calls[0][1][9]).toBeNull()
     })
 
     test('edição confere só o que veio', async () => {

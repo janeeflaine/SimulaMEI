@@ -12,10 +12,10 @@ const MONTH_NAMES = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'jun
 const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
-/** Quadro de um número, com ícone (o "Total gasto" vem em destaque) */
-function Stat({ icon: Icon, label, value, note, main = false }) {
+/** Quadro de um número, com ícone (o "Total gasto" vem em destaque). Também usado no Painel do cartão. */
+export function Stat({ icon: Icon, label, value, note, main = false, tone = '' }) {
     return (
-        <div className={`csp-stat ${main ? 'csp-stat--main' : ''}`}>
+        <div className={`csp-stat ${main ? 'csp-stat--main' : ''} ${tone ? `csp-stat--${tone}` : ''}`}>
             <span className="csp-stat__icon" aria-hidden="true"><Icon size={20} /></span>
             <div className="csp-stat__body">
                 <dt>{label}</dt>
@@ -26,21 +26,24 @@ function Stat({ icon: Icon, label, value, note, main = false }) {
     )
 }
 
-/** Bloco com título e ícone */
-function Block({ icon: Icon, title, children, className = '' }) {
+/** Bloco com título e ícone (aside: algo à direita do título) */
+export function Block({ icon: Icon, title, children, className = '', aside = null, id }) {
     return (
-        <section className={`csp-block ${className}`}>
-            <h3 className="csp-block__title">
-                <span className="csp-block__icon" aria-hidden="true"><Icon size={18} /></span>
-                {title}
-            </h3>
+        <section className={`csp-block ${className}`} id={id}>
+            <div className="csp-block__head">
+                <h3 className="csp-block__title">
+                    <span className="csp-block__icon" aria-hidden="true"><Icon size={18} /></span>
+                    {title}
+                </h3>
+                {aside}
+            </div>
             {children}
         </section>
     )
 }
 
 /** Linhas com barra proporcional (por cartão, por categoria) */
-function BarList({ rows, emptyLabel }) {
+export function BarList({ rows, emptyLabel }) {
     if (!rows.length) return <p className="csp-muted">{emptyLabel}</p>
     const max = Math.max(...rows.map(r => r.total), 0)
     return (

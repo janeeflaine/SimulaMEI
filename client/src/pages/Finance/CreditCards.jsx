@@ -21,7 +21,17 @@ const brandLabel = (brand) => {
     return BRANDS.find(b => b.value === brand)?.label || brand
 }
 
-const defaultFormData = { name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '', business_unit_id: '' }
+const defaultFormData = { name: '', lastFour: '', brand: 'Visa', closingDay: '', dueDate: '', imageUrl: '', business_unit_id: '', creditLimit: '' }
+
+// "6.000", "1.500,50", "800" → número; vazio = sem limite (0); NaN se não for valor
+const parseLimit = (text) => {
+    let s = String(text ?? '').replace(/[R$\s]/g, '')
+    if (!s) return 0
+    if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
+    else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
+    return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN
+}
+const limitText = (n) => (Number(n) > 0 ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')
 
 export default function CreditCards() {
     const navigate = useNavigate()
@@ -120,7 +130,8 @@ export default function CreditCards() {
             closingDay: card.closingDay || '',
             dueDate: card.dueDate || '',
             imageUrl: card.imageUrl || '',
-            business_unit_id: card.business_unit_id ? String(card.business_unit_id) : ''
+            business_unit_id: card.business_unit_id ? String(card.business_unit_id) : '',
+            creditLimit: limitText(card.creditLimit)
         })
         setFormError('')
         setIsModalOpen(true)
@@ -136,6 +147,11 @@ export default function CreditCards() {
     const handleSubmit = async (e) => {
         e.preventDefault()
         if (saving) return
+        const creditLimit = parseLimit(formData.creditLimit)
+        if (!Number.isFinite(creditLimit) || creditLimit > 100000000) {
+            setFormError('Confira o limite do cartão. Exemplo: 6.000,00')
+            return
+        }
         setSaving(true)
         try {
             const token = localStorage.getItem('token')
@@ -149,7 +165,7 @@ export default function CreditCards() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({ ...formData, creditLimit })
             })
             if (res.ok) {
                 closeModal()
@@ -391,6 +407,18 @@ export default function CreditCards() {
                                 />
                             </label>
                         </div>
+
+                        <label className="cc-field">
+                            <span>Limite do cartão <em>(opcional)</em></span>
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={formData.creditLimit}
+                                onChange={e => setField('creditLimit', e.target.value.replace(/[^\d.,]/g, ''))}
+                                placeholder="Ex.: 6.000,00"
+                            />
+                            <small>Com o limite, o painel do cartão mostra quanto a fatura usa dele.</small>
+                        </label>
 
                         <div className="cc-field cc-photo">
                             <span className="cc-photo__label">Imagem do cartão <em>(opcional)</em></span>

@@ -12,6 +12,13 @@
     color: var(--csp-text);
 }
 
+/* Sem a linha de cima: quando o painel é a página (Painel do cartão) */
+.csp.csp--flat {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
 .csp-head {
     display: flex;
     align-items: flex-end;
@@ -132,6 +139,15 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* Valor que subiu (gasto maior) em vermelho, que caiu em verde */
+.csp-stat--up dd {
+    color: #b91c1c;
+}
+
+.csp-stat--down dd {
+    color: #047857;
+}
+
 /* Total gasto: o quadro em destaque (sobre o azul, só branco) */
 .csp-stat--main {
     border-color: var(--csp-ink);
@@ -164,11 +180,20 @@
     background: #fff;
 }
 
+.csp-block__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin: 0 0 16px;
+}
+
 .csp .csp-block__title {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0 0 16px;
+    margin: 0;
     font-size: 1rem;
     font-weight: 700;
     letter-spacing: -0.01em;

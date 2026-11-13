@@ -201,8 +201,11 @@ const isDayOfMonth = (v) => {
     const n = Number(v)
     return v !== '' && v !== null && v !== undefined && Number.isInteger(n) && n >= 1 && n <= 31
 }
+const MAX_CARD_LIMIT = 100000000
+// Limite do cartão: vazio = sem limite (0); senão número de 0 a R$ 100 milhões
+const cardLimitOf = (v) => (v === undefined ? undefined : (v === null || v === '' ? 0 : Number(v)))
 const cardDataError = (body = {}, partial = false) => {
-    const { name, lastFour, brand, closingDay, dueDate, imageUrl } = body
+    const { name, lastFour, brand, closingDay, dueDate, imageUrl, creditLimit } = body
     if (!partial || name !== undefined) {
         if (typeof name !== 'string' || !name.trim()) return 'Informe o nome do cartão.'
         if (name.trim().length > 60) return 'O nome do cartão pode ter até 60 letras.'
@@ -224,6 +227,12 @@ const cardDataError = (body = {}, partial = false) => {
             && imageUrl.length <= MAX_CARD_IMAGE_LENGTH
             && (/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(imageUrl) || /^https:\/\/[^\s"'()\\]+$/.test(imageUrl))
         if (!ok) return 'Imagem do cartão inválida ou grande demais. Use PNG, JPG ou WebP de até 2 MB.'
+    }
+    if (creditLimit !== undefined) {
+        const limit = cardLimitOf(creditLimit)
+        if (typeof creditLimit === 'boolean' || !Number.isFinite(limit) || limit < 0 || limit > MAX_CARD_LIMIT) {
+            return 'O limite do cartão deve ser um valor de 0 a R$ 100 milhões.'
+        }
     }
     return null
 }
@@ -250,8 +259,8 @@ router.post('/cards', authMiddleware, cartoesGuard, validateWalletOwnership, asy
     if (invalid) return res.status(400).json({ message: invalid })
     try {
         const { rows: [newCard] } = await db.query(
-            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate", "imageUrl", business_unit_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-            [req.user.id, name.trim(), lastFour || null, brand || null, Number(closingDay), Number(dueDate), imageUrl || null, business_unit_id || null]
+            'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate", "imageUrl", business_unit_id, "creditLimit") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+            [req.user.id, name.trim(), lastFour || null, brand || null, Number(closingDay), Number(dueDate), imageUrl || null, business_unit_id || null, cardLimitOf(req.body.creditLimit) || 0]
         )
         res.json(newCard)
     } catch (err) {
@@ -274,9 +283,10 @@ router.patch('/cards/:id', authMiddleware, cartoesGuard, validateWalletOwnership
                 "closingDay" = COALESCE($6, "closingDay"),
                 "dueDate" = COALESCE($7, "dueDate"),
                 "imageUrl" = COALESCE($8, "imageUrl"),
-                business_unit_id = $9
+                business_unit_id = $9,
+                "creditLimit" = COALESCE($10, "creditLimit")
             WHERE id = $1 AND "userId" = $2 RETURNING *`,
-            [id, req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id || null]
+            [id, req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id || null, cardLimitOf(req.body.creditLimit) ?? null]
         )
         if (!updated) return res.status(404).json({ message: 'Cartão não encontrado' })
         res.json(updated)

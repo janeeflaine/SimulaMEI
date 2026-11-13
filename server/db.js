@@ -567,47 +567,24 @@ VALUES('Administrador', 'admin@eusempremei.com.br', $1, 'ADMIN')
       }
     }
 
-    // ─── Migration v6: cartoes para todos; upload_faturas para Prata+ ───────────
-    const migV6 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v6'")
-    if (migV6.rows.length === 0) {
-      const plans = await pool.query(`SELECT id, name, features FROM plans WHERE name IN ('Gratuito','Prata','Ouro')`)
-      for (const plan of plans.rows) {
-        let f = {}
-        try { f = JSON.parse(plan.features || '{}') } catch (_) {}
-        // All plans get card management
-        f.cartoes = true
-        // Prata and Ouro get AI invoice upload
-        if (plan.name === 'Prata' || plan.name === 'Ouro') f.upload_faturas = true
-        await pool.query(`UPDATE plans SET features = $1 WHERE id = $2`, [JSON.stringify(f), plan.id])
-      }
-      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v6', 'done')`)
-      console.log('✅ Migration v6: cartoes liberado para todos; upload_faturas para Prata+')
+    // As migrações rodam em ordem (v2, v3, v4, v5, v6). Antes rodavam de trás para
+    // frente: num banco novo a v2 (a mais antiga) rodava por último e apagava cartões,
+    // categorias e contas a pagar de todos os planos. No banco que já existe nada muda,
+    // porque cada uma só roda uma vez.
+    // ─── Migration v2: comparativo e alertas passam a ser Grátis ───────────────
+    // Roda apenas uma vez. Não sobrescreve alterações futuras feitas pelo admin.
+    const migV2 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v2'")
+    if (migV2.rows.length === 0) {
+      const gratuitoFeatures = JSON.stringify({ historico: false, pdf: false, comparativo: true, alertas: true })
+      const prataFeatures    = JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true })
+      const ouroFeatures     = JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true })
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Gratuito'`, [gratuitoFeatures])
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Prata'`,    [prataFeatures])
+      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Ouro'`,     [ouroFeatures])
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v2', 'done')`)
+      console.log('✅ Migration v2: comparativo e alertas liberados para Gratuito')
     }
-
-    // ─── Migration v5: categorias disponível no plano Gratuito ──────────────────
-    const migV5 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v5'")
-    if (migV5.rows.length === 0) {
-      // Lê features atuais do Gratuito e habilita apenas categorias, preservando o resto
-      const gratuitoRow = await pool.query(`SELECT features FROM plans WHERE name = 'Gratuito'`)
-      if (gratuitoRow.rows.length > 0) {
-        let f = {}
-        try { f = JSON.parse(gratuitoRow.rows[0].features || '{}') } catch (_) {}
-        f.categorias = true
-        await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Gratuito'`, [JSON.stringify(f)])
-      }
-      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v5', 'done')`)
-      console.log('✅ Migration v5: categorias habilitadas no plano Gratuito')
-    }
-
-    // ─── Migration v4: atualiza wallet limits existentes para novos padrões ─────
-    const migV4 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v4'")
-    if (migV4.rows.length === 0) {
-      await pool.query("UPDATE system_settings SET value = '2' WHERE key = 'wallet_limit_1'")
-      await pool.query("UPDATE system_settings SET value = '4' WHERE key = 'wallet_limit_2'")
-      await pool.query("UPDATE system_settings SET value = '8' WHERE key = 'wallet_limit_3'")
-      await pool.query("INSERT INTO system_settings (key, value) VALUES ('plan_migration_v4', 'done') ON CONFLICT (key) DO NOTHING")
-      console.log('[DB] Migration v4: wallet limits atualizados (2/4/8 com PF/PJ por tipo)')
-    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // ─── Migration v3: features completas — admin controla tudo pelo painel ─────
     const migV3 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v3'")
@@ -635,20 +612,47 @@ VALUES('Administrador', 'admin@eusempremei.com.br', $1, 'ADMIN')
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // ─── Migration v2: comparativo e alertas passam a ser Grátis ───────────────
-    // Roda apenas uma vez. Não sobrescreve alterações futuras feitas pelo admin.
-    const migV2 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v2'")
-    if (migV2.rows.length === 0) {
-      const gratuitoFeatures = JSON.stringify({ historico: false, pdf: false, comparativo: true, alertas: true })
-      const prataFeatures    = JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true })
-      const ouroFeatures     = JSON.stringify({ historico: true,  pdf: true,  comparativo: true, alertas: true })
-      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Gratuito'`, [gratuitoFeatures])
-      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Prata'`,    [prataFeatures])
-      await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Ouro'`,     [ouroFeatures])
-      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v2', 'done')`)
-      console.log('✅ Migration v2: comparativo e alertas liberados para Gratuito')
+    // ─── Migration v4: atualiza wallet limits existentes para novos padrões ─────
+    const migV4 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v4'")
+    if (migV4.rows.length === 0) {
+      await pool.query("UPDATE system_settings SET value = '2' WHERE key = 'wallet_limit_1'")
+      await pool.query("UPDATE system_settings SET value = '4' WHERE key = 'wallet_limit_2'")
+      await pool.query("UPDATE system_settings SET value = '8' WHERE key = 'wallet_limit_3'")
+      await pool.query("INSERT INTO system_settings (key, value) VALUES ('plan_migration_v4', 'done') ON CONFLICT (key) DO NOTHING")
+      console.log('[DB] Migration v4: wallet limits atualizados (2/4/8 com PF/PJ por tipo)')
     }
-    // ─────────────────────────────────────────────────────────────────────────
+
+    // ─── Migration v5: categorias disponível no plano Gratuito ──────────────────
+    const migV5 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v5'")
+    if (migV5.rows.length === 0) {
+      // Lê features atuais do Gratuito e habilita apenas categorias, preservando o resto
+      const gratuitoRow = await pool.query(`SELECT features FROM plans WHERE name = 'Gratuito'`)
+      if (gratuitoRow.rows.length > 0) {
+        let f = {}
+        try { f = JSON.parse(gratuitoRow.rows[0].features || '{}') } catch (_) {}
+        f.categorias = true
+        await pool.query(`UPDATE plans SET features = $1 WHERE name = 'Gratuito'`, [JSON.stringify(f)])
+      }
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v5', 'done')`)
+      console.log('✅ Migration v5: categorias habilitadas no plano Gratuito')
+    }
+
+    // ─── Migration v6: cartoes para todos; upload_faturas para Prata+ ───────────
+    const migV6 = await pool.query("SELECT * FROM system_settings WHERE key = 'plan_migration_v6'")
+    if (migV6.rows.length === 0) {
+      const plans = await pool.query(`SELECT id, name, features FROM plans WHERE name IN ('Gratuito','Prata','Ouro')`)
+      for (const plan of plans.rows) {
+        let f = {}
+        try { f = JSON.parse(plan.features || '{}') } catch (_) {}
+        // All plans get card management
+        f.cartoes = true
+        // Prata and Ouro get AI invoice upload
+        if (plan.name === 'Prata' || plan.name === 'Ouro') f.upload_faturas = true
+        await pool.query(`UPDATE plans SET features = $1 WHERE id = $2`, [JSON.stringify(f), plan.id])
+      }
+      await pool.query(`INSERT INTO system_settings (key, value) VALUES ('plan_migration_v6', 'done')`)
+      console.log('✅ Migration v6: cartoes liberado para todos; upload_faturas para Prata+')
+    }
 
     // ─── Migration WhatsApp: canal WhatsApp ───────────────────────────────────────────
     // Adiciona as features do WhatsApp sem sobrescrever o que o admin já configurou.
