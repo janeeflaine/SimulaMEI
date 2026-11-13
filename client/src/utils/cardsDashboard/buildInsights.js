@@ -1,60 +1,48 @@
 /**
- * Generates automatic insights from consolidated dashboard data.
- * Returns an array of insight strings based on data patterns.
+ * Destaques do ano nos cartões, em frases curtas.
  */
-const MONTH_NAMES = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-
-function formatBRL(v) {
-    return `R$ ${(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+const MONTH_NAMES = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
 export function buildInsights(kpis, cardBreakdown = [], monthlyTrend = []) {
     if (!kpis || kpis.totalSpent === 0) return []
 
     const insights = []
 
-    // Top card concentration
-    if (kpis.topCard && kpis.topCardPercent > 0) {
-        insights.push(`O cartão ${kpis.topCard.name} representa ${kpis.topCardPercent}% do total gasto.`)
+    // Cartão com a maior parte dos gastos
+    if (kpis.topCard && kpis.topCardPercent > 0 && cardBreakdown.length > 1) {
+        insights.push(`O ${kpis.topCard.name} concentra ${kpis.topCardPercent}% de tudo o que foi gasto nos cartões.`)
     }
 
-    // Top category
-    if (kpis.topCategory) {
-        insights.push(`A categoria "${kpis.topCategory.category}" foi a principal despesa do período.`)
+    // Categoria com mais gastos
+    if (kpis.topCategory && kpis.topCategory.category !== 'Sem Categoria') {
+        insights.push(`${kpis.topCategory.category} foi a categoria com mais gastos.`)
     }
 
-    // Most expensive month
-    if (kpis.mostExpensiveMonth && kpis.mostExpensiveMonth.month) {
-        const monthName = MONTH_NAMES[kpis.mostExpensiveMonth.month] || `Mês ${kpis.mostExpensiveMonth.month}`
-        insights.push(`${monthName} foi o mês mais caro.`)
-    }
-
-    // Monthly average
-    if (kpis.monthlyAverage > 0) {
-        insights.push(`O gasto médio mensal consolidado foi de ${formatBRL(kpis.monthlyAverage)}.`)
-    }
-
-    // Month-over-month variation (last 2 months with data)
+    // Variação entre os dois últimos meses com gasto
     const monthsWithData = monthlyTrend.filter(m => m.total > 0)
     if (monthsWithData.length >= 2) {
         const last = monthsWithData[monthsWithData.length - 1]
         const prev = monthsWithData[monthsWithData.length - 2]
         if (prev.total > 0) {
             const pctChange = Math.round(((last.total - prev.total) / prev.total) * 100)
+            const lastName = MONTH_NAMES[last.month] || `mês ${last.month}`
+            const prevName = MONTH_NAMES[prev.month] || `mês ${prev.month}`
             if (pctChange > 0) {
-                insights.push(`Os gastos subiram ${pctChange}% em relação ao mês anterior.`)
+                insights.push(`Em ${lastName}, os cartões somaram ${pctChange}% a mais que em ${prevName}.`)
             } else if (pctChange < 0) {
-                insights.push(`Os gastos caíram ${Math.abs(pctChange)}% em relação ao mês anterior.`)
+                insights.push(`Em ${lastName}, os cartões somaram ${Math.abs(pctChange)}% a menos que em ${prevName}.`)
             }
         }
     }
 
-    // Low utilization card
+    // Cartão quase sem uso
     if (cardBreakdown.length > 1) {
         const sorted = [...cardBreakdown].sort((a, b) => a.total - b.total)
         const lowest = sorted[0]
         if (lowest && lowest.percent < 15) {
-            insights.push(`O cartão ${lowest.name} teve baixa utilização no período.`)
+            insights.push(lowest.total > 0
+                ? `O ${lowest.name} quase não foi usado: ${lowest.percent}% do total.`
+                : `O ${lowest.name} não teve gastos nas faturas do ano.`)
         }
     }
 

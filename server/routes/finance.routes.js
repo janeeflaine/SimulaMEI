@@ -195,6 +195,39 @@ router.delete('/categories/:id', authMiddleware, featureGuard('categorias'), asy
 
 // --- CREDIT CARDS ---
 
+// Confere os dados do cartão. Na edição (partial = true) só confere o que veio.
+const MAX_CARD_IMAGE_LENGTH = 3 * 1024 * 1024 // ~2 MB de imagem em base64
+const isDayOfMonth = (v) => {
+    const n = Number(v)
+    return v !== '' && v !== null && v !== undefined && Number.isInteger(n) && n >= 1 && n <= 31
+}
+const cardDataError = (body = {}, partial = false) => {
+    const { name, lastFour, brand, closingDay, dueDate, imageUrl } = body
+    if (!partial || name !== undefined) {
+        if (typeof name !== 'string' || !name.trim()) return 'Informe o nome do cartão.'
+        if (name.trim().length > 60) return 'O nome do cartão pode ter até 60 letras.'
+    }
+    if (lastFour !== undefined && lastFour !== null && lastFour !== '' && !/^\d{1,4}$/.test(String(lastFour))) {
+        return 'O final do cartão deve ter até 4 números.'
+    }
+    if (brand !== undefined && brand !== null && (typeof brand !== 'string' || brand.length > 30)) {
+        return 'Bandeira inválida.'
+    }
+    if ((!partial || closingDay !== undefined) && !isDayOfMonth(closingDay)) {
+        return 'O dia do fechamento deve ser de 1 a 31.'
+    }
+    if ((!partial || dueDate !== undefined) && !isDayOfMonth(dueDate)) {
+        return 'O dia do vencimento deve ser de 1 a 31.'
+    }
+    if (imageUrl !== undefined && imageUrl !== null && imageUrl !== '') {
+        const ok = typeof imageUrl === 'string'
+            && imageUrl.length <= MAX_CARD_IMAGE_LENGTH
+            && (/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(imageUrl) || /^https:\/\/[^\s"'()\\]+$/.test(imageUrl))
+        if (!ok) return 'Imagem do cartão inválida ou grande demais. Use PNG, JPG ou WebP de até 2 MB.'
+    }
+    return null
+}
+
 router.get('/cards', authMiddleware, async (req, res) => {
     try {
         const { rows } = await db.query(
@@ -213,10 +246,12 @@ router.get('/cards', authMiddleware, async (req, res) => {
 
 router.post('/cards', authMiddleware, cartoesGuard, validateWalletOwnership, async (req, res) => {
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
+    const invalid = cardDataError(req.body)
+    if (invalid) return res.status(400).json({ message: invalid })
     try {
         const { rows: [newCard] } = await db.query(
             'INSERT INTO credit_cards ("userId", name, "lastFour", brand, "closingDay", "dueDate", "imageUrl", business_unit_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-            [req.user.id, name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id || null]
+            [req.user.id, name.trim(), lastFour || null, brand || null, Number(closingDay), Number(dueDate), imageUrl || null, business_unit_id || null]
         )
         res.json(newCard)
     } catch (err) {
@@ -228,6 +263,8 @@ router.post('/cards', authMiddleware, cartoesGuard, validateWalletOwnership, asy
 router.patch('/cards/:id', authMiddleware, cartoesGuard, validateWalletOwnership, async (req, res) => {
     const { id } = req.params
     const { name, lastFour, brand, closingDay, dueDate, imageUrl, business_unit_id } = req.body
+    const invalid = cardDataError(req.body, true)
+    if (invalid) return res.status(400).json({ message: invalid })
     try {
         const { rows: [updated] } = await db.query(
             `UPDATE credit_cards SET
@@ -250,12 +287,50 @@ router.patch('/cards/:id', authMiddleware, cartoesGuard, validateWalletOwnership
 })
 
 router.delete('/cards/:id', authMiddleware, cartoesGuard, async (req, res) => {
+    const cardId = Number(req.params.id)
+    if (!Number.isInteger(cardId) || cardId <= 0) return res.status(404).json({ message: 'Cartão não encontrado' })
+
+    // Antes, um cartão com compras lançadas não podia ser excluído (o banco recusava e a
+    // tela não dizia nada). Agora, numa transação só:
+    //  1. as compras feitas nele continuam no Extrato, só sem o cartão (inclusive as que
+    //     vieram de faturas, que senão seriam apagadas junto com a fatura);
+    //  2. os registros de envio de fatura desse cartão saem;
+    //  3. o cartão sai, e as faturas e os itens dele saem junto (ON DELETE CASCADE).
+    const client = await pool.connect()
     try {
-        await db.query('DELETE FROM credit_cards WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
-        res.json({ message: 'Cartão excluído' })
+        await client.query('BEGIN')
+        const { rows: [card] } = await client.query(
+            'SELECT id FROM credit_cards WHERE id = $1 AND "userId" = $2 FOR UPDATE',
+            [cardId, req.user.id]
+        )
+        if (!card) {
+            await client.query('ROLLBACK')
+            return res.status(404).json({ message: 'Cartão não encontrado' })
+        }
+
+        const { rowCount: keptPurchases } = await client.query(
+            `UPDATE finance_transactions
+             SET "cardId" = NULL, invoice_item_id = NULL
+             WHERE "userId" = $2 AND (
+                "cardId" = $1
+                OR invoice_item_id IN (
+                    SELECT ii.id FROM invoice_items ii
+                    JOIN card_invoices ci ON ci.id = ii."invoiceId"
+                    WHERE ci."cardId" = $1
+                )
+             )`,
+            [cardId, req.user.id]
+        )
+        await client.query('DELETE FROM invoice_uploads WHERE "cardId" = $1 AND "userId" = $2', [cardId, req.user.id])
+        await client.query('DELETE FROM credit_cards WHERE id = $1 AND "userId" = $2', [cardId, req.user.id])
+        await client.query('COMMIT')
+        res.json({ message: 'Cartão excluído', keptPurchases })
     } catch (err) {
-        console.error(err)
-        res.status(500).json({ message: 'Erro ao excluir cartão' })
+        await client.query('ROLLBACK').catch(() => {})
+        console.error('Erro ao excluir cartão:', err)
+        res.status(500).json({ message: 'Não deu para excluir o cartão. Nada foi apagado; tente de novo.' })
+    } finally {
+        client.release()
     }
 })
 

@@ -1,34 +1,46 @@
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LabelList } from 'recharts'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 
-const BAR_COLOR = '#10b981' // --color-primary (emerald)
+const BAR_COLOR = '#12284a' // azul-marinho: o que saiu nos cartões
 
-function formatBRL(v) {
-    return `R$ ${(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+const brl = (v) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const short = (v) => (v >= 1000 ? `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${Math.round(v)}`)
+
+/** Marcas redondas no eixo (0, 1 mil, 2 mil...) em vez das que o gráfico calcula sozinho */
+const niceTicks = (data) => {
+    const max = Math.max(0, ...data.map(d => d.total || 0))
+    if (max <= 0) return [0]
+    const raw = max / 4
+    const power = 10 ** Math.floor(Math.log10(raw))
+    const step = [1, 2, 2.5, 5, 10].map(m => m * power).find(s => s >= raw)
+    const ticks = []
+    for (let t = 0; t <= max + step * 0.001; t += step) ticks.push(t)
+    if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step)
+    return ticks
 }
 
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     return (
-        <div className="csp-chart-tooltip">
+        <div className="csp-tooltip">
             <strong>{label}</strong>
-            <span>{formatBRL(payload[0].value)}</span>
+            <span>{brl(payload[0].value)}</span>
         </div>
     )
 }
 
 export default function MonthlyTrendChart({ data }) {
     if (!data || data.length === 0) return null
+    const ticks = niceTicks(data)
 
     return (
-        <div className="csp-chart-block">
-            <h3 className="csp-section-title">📈 Evolução Mensal</h3>
-            <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={data} margin={{ top: 10, right: 10, left: 5, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fill: '#475569', fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={v => `R$ ${(v / 1000).toFixed(0)}k`} tick={{ fill: '#475569', fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                    <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} barSize={32} />
+        <div className="csp-chart">
+            <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke="#e3e8ef" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: '#5b6b80', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis ticks={ticks} domain={[0, ticks[ticks.length - 1]]} tickFormatter={short} tick={{ fill: '#5b6b80', fontSize: 12 }} axisLine={false} tickLine={false} width={64} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(18, 40, 74, 0.05)' }} />
+                    <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} maxBarSize={32} />
                 </BarChart>
             </ResponsiveContainer>
         </div>

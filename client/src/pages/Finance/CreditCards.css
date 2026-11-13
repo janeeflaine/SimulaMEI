@@ -1,133 +1,7 @@
-.credit-cards-page {
-    padding: var(--spacing-8) 0;
-}
+/* Cartões (/financas/cartoes) — prefixo .cc- dentro de .cartoes */
 
-.cards-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: var(--spacing-6);
-    margin-top: var(--spacing-8);
-}
-
-.card-item {
-    background: white;
-    border-radius: 20px;
-    overflow: hidden;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
-    transition: transform 0.3s ease;
-}
-
-.card-item:hover {
-    transform: translateY(-5px);
-}
-
-.card-visual {
-    height: 180px;
-    padding: 24px;
-    position: relative;
-    color: white;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    background-size: cover;
-    background-position: center;
-}
-
-.card-brand {
-    font-size: 1.2rem;
-    font-weight: 800;
-    font-style: italic;
-    text-align: right;
-}
-
-.card-number {
-    font-size: 1.4rem;
-    letter-spacing: 2px;
-    font-family: 'Courier New', Courier, monospace;
-    margin: 20px 0;
-}
-
-.card-holder {
-    text-transform: uppercase;
-    font-size: 0.9rem;
-    letter-spacing: 1px;
-}
-
-.card-info {
-    padding: 20px;
-}
-
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    font-size: 0.95rem;
-}
-
-.info-row span {
-    color: var(--color-text-secondary);
-}
-
-.card-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-}
-
-.btn-dashboard {
-    flex: 1;
-    padding: 8px;
-    border: 1px solid #a7f3d0;
-    background: #ecfdf5;
-    color: #059669;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
-    transition: all 0.2s;
-}
-
-.btn-dashboard:hover {
-    background: #059669;
-    color: white;
-}
-
-.btn-edit {
-    flex: 1;
-    padding: 8px;
-    border: 1px solid #bfdbfe;
-    background: #eff6ff;
-    color: #2563eb;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    transition: all 0.2s;
-}
-
-.btn-edit:hover {
-    background: #2563eb;
-    color: white;
-}
-
-.btn-delete {
-    flex: 1;
-    margin-top: 0;
-    padding: 8px;
-    border: 1px solid #fee2e2;
-    background: #fef2f2;
-    color: #ef4444;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    transition: all 0.2s;
-}
-
-.btn-delete:hover {
-    background: #ef4444;
-    color: white;
-}
-
-/* Modal specific */
+/* Regras antigas mantidas: outras telas ainda usam estas classes
+   (TransferModal, ImageCropperModal, Contato, admin) */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -171,41 +45,495 @@
     margin-top: 20px;
 }
 
-/* Wallet Badge */
-.wallet-row {
-    justify-content: flex-start;
+/* ── Página ───────────────────────────────────────────────────────────── */
+
+.cartoes {
+    --cc-ink: #12284a;
+    --cc-text: #0f172a;
+    --cc-muted: #5b6b80;
+    --cc-line: #e3e8ef;
+    --cc-paper: #f6f8fa;
+    padding: 40px 0 64px;
+    color: var(--cc-text);
 }
 
-.wallet-badge {
-    display: inline-flex;
+.cc-container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+.cc-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px 24px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+}
+
+.cartoes .cc-title {
+    margin: 0 0 6px;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    text-align: left;
+    color: var(--cc-text);
+}
+
+.cc-sub {
+    margin: 0;
+    color: var(--cc-muted);
+    font-size: 1rem;
+}
+
+.cc-loading {
+    color: var(--cc-muted);
+}
+
+/* ── Lista de cartões ─────────────────────────────────────────────────── */
+
+.cc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 32px 28px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cc-item {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+/* O cartão de plástico: o elemento marcante da página */
+.cc-plastic {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 380px;
+    aspect-ratio: 1.586;
+    padding: 20px 22px;
+    border: 0;
+    border-radius: 16px;
+    background:
+        radial-gradient(120% 90% at 100% 0%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 55%),
+        linear-gradient(135deg, #1d3a66 0%, #12284a 55%, #0c1c36 100%);
+    background-size: cover;
+    background-position: center;
+    color: #fff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 18px 32px -18px rgba(12, 28, 54, 0.65);
+    overflow: hidden;
+    transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+/* Com foto: escurece um pouco embaixo para o texto continuar legível */
+.cc-plastic.has-image::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(12, 28, 54, 0.35) 0%, rgba(12, 28, 54, 0.05) 45%, rgba(12, 28, 54, 0.6) 100%);
+}
+
+.cc-plastic > * {
+    position: relative;
+}
+
+.cc-plastic:focus-visible {
+    outline: 3px solid #10b981;
+    outline-offset: 3px;
+}
+
+.cc-plastic__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.cc-plastic__name {
+    min-width: 0;
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+}
+
+.cc-plastic__brand {
+    flex: none;
+    font-size: 0.9375rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    opacity: 0.9;
+}
+
+.cc-plastic__chip {
+    width: 38px;
+    height: 28px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.22));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.cc-plastic__number {
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
+}
+
+.cc-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 380px;
+}
+
+.cc-wallet {
+    display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 8px;
-    font-size: 0.8rem;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.9375rem;
     font-weight: 600;
 }
 
-.wallet-badge.pj {
-    background: #eff6ff;
-    color: #1d4ed8;
-    border: 1px solid #bfdbfe;
+.cc-wallet__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.wallet-badge.pf {
-    background: #f0fdf4;
-    color: #15803d;
-    border: 1px solid #bbf7d0;
+.cc-tag {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--cc-line);
+    background: var(--cc-paper);
+    color: var(--cc-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.5;
 }
 
-.wallet-badge.unlinked {
-    background: #f8fafc;
-    color: #94a3b8;
-    border: 1px solid #e2e8f0;
+/* Sem carteira: as compras do cartão não entram em nenhuma carteira */
+.cc-tag--warn {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #b45309;
 }
+
+.cc-days {
+    display: flex;
+    gap: 28px;
+    margin: 0;
+}
+
+.cc-days > div {
+    display: grid;
+    gap: 2px;
+}
+
+.cc-days dt {
+    font-size: 0.8125rem;
+    color: var(--cc-muted);
+}
+
+.cc-days dd {
+    margin: 0;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.cc-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 380px;
+}
+
+.cc-actions .btn {
+    margin-right: auto;
+}
+
+.cc-icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--cc-muted);
+    cursor: pointer;
+}
+
+.cc-icon-btn:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+    .cc-icon-btn {
+        width: 44px;
+        height: 44px;
+    }
+}
+
+@media (hover: hover) {
+    .cc-plastic:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 24px 40px -18px rgba(12, 28, 54, 0.7);
+    }
+
+    .cc-icon-btn:hover {
+        background: var(--cc-paper);
+        color: var(--cc-ink);
+    }
+
+    .cc-icon-btn--danger:hover {
+        background: #fef2f2;
+        color: #dc2626;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cc-plastic {
+        transition: none;
+    }
+}
+
+/* Nenhum cartão */
+.cc-empty {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 56px 24px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 16px;
+    text-align: center;
+}
+
+.cc-empty__icon {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(18, 40, 74, 0.08);
+    color: var(--cc-ink);
+}
+
+.cartoes .cc-empty h2 {
+    margin: 4px 0 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.cc-empty p {
+    max-width: 44ch;
+    margin: 0 0 8px;
+    color: var(--cc-muted);
+}
+
+/* ── Janela de novo/editar cartão (usa .cd- da janela de confirmação) ──── */
+
+.cc-box {
+    max-width: 520px;
+}
+
+.cc-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    margin: 18px 0 0;
+}
+
+.cc-field > span,
+.cc-field > label,
+.cc-photo__label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.cc-field em {
+    font-style: normal;
+    font-weight: 400;
+    color: var(--cc-muted);
+}
+
+.cc-field small {
+    font-size: 0.8125rem;
+    color: var(--cc-muted);
+}
+
+.cc-box .cc-field input[type="text"],
+.cc-box .cc-field input[type="number"] {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--cc-line);
+    background: #fff;
+    color: var(--cc-text);
+    font: inherit;
+    font-size: 16px;
+}
+
+.cc-box .cc-field input:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.cc-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 14px;
+}
+
+.cc-photo__row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+}
+
+.cc-photo__preview {
+    display: grid;
+    place-items: center;
+    width: 76px;
+    aspect-ratio: 1.586;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1d3a66, #12284a);
+    color: rgba(255, 255, 255, 0.8);
+    overflow: hidden;
+}
+
+.cc-photo__preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cc-photo__btn,
+.cc-photo__remove {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1.5px solid var(--cc-line);
+    background: #fff;
+    color: var(--cc-text);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cc-photo__remove {
+    border-color: transparent;
+    color: var(--cc-muted);
+    padding: 0 10px;
+}
+
+.cc-photo__btn:focus-within {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+}
+
+.cc-photo__btn input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+@media (hover: hover) {
+    .cc-photo__btn:hover {
+        border-color: var(--cc-ink);
+    }
+
+    .cc-photo__remove:hover {
+        color: #dc2626;
+    }
+}
+
+.cc-notice {
+    margin: 18px 0 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 0.9375rem;
+}
+
+.cc-box .cd-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ── Celular ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
-    .cards-grid {
+    .cartoes {
+        padding: 24px 0 48px;
+    }
+
+    .cc-container {
+        padding: 0 16px;
+    }
+
+    .cartoes .cc-title {
+        font-size: 1.75rem;
+    }
+
+    .cc-head > .btn {
+        width: 100%;
+    }
+
+    .cc-grid {
         grid-template-columns: 1fr;
+        gap: 36px;
+    }
+
+    .cc-plastic,
+    .cc-meta,
+    .cc-actions {
+        max-width: none;
+    }
+}
+
+@media (max-width: 380px) {
+    .cc-grid-2 {
+        grid-template-columns: 1fr;
+    }
+
+    .cc-plastic {
+        padding: 16px 18px;
+    }
+
+    .cc-plastic__number {
+        font-size: 1rem;
     }
 }

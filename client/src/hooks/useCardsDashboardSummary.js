@@ -76,6 +76,8 @@ export function useCardsDashboardSummary(year) {
         loading,
         error,
         cards: normalized.cards,
+        totalCurrentMonth: normalized.totalCurrentMonth,
+        totalNextMonth: normalized.totalNextMonth,
         kpis,
         cardBreakdown,
         categoryBreakdown,
