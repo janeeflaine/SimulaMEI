@@ -1,0 +1,255 @@
+/* Contas a pagar: preso a .contas-pagar e à janela .cp- (padrão de botões de 13/11) */
+
+.contas-pagar .cp-pay {
+    white-space: nowrap;
+}
+
+/* Janela "Confirmar pagamento" (usa .cd- da janela de confirmação) */
+.cp-box {
+    max-width: 460px;
+}
+
+.cp-box .cd-details dd.cp-desc {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-width: 60%;
+}
+
+.cp-field {
+    display: grid;
+    gap: 6px;
+    margin: 18px 0 0;
+    min-width: 0;
+}
+
+.cp-field > span {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.cp-field select {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid #e3e8ef;
+    background: #fff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 16px;
+}
+
+.cp-field select:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.cp-box .cd-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Lista de contas */
+.contas-pagar .cp-table td {
+    vertical-align: middle;
+}
+
+.contas-pagar .cp-date {
+    display: block;
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* "Vence em" só aparece no celular, onde não há o título da coluna */
+.contas-pagar .cp-date-label {
+    display: none;
+}
+
+.contas-pagar .cp-amount {
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.contas-pagar .cp-method small {
+    display: block;
+    color: #5b6b80;
+}
+
+/* Etiquetas: vencida (vermelho), vence hoje (âmbar), carteira (neutro) */
+.contas-pagar .cp-tag {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.contas-pagar .cp-tag--late {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #dc2626;
+}
+
+.contas-pagar .cp-tag--today {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #b45309;
+}
+
+.contas-pagar .cp-tag--wallet {
+    margin-top: 0;
+    background: #f6f8fa;
+    border-color: #e3e8ef;
+    color: #5b6b80;
+}
+
+.contas-pagar .cp-empty-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 12px;
+    border-radius: 50%;
+    background: #ecfdf5;
+    color: #047857;
+}
+
+/* Celular e tablet: cada conta vira um cartão, com o botão visível (sem rolagem lateral) */
+@media (max-width: 1080px) {
+    .contas-pagar .table-container {
+        overflow: visible;
+        border: 0;
+        border-radius: 0;
+    }
+
+    .contas-pagar .cp-table thead {
+        display: none;
+    }
+
+    .contas-pagar .cp-table,
+    .contas-pagar .cp-table tbody {
+        display: block;
+    }
+
+    .contas-pagar .cp-table tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "desc   amount"
+            "due    dest"
+            "method cat"
+            "act    act";
+        column-gap: 12px;
+        row-gap: 6px;
+        padding: 16px 0;
+        border-bottom: 1px solid #e3e8ef;
+    }
+
+    .contas-pagar .cp-table tr:first-child {
+        padding-top: 0;
+    }
+
+    .contas-pagar .cp-table tr:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
+    }
+
+    .contas-pagar .cp-table td,
+    .contas-pagar .cp-table tr:hover td {
+        display: block;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+    }
+
+    .contas-pagar .cp-desc {
+        grid-area: desc;
+        font-weight: 600;
+        color: #0f172a;
+        overflow-wrap: anywhere;
+    }
+
+    .contas-pagar .cp-amount {
+        grid-area: amount;
+        text-align: right;
+    }
+
+    .contas-pagar .cp-table .cp-due {
+        grid-area: due;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+    }
+
+    .contas-pagar .cp-due .cp-date {
+        font-weight: 500;
+        color: #5b6b80;
+    }
+
+    .contas-pagar .cp-due .cp-date-label {
+        display: inline;
+    }
+
+    .contas-pagar .cp-due .cp-tag {
+        margin-top: 0;
+    }
+
+    .contas-pagar .cp-dest {
+        grid-area: dest;
+        align-self: center;
+        justify-self: end;
+    }
+
+    .contas-pagar .cp-method,
+    .contas-pagar .cp-cat {
+        font-size: 0.875rem;
+        color: #5b6b80;
+        overflow-wrap: anywhere;
+    }
+
+    .contas-pagar .cp-method {
+        grid-area: method;
+    }
+
+    .contas-pagar .cp-method small {
+        display: inline;
+    }
+
+    .contas-pagar .cp-method small::before {
+        content: " · ";
+    }
+
+    .contas-pagar .cp-cat {
+        grid-area: cat;
+        text-align: right;
+    }
+
+    .contas-pagar .cp-act {
+        grid-area: act;
+        margin-top: 8px;
+    }
+
+    .contas-pagar .cp-act .btn {
+        width: 100%;
+    }
+}
+
+/* Tablet: o botão não precisa ocupar a largura toda */
+@media (min-width: 641px) and (max-width: 1080px) {
+    .contas-pagar .cp-act .btn {
+        width: auto;
+    }
+}

@@ -4,8 +4,10 @@ import FeatureLock from '../../components/FeatureLock'
 import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { PlusCircle } from 'lucide-react'
+import { Check, CircleCheck, Download, Plus } from 'lucide-react'
+import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import './FinanceCategories.css'
+import './BillsToPay.css'
 
 export default function BillsToPay() {
     const { user } = useAuth()
@@ -16,6 +18,8 @@ export default function BillsToPay() {
     const [selectedWallet, setSelectedWallet] = useState('')
     const isPrataPlus = user?.planFeatures?.contas_pagar || user?.isInTrial || user?.role === 'ADMIN'
     const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false)
+    const [confirming, setConfirming] = useState(false)
+    const { notify, dialog } = useConfirmDialog()
 
     useEffect(() => {
         if (isPrataPlus) {
@@ -23,6 +27,17 @@ export default function BillsToPay() {
             fetchWallets()
         }
     }, [isPrataPlus])
+
+    useEffect(() => {
+        if (!confirmModal) return
+        const onKey = (e) => {
+            // Se um aviso estiver aberto por cima, o Esc fecha só o aviso
+            if (e.key !== 'Escape' || e.defaultPrevented || confirming) return
+            closeConfirmModal()
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [confirmModal, confirming])
 
     const fetchBills = async () => {
         try {
@@ -66,12 +81,14 @@ export default function BillsToPay() {
         setSelectedWallet(bill.business_unit_id ? String(bill.business_unit_id) : '')
     }
 
+    const closeConfirmModal = () => {
+        setConfirmModal(null)
+        setSelectedWallet('')
+    }
+
     const handleConfirm = async () => {
-        if (!confirmModal) return
-        if (!selectedWallet) {
-            alert('Selecione de qual carteira o dinheiro saiu.')
-            return
-        }
+        if (!confirmModal || !selectedWallet) return
+        setConfirming(true)
         try {
             const token = localStorage.getItem('token')
             const res = await fetch(`/api/finance/transactions/${confirmModal.id}/confirm`, {
@@ -83,13 +100,17 @@ export default function BillsToPay() {
                 body: JSON.stringify({ business_unit_id: selectedWallet })
             })
             if (res.ok) {
-                setConfirmModal(null)
-                setSelectedWallet('')
+                closeConfirmModal()
                 fetchBills()
+            } else {
+                const data = await res.json().catch(() => ({}))
+                notify({ title: 'Não deu para confirmar o pagamento', message: data.message || 'Tente de novo em instantes.', tone: 'error' })
             }
         } catch (err) {
             console.error(err)
-            alert('Erro ao confirmar pagamento.')
+            notify({ title: 'Não deu para confirmar o pagamento', message: 'Verifique sua internet e tente de novo.', tone: 'error' })
+        } finally {
+            setConfirming(false)
         }
     }
 
@@ -125,7 +146,7 @@ export default function BillsToPay() {
             doc.setFont('helvetica', 'bold')
             doc.setFontSize(22)
             doc.setTextColor(255, 255, 255)
-            doc.text('📄 Contas a Pagar', margin, 18)
+            doc.text('Contas a pagar', margin, 18)
             doc.setFontSize(10)
             doc.setFont('helvetica', 'normal')
             doc.text('Relatório de Boletos Pendentes', margin, 27)
@@ -266,7 +287,7 @@ export default function BillsToPay() {
                 doc.setFont('helvetica', 'bold')
                 doc.setFontSize(9)
                 doc.setTextColor(239, 68, 68)
-                doc.text(`⚠ Total Vencido: ${formatCurrency(overdueAmount)}`, margin + 4, finalY + 7.5)
+                doc.text(`Total vencido: ${formatCurrency(overdueAmount)}`, margin + 4, finalY + 7.5)
             }
 
             doc.setFillColor(236, 253, 245)
@@ -275,7 +296,7 @@ export default function BillsToPay() {
             doc.setFont('helvetica', 'bold')
             doc.setFontSize(9)
             doc.setTextColor(5, 150, 105)
-            doc.text(`💰 Total Geral Pendente: ${formatCurrency(totalAmount)}`, margin + 4, totalRowY + 7.5)
+            doc.text(`Total pendente: ${formatCurrency(totalAmount)}`, margin + 4, totalRowY + 7.5)
             doc.text(`${bills.length} boleto(s)`, pageWidth - margin - 4, totalRowY + 7.5, { align: 'right' })
 
             // ─── FOOTER ───
@@ -292,7 +313,7 @@ export default function BillsToPay() {
             doc.save(`contas-a-pagar-${today.toISOString().split('T')[0]}.pdf`)
         } catch (error) {
             console.error('Erro ao gerar PDF:', error)
-            alert('Erro ao gerar o PDF. Tente novamente.')
+            notify({ title: 'Não deu para gerar o PDF', message: 'Tente de novo em instantes.', tone: 'error' })
         }
     }
 
@@ -310,38 +331,26 @@ export default function BillsToPay() {
     }
 
     return (
-        <div className="finance-categories-page">
+        <div className="finance-categories-page contas-pagar">
             <div className="container">
                 <div className="statement-header">
                     <div className="header-title">
-                        <h1>Contas a Pagar</h1>
+                        <h1>Contas a pagar</h1>
                         <p>Boletos e compromissos aguardando confirmação</p>
                     </div>
                     <div className="header-actions">
                         {bills.length > 0 && (
                             <button
+                                type="button"
                                 onClick={generateBillsPDF}
-                                className="btn btn-primary btn-sm"
+                                className="btn btn-secondary"
                                 id="btn-export-bills-pdf"
-                                style={{
-                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                                    border: 'none',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    padding: '8px 18px',
-                                    fontSize: '0.85rem',
-                                    fontWeight: 600,
-                                    borderRadius: '10px',
-                                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)',
-                                    transition: 'all 0.2s',
-                                }}
                             >
-                                📥 Exportar PDF
+                                <Download size={18} aria-hidden="true" /> Exportar PDF
                             </button>
                         )}
-                        <button className="btn btn-secondary" onClick={() => setIsFinanceModalOpen(true)}>
-                            <PlusCircle size={18} /> Novo Lançamento
+                        <button type="button" className="btn btn-primary" onClick={() => setIsFinanceModalOpen(true)}>
+                            <Plus size={18} aria-hidden="true" /> Novo lançamento
                         </button>
                     </div>
                 </div>
@@ -351,13 +360,13 @@ export default function BillsToPay() {
                         <div className="text-center py-8">Carregando...</div>
                     ) : bills.length === 0 ? (
                         <div className="empty-state">
-                            <span className="empty-icon">📄</span>
+                            <span className="cp-empty-icon" aria-hidden="true"><CircleCheck size={28} /></span>
                             <h3>Tudo em dia!</h3>
                             <p>Você não possui boletos pendentes no momento.</p>
                         </div>
                     ) : (
                         <div className="table-container">
-                            <table className="table">
+                            <table className="table cp-table">
                                 <thead>
                                     <tr>
                                         <th>Vencimento</th>
@@ -372,30 +381,33 @@ export default function BillsToPay() {
                                 <tbody>
                                     {bills.map((bill) => (
                                         <tr key={bill.id}>
-                                            <td style={{ fontWeight: 'bold', color: bill.dueDate < todayString ? '#ef4444' : bill.dueDate === todayString ? '#d97706' : 'inherit' }}>
-                                                {formatDate(bill.dueDate)}
-                                                {bill.dueDate < todayString && <span style={{ fontSize: '10px', display: 'block', color: '#ef4444', fontWeight: 700 }}>🚨 VENCIDO</span>}
-                                                {bill.dueDate === todayString && <span style={{ fontSize: '10px', display: 'block', color: '#d97706', fontWeight: 700 }}>📅 VENCE HOJE</span>}
+                                            <td className="cp-due">
+                                                <span className="cp-date">
+                                                    <span className="cp-date-label">{bill.dueDate < todayString ? 'Venceu em ' : 'Vence em '}</span>
+                                                    {formatDate(bill.dueDate)}
+                                                </span>
+                                                {bill.dueDate < todayString && <span className="cp-tag cp-tag--late">Vencida</span>}
+                                                {bill.dueDate === todayString && <span className="cp-tag cp-tag--today">Vence hoje</span>}
                                             </td>
-                                            <td>{bill.description || 'S/ Descrição'}</td>
-                                            <td>
+                                            <td className="cp-desc">{bill.description || 'Sem descrição'}</td>
+                                            <td className="cp-method">
                                                 {bill.paymentMethod}
-                                                {bill.cardName && <small style={{ display: 'block', color: '#64748b' }}>{bill.cardName}</small>}
+                                                {bill.cardName && <small>{bill.cardName}</small>}
                                             </td>
-                                            <td>{bill.categoryName || 'S/ Categoria'}</td>
-                                            <td>
-                                                <span className="badge badge-info" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
-                                                    {bill.target === 'BUSINESS' ? '🏢 PJ' : '👤 PF'}
+                                            <td className="cp-cat">{bill.categoryName || 'Sem categoria'}</td>
+                                            <td className="cp-dest">
+                                                <span className="cp-tag cp-tag--wallet">
+                                                    {bill.target === 'BUSINESS' ? 'MEI' : 'Pessoal'}
                                                 </span>
                                             </td>
-                                            <td style={{ fontWeight: 'bold' }}>{formatCurrency(bill.amount)}</td>
-                                            <td>
+                                            <td className="cp-amount">{formatCurrency(bill.amount)}</td>
+                                            <td className="cp-act">
                                                 <button
+                                                    type="button"
                                                     onClick={() => openConfirmModal(bill)}
-                                                    className="btn btn-primary btn-sm"
-                                                    style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                                                    className="btn btn-secondary btn-sm cp-pay"
                                                 >
-                                                    Confirmar Pagamento
+                                                    <Check size={16} aria-hidden="true" /> Confirmar pagamento
                                                 </button>
                                             </td>
                                         </tr>
@@ -407,78 +419,55 @@ export default function BillsToPay() {
                 </div>
             </div>
 
-            {/* Payment Confirmation Modal */}
+            {/* Janela de confirmar pagamento */}
             {confirmModal && (
-                <div className="modal-overlay" style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)'
-                }}>
-                    <div style={{
-                        background: 'white', padding: '30px', borderRadius: '20px',
-                        width: '100%', maxWidth: '460px', position: 'relative',
-                        boxShadow: '0 20px 50px rgba(0,0,0,0.2)'
-                    }}>
-                        <button
-                            onClick={() => { setConfirmModal(null); setSelectedWallet('') }}
-                            style={{
-                                position: 'absolute', top: '15px', right: '15px',
-                                background: 'none', border: 'none', fontSize: '1.5rem',
-                                cursor: 'pointer', color: '#94a3b8'
-                            }}
-                        >×</button>
+                <div className="cd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !confirming) closeConfirmModal() }}>
+                    <form
+                        className="cd-box cp-box"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="cp-title"
+                        onSubmit={(e) => { e.preventDefault(); handleConfirm() }}
+                    >
+                        <h2 id="cp-title" className="cd-title">Confirmar pagamento</h2>
+                        <p className="cd-message">Escolha de qual carteira o dinheiro saiu.</p>
 
-                        <h3 style={{ marginBottom: '8px', fontSize: '1.25rem', fontWeight: 700 }}>
-                            💰 Confirmar Pagamento
-                        </h3>
-                        <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '20px' }}>
-                            {confirmModal.description || 'Pagamento'} — <strong>{formatCurrency(confirmModal.amount)}</strong>
-                        </p>
+                        <dl className="cd-details">
+                            <div><dt>Conta</dt><dd className="cp-desc">{confirmModal.description || 'Sem descrição'}</dd></div>
+                            <div><dt>Vencimento</dt><dd>{formatDate(confirmModal.dueDate)}</dd></div>
+                            <div className="is-strong"><dt>Valor</dt><dd>{formatCurrency(confirmModal.amount)}</dd></div>
+                        </dl>
 
-                        <div style={{ marginBottom: '20px' }}>
-                            <label style={{ display: 'block', fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem' }}>
-                                De qual conta/carteira o dinheiro saiu?
-                            </label>
+                        <label className="cp-field">
+                            <span>Carteira</span>
                             <select
                                 value={selectedWallet}
                                 onChange={e => setSelectedWallet(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '10px 12px', borderRadius: '10px',
-                                    border: '1px solid #e2e8f0', fontSize: '0.95rem',
-                                    background: '#f8fafc'
-                                }}
+                                autoFocus
                             >
-                                <option value="">Selecione uma carteira</option>
-                                <optgroup label="🏢 EMPRESA (PJ)">
+                                <option value="">Selecione a carteira</option>
+                                <optgroup label="MEI (PJ)">
                                     {wallets.filter(w => w.account_type === 'PJ').map(w => (
-                                        <option key={w.id} value={w.id}>🏢 {w.name}</option>
+                                        <option key={w.id} value={w.id}>{w.name}</option>
                                     ))}
                                 </optgroup>
-                                <optgroup label="👤 PESSOAL (PF)">
+                                <optgroup label="Pessoal (PF)">
                                     {wallets.filter(w => w.account_type === 'PF').map(w => (
-                                        <option key={w.id} value={w.id}>👤 {w.name}</option>
+                                        <option key={w.id} value={w.id}>{w.name}</option>
                                     ))}
                                 </optgroup>
                             </select>
-                        </div>
+                        </label>
 
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                            <button
-                                onClick={() => { setConfirmModal(null); setSelectedWallet('') }}
-                                className="btn btn-outline"
-                                style={{ flex: 1 }}
-                            >
-                                Cancelar
+                        <div className="cd-actions">
+                            <button type="button" className="cd-btn" onClick={closeConfirmModal} disabled={confirming}>
+                                Voltar
                             </button>
-                            <button
-                                onClick={handleConfirm}
-                                className="btn btn-primary"
-                                style={{ flex: 1, backgroundColor: '#10b981', borderColor: '#10b981' }}
-                            >
-                                ✅ Confirmar
+                            <button type="submit" className="cd-btn cd-btn--primary" disabled={!selectedWallet || confirming}>
+                                {confirming ? 'Confirmando…' : 'Confirmar pagamento'}
                             </button>
                         </div>
-                    </div>
+                    </form>
                 </div>
             )}
 
@@ -491,6 +480,8 @@ export default function BillsToPay() {
                     }}
                 />
             )}
+
+            {dialog}
         </div>
     )
 }
