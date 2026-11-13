@@ -20,6 +20,7 @@ import {
 import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import TransferModal from '../../components/TransferModal'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import Select from '../../components/ui/Select'
 import { showToast } from '../../utils/toast'
 import './FinancialStatement.css'
 
@@ -420,6 +421,12 @@ export default function FinancialStatement() {
     const pjWallets = safeWallets.filter(w => w.account_type === 'PJ')
     const pfWallets = safeWallets.filter(w => w.account_type === 'PF')
 
+    // Carteiras agrupadas (MEI / Pessoal) para as listas de escolha
+    const walletGroups = [
+        ...(pjWallets.length > 0 ? [{ group: 'MEI', options: pjWallets.map(w => ({ value: String(w.id), label: w.name })) }] : []),
+        ...(pfWallets.length > 0 ? [{ group: 'Pessoal', options: pfWallets.map(w => ({ value: String(w.id), label: w.name })) }] : [])
+    ]
+
     const uniqueCategories = useMemo(() => Object.values(
         categories.reduce((acc, c) => {
             const key = c.name.trim().toLowerCase()
@@ -523,42 +530,33 @@ export default function FinancialStatement() {
                     </div>
 
                     <div id="ext-filters-more" className={`ext-filters__more ${isFiltersOpen ? 'is-open' : ''}`}>
-                        <label className="ext-select">
-                            <span className="ext-sr">Carteira</span>
-                            <select
+                        <div className="ext-select">
+                            <Select
+                                variant="pill"
+                                ariaLabel="Carteira"
                                 value={filters.walletId}
-                                className={filters.walletId !== 'ALL' ? 'is-on' : ''}
-                                onChange={(e) => setFilter('walletId', e.target.value)}
-                            >
-                                <option value="ALL">Todas as carteiras</option>
-                                {pjWallets.length > 0 && (
-                                    <optgroup label="MEI">
-                                        {pjWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                    </optgroup>
-                                )}
-                                {pfWallets.length > 0 && (
-                                    <optgroup label="Pessoal">
-                                        {pfWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                    </optgroup>
-                                )}
-                            </select>
-                            <ChevronDown size={16} aria-hidden="true" />
-                        </label>
+                                active={filters.walletId !== 'ALL'}
+                                onChange={(v) => setFilter('walletId', String(v))}
+                                options={[
+                                    { value: 'ALL', label: 'Todas as carteiras' },
+                                    ...walletGroups
+                                ]}
+                            />
+                        </div>
 
-                        <label className="ext-select">
-                            <span className="ext-sr">Categoria</span>
-                            <select
+                        <div className="ext-select">
+                            <Select
+                                variant="pill"
+                                ariaLabel="Categoria"
                                 value={filters.categoryId}
-                                className={filters.categoryId !== 'ALL' ? 'is-on' : ''}
-                                onChange={(e) => setFilter('categoryId', e.target.value)}
-                            >
-                                <option value="ALL">Todas as categorias</option>
-                                {uniqueCategories.map(c => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
-                            </select>
-                            <ChevronDown size={16} aria-hidden="true" />
-                        </label>
+                                active={filters.categoryId !== 'ALL'}
+                                onChange={(v) => setFilter('categoryId', String(v))}
+                                options={[
+                                    { value: 'ALL', label: 'Todas as categorias' },
+                                    ...uniqueCategories.map(c => ({ value: String(c.id), label: c.name }))
+                                ]}
+                            />
+                        </div>
 
                         <div className="ext-seg" role="group" aria-label="Tipo">
                             {[['ALL', 'Tudo', ''], ['RECEITA', 'Entradas', ''], ['DESPESA', 'Saídas', '']].map(([value, label, tone]) => (
@@ -785,26 +783,16 @@ export default function FinancialStatement() {
                                             <div className="ext-row__foot">
                                                 <div className="ext-row__wallet">
                                                     {editingWalletTransactionId === t.id ? (
-                                                        <select
-                                                            autoFocus
-                                                            className="ext-wallet-select"
-                                                            aria-label="Mover para a carteira"
-                                                            value={t.business_unit_id || ''}
-                                                            onChange={(e) => handleQuickWalletChange(t.id, e.target.value)}
-                                                            onBlur={() => setEditingWalletTransactionId(null)}
-                                                        >
-                                                            <option value="">Escolha a carteira</option>
-                                                            {pjWallets.length > 0 && (
-                                                                <optgroup label="MEI">
-                                                                    {pjWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                                                </optgroup>
-                                                            )}
-                                                            {pfWallets.length > 0 && (
-                                                                <optgroup label="Pessoal">
-                                                                    {pfWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                                                </optgroup>
-                                                            )}
-                                                        </select>
+                                                        <Select
+                                                            variant="compact"
+                                                            defaultOpen
+                                                            ariaLabel="Mover para a carteira"
+                                                            placeholder="Escolha a carteira"
+                                                            value={t.business_unit_id ? String(t.business_unit_id) : ''}
+                                                            onChange={(v) => handleQuickWalletChange(t.id, String(v))}
+                                                            onClose={() => setEditingWalletTransactionId(null)}
+                                                            options={walletGroups}
+                                                        />
                                                     ) : (
                                                         <button
                                                             type="button"

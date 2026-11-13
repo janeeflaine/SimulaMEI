@@ -652,6 +652,11 @@
     pointer-events: none;
 }
 
+/* Carteira usa a lista do site (components/ui/Select) */
+.painel-select .sel-trigger {
+    min-height: 44px;
+}
+
 .painel-filter {
     position: relative;
 }
@@ -1705,6 +1710,12 @@
     }
 
     .painel-select select {
+        width: 100%;
+        max-width: none;
+    }
+
+    .painel-select,
+    .painel-select .sel-trigger {
         width: 100%;
         max-width: none;
     }

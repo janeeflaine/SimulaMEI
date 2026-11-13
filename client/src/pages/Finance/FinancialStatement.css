@@ -615,6 +615,11 @@
     pointer-events: none;
 }
 
+/* Carteira e categoria usam a lista do site (components/ui/Select) */
+.extrato .ext-select .sel-trigger {
+    min-height: 48px;
+}
+
 /* Tudo / Entradas / Saídas */
 .ext-seg {
     display: inline-flex;
@@ -1294,6 +1299,12 @@
     }
 
     .extrato .ext-select select {
+        max-width: none;
+    }
+
+    .extrato .ext-select,
+    .extrato .ext-select .sel-trigger {
+        width: 100%;
         max-width: none;
     }
 

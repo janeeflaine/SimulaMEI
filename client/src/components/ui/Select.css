@@ -1,0 +1,199 @@
+/* Lista de escolha do site (components/ui/Select.jsx) */
+
+.sel-trigger {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0 40px 0 14px;
+    border: 1.5px solid #e3e8ef;
+    border-radius: 12px;
+    background: #fff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 16px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.sel-trigger__label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sel-trigger__label.is-placeholder {
+    color: #5b6b80;
+}
+
+.sel-trigger__chevron {
+    position: absolute;
+    right: 14px;
+    color: #5b6b80;
+    pointer-events: none;
+    transition: transform 150ms ease;
+}
+
+.sel-trigger.is-open .sel-trigger__chevron {
+    transform: rotate(180deg);
+}
+
+.sel-trigger:focus-visible,
+.sel-trigger.is-open {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.sel-trigger:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Filtros: pílula, como os outros botões da barra */
+.sel-trigger--pill {
+    width: auto;
+    max-width: 260px;
+    padding-left: 16px;
+    border-radius: 999px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+}
+
+.sel-trigger--pill.is-on {
+    border-color: #12284a;
+    color: #12284a;
+}
+
+.sel-trigger--pill.is-open {
+    border-color: #12284a;
+    box-shadow: 0 0 0 3px rgba(18, 40, 74, 0.12);
+}
+
+/* Dentro de linhas de lista (ex.: mover lançamento de carteira) */
+.sel-trigger--compact {
+    width: 100%;
+    max-width: 220px;
+    min-height: 36px;
+    padding: 0 34px 0 12px;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.sel-trigger--compact .sel-trigger__chevron {
+    right: 10px;
+}
+
+@media (pointer: coarse) {
+    .sel-trigger--compact {
+        min-height: 44px;
+    }
+}
+
+@media (hover: hover) {
+    .sel-trigger:hover:not(:disabled) {
+        border-color: #12284a;
+    }
+}
+
+/* Menu aberto: camada própria sobre a página e as janelas */
+.sel-menu {
+    position: fixed;
+    z-index: 1300;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 6px;
+    border: 1px solid #e3e8ef;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 24px 48px -20px rgba(18, 40, 74, 0.4), 0 2px 6px rgba(18, 40, 74, 0.06);
+    font-family: inherit;
+    animation: sel-in 120ms ease-out;
+}
+
+.sel-menu:focus {
+    outline: none;
+}
+
+.sel-group {
+    padding: 10px 12px 4px;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #5b6b80;
+}
+
+.sel-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 10px;
+    color: #0f172a;
+    font-size: 0.9375rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.sel-option.is-grouped {
+    padding-left: 20px;
+}
+
+.sel-option__label {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sel-option svg {
+    flex: none;
+}
+
+.sel-option.is-highlight {
+    background: #f6f8fa;
+}
+
+/* A opção escolhida, como nos menus de período do Painel e do Extrato */
+.sel-option.is-selected {
+    color: #047857;
+    font-weight: 700;
+    background: rgba(16, 185, 129, 0.08);
+}
+
+.sel-option.is-selected.is-highlight {
+    background: rgba(16, 185, 129, 0.14);
+}
+
+.sel-option.is-disabled {
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+
+@keyframes sel-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
+}
+
+.sel-menu.is-up {
+    animation-name: sel-in-up;
+}
+
+@keyframes sel-in-up {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sel-menu,
+    .sel-trigger__chevron {
+        animation: none;
+        transition: none;
+    }
+}

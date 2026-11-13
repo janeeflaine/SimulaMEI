@@ -6,6 +6,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { Check, CircleCheck, Download, Plus } from 'lucide-react'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import Select from '../../components/ui/Select'
 import './FinanceCategories.css'
 import './BillsToPay.css'
 
@@ -438,26 +439,20 @@ export default function BillsToPay() {
                             <div className="is-strong"><dt>Valor</dt><dd>{formatCurrency(confirmModal.amount)}</dd></div>
                         </dl>
 
-                        <label className="cp-field">
-                            <span>Carteira</span>
-                            <select
+                        <div className="cp-field">
+                            <label htmlFor="cp-wallet">Carteira</label>
+                            <Select
+                                id="cp-wallet"
+                                ariaLabel="Carteira"
+                                placeholder="Selecione a carteira"
                                 value={selectedWallet}
-                                onChange={e => setSelectedWallet(e.target.value)}
-                                autoFocus
-                            >
-                                <option value="">Selecione a carteira</option>
-                                <optgroup label="MEI (PJ)">
-                                    {wallets.filter(w => w.account_type === 'PJ').map(w => (
-                                        <option key={w.id} value={w.id}>{w.name}</option>
-                                    ))}
-                                </optgroup>
-                                <optgroup label="Pessoal (PF)">
-                                    {wallets.filter(w => w.account_type === 'PF').map(w => (
-                                        <option key={w.id} value={w.id}>{w.name}</option>
-                                    ))}
-                                </optgroup>
-                            </select>
-                        </label>
+                                onChange={(v) => setSelectedWallet(String(v))}
+                                options={[
+                                    { group: 'MEI (PJ)', options: wallets.filter(w => w.account_type === 'PJ').map(w => ({ value: String(w.id), label: w.name })) },
+                                    { group: 'Pessoal (PF)', options: wallets.filter(w => w.account_type === 'PF').map(w => ({ value: String(w.id), label: w.name })) }
+                                ].filter(g => g.options.length > 0)}
+                            />
+                        </div>
 
                         <div className="cd-actions">
                             <button type="button" className="cd-btn" onClick={closeConfirmModal} disabled={confirming}>

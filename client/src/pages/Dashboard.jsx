@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import FeatureLock from '../components/FeatureLock'
 import FinanceQuickActionModal from '../components/FinanceQuickActionModal'
 import { useConfirmDialog } from '../components/ui/ConfirmDialog'
+import Select from '../components/ui/Select'
 import { tierOf } from '../components/plans/planFeatures'
 import './Dashboard.css'
 import jsPDF from 'jspdf'
@@ -727,6 +728,12 @@ export default function Dashboard() {
     const pjWallets = wallets.filter(w => w.account_type === 'PJ')
     const pfWallets = wallets.filter(w => w.account_type === 'PF')
 
+    // Carteiras agrupadas (MEI / Pessoal) para as listas de escolha
+    const walletGroups = [
+        ...(pjWallets.length > 0 ? [{ group: 'MEI', options: pjWallets.map(w => ({ value: String(w.id), label: w.name })) }] : []),
+        ...(pfWallets.length > 0 ? [{ group: 'Pessoal', options: pfWallets.map(w => ({ value: String(w.id), label: w.name })) }] : [])
+    ]
+
     const { totalRevenue, totalExpense, balance, profitPJ, revenuePJ, expensePF, expensePJ } = financialSummary
     const flowMax = Math.max(totalRevenue, totalExpense, 1)
     const margin = revenuePJ > 0 ? Math.round((profitPJ / revenuePJ) * 100) : null
@@ -777,23 +784,19 @@ export default function Dashboard() {
                     <div className="painel-actions">
                         {canFilter && (
                             <>
-                                <label className="painel-select">
-                                    <span className="painel-sr">Carteira</span>
-                                    <select value={walletId} onChange={e => setWalletId(e.target.value)}>
-                                        <option value="">Todas as carteiras</option>
-                                        {pjWallets.length > 0 && (
-                                            <optgroup label="MEI">
-                                                {pjWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                            </optgroup>
-                                        )}
-                                        {pfWallets.length > 0 && (
-                                            <optgroup label="Pessoal">
-                                                {pfWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                            </optgroup>
-                                        )}
-                                    </select>
-                                    <ChevronDown size={16} aria-hidden="true" />
-                                </label>
+                                <div className="painel-select">
+                                    <Select
+                                        variant="pill"
+                                        ariaLabel="Carteira"
+                                        value={walletId}
+                                        active={walletId !== ''}
+                                        onChange={(v) => setWalletId(String(v))}
+                                        options={[
+                                            { value: '', label: 'Todas as carteiras' },
+                                            ...walletGroups
+                                        ]}
+                                    />
+                                </div>
 
                                 <div className="painel-filter" ref={filterRef}>
                                     <button

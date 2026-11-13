@@ -667,6 +667,7 @@ h3 {
 }
 
 .nl-field > span:first-child,
+.nl-field > label:first-child,
 .nl-field__row label {
     padding: 0;
     margin: 0;

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, X, User, Building2, ArrowDownLeft, ArrowUpRight, ChevronRight, Plus } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { showToast } from '../utils/toast'
+import Select from './ui/Select'
 import './ui/ConfirmDialog.css'
 import './FinanceQuickActionModal.css'
 
@@ -631,19 +632,22 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                                 />
                             </label>
 
-                            <label className="nl-field">
-                                <span>Forma de pagamento</span>
-                                <select
+                            <div className="nl-field">
+                                <label htmlFor="nl-method">Forma de pagamento</label>
+                                <Select
+                                    id="nl-method"
+                                    ariaLabel="Forma de pagamento"
                                     value={formData.paymentMethod}
-                                    onChange={(e) => setField('paymentMethod', e.target.value)}
-                                >
-                                    <option value="Dinheiro">Dinheiro</option>
-                                    <option value="PIX">Pix</option>
-                                    <option value="Cartão de Débito">Cartão de débito</option>
-                                    <option value="Cartão de Crédito">Cartão de crédito</option>
-                                    <option value="Boleto">Boleto (vai para Contas a pagar)</option>
-                                </select>
-                            </label>
+                                    onChange={(v) => setField('paymentMethod', v)}
+                                    options={[
+                                        { value: 'Dinheiro', label: 'Dinheiro' },
+                                        { value: 'PIX', label: 'Pix' },
+                                        { value: 'Cartão de Débito', label: 'Cartão de débito' },
+                                        { value: 'Cartão de Crédito', label: 'Cartão de crédito' },
+                                        { value: 'Boleto', label: 'Boleto (vai para Contas a pagar)' }
+                                    ]}
+                                />
+                            </div>
 
                             <div className="nl-field nl-field--full">
                                 <span className="nl-field__row">
@@ -669,23 +673,20 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                                         <button type="button" className="cd-btn" onClick={() => setIsAddingCategory(false)}>Cancelar</button>
                                     </span>
                                 ) : (
-                                    <select
+                                    <Select
                                         id="nl-category"
-                                        required
-                                        value={formData.categoryId}
-                                        onChange={(e) => setField('categoryId', e.target.value)}
-                                    >
-                                        <option value="">Selecione uma categoria</option>
-                                        {categories
+                                        ariaLabel="Categoria"
+                                        placeholder="Selecione uma categoria"
+                                        value={formData.categoryId ? String(formData.categoryId) : ''}
+                                        onChange={(v) => setField('categoryId', v)}
+                                        options={categories
                                             .filter(c => {
                                                 if (formData.type === 'RECEITA') return c.type === 'RECEITA'
                                                 if (formData.target === 'BUSINESS') return c.type === 'DESPESA_MEI'
                                                 return c.type === 'DESPESA_PESSOAL'
                                             })
-                                            .map(c => (
-                                                <option key={c.id} value={c.id}>{c.name}</option>
-                                            ))}
-                                    </select>
+                                            .map(c => ({ value: String(c.id), label: c.name }))}
+                                    />
                                 )}
                             </div>
 
@@ -714,17 +715,14 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                                             <button type="button" className="cd-btn" onClick={() => setIsAddingCard(false)}>Cancelar</button>
                                         </span>
                                     ) : (
-                                        <select
+                                        <Select
                                             id="nl-card"
-                                            required
-                                            value={formData.cardId || ''}
-                                            onChange={(e) => setField('cardId', e.target.value)}
-                                        >
-                                            <option value="">Selecione o cartão</option>
-                                            {cards.map(c => (
-                                                <option key={c.id} value={c.id}>{c.name} {c.lastFour ? `(final ${c.lastFour})` : ''}</option>
-                                            ))}
-                                        </select>
+                                            ariaLabel="Cartão"
+                                            placeholder="Selecione o cartão"
+                                            value={formData.cardId ? String(formData.cardId) : ''}
+                                            onChange={(v) => setField('cardId', v)}
+                                            options={cards.map(c => ({ value: String(c.id), label: c.lastFour ? `${c.name} (final ${c.lastFour})` : c.name }))}
+                                        />
                                     )}
                                 </div>
                             )}
