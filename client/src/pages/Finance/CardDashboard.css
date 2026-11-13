@@ -335,6 +335,10 @@
     color: #b45309;
 }
 
+.pc-facts li.is-refund strong {
+    color: #047857;
+}
+
 .pc-search {
     display: flex;
     align-items: center;

@@ -216,9 +216,12 @@ export default function CardDashboard() {
         const namedCategories = categoriesYear.filter(c => c.name !== 'Sem Categoria' && c.total > 0)
         const topCategory = namedCategories.sort((a, b) => b.total - a.total)[0] || null
         const uncategorized = categoriesYear.find(c => c.name === 'Sem Categoria')
+        // Parte de cada categoria: sobre o que foi comprado (sem os estornos), para nunca passar de 100%
+        const purchasedTotal = categoriesYear.reduce((s, c) => s + Math.max(c.total, 0), 0)
+        const shareOf = (value) => (purchasedTotal > 0 && value > 0 ? Math.round((value / purchasedTotal) * 100) : 0)
         const limit = Number(data.creditLimit) || 0
 
-        return { months, withSpend, totalSpent, average, top, low, last, previous, change, categoriesYear, purchases, topCategory, uncategorized, limit }
+        return { months, withSpend, totalSpent, average, top, low, last, previous, change, categoriesYear, purchases, topCategory, uncategorized, limit, shareOf }
     }, [data])
 
     const insights = useMemo(() => {
@@ -228,9 +231,8 @@ export default function CardDashboard() {
             const above = Math.round(((stats.top.total - stats.average) / stats.average) * 100)
             if (above > 0) list.push(`${capitalize(MONTHS[stats.top.month])} foi o mês mais caro: ${brl(stats.top.total)}, ${above}% acima da média.`)
         }
-        if (stats.topCategory && stats.totalSpent > 0) {
-            const share = Math.round((stats.topCategory.total / stats.totalSpent) * 100)
-            list.push(`${stats.topCategory.name} levou ${share}% do que foi gasto no cartão em ${year}.`)
+        if (stats.topCategory) {
+            list.push(`${stats.topCategory.name} levou ${stats.shareOf(stats.topCategory.total)}% das compras no cartão em ${year}.`)
         }
         if (stats.change !== null && stats.change !== 0 && stats.last && stats.previous) {
             const diff = Math.abs(stats.last.total - stats.previous.total)
@@ -245,6 +247,9 @@ export default function CardDashboard() {
     // ── Compras do mês escolhido ────────────────────────────────────────
     const selectedInvoice = selectedMonth ? invoiceOf(selectedMonth) : null
     const monthTotal = items.reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    // Estorno é dinheiro que volta: o total da fatura é compras menos estornos
+    const monthRefunds = items.reduce((s, i) => s + Math.min(Number(i.amount) || 0, 0), 0)
+    const monthPurchases = monthTotal - monthRefunds
     const toReview = items.filter(i => !i.categoryId || (Number(i.aiConfidence) > 0 && Number(i.aiConfidence) < REVIEW_BELOW)).length
     const visibleItems = useMemo(() => {
         const q = search.trim().toLowerCase()
@@ -699,7 +704,7 @@ export default function CardDashboard() {
                                     icon={Tags}
                                     label="Categoria com mais gastos"
                                     value={stats.topCategory?.name || '—'}
-                                    note={stats.topCategory ? `${brl(stats.topCategory.total)}, ${Math.round((stats.topCategory.total / (stats.totalSpent || 1)) * 100)}% do ano` : null}
+                                    note={stats.topCategory ? `${brl(stats.topCategory.total)}, ${stats.shareOf(stats.topCategory.total)}% das compras` : null}
                                 />
                                 <Stat
                                     icon={ShoppingBag}
@@ -729,8 +734,10 @@ export default function CardDashboard() {
                                             key: c.name,
                                             label: c.name === 'Sem Categoria' ? 'Sem categoria' : c.name,
                                             total: c.total,
-                                            muted: c.name === 'Outros' || c.name === 'Sem Categoria',
-                                            note: `${plural(c.count, 'compra', 'compras')}, ${Math.round((c.total / (stats.totalSpent || 1)) * 100)}% do ano`
+                                            muted: c.total < 0 || c.name === 'Outros' || c.name === 'Sem Categoria',
+                                            note: c.total < 0
+                                                ? `${plural(c.count, 'item', 'itens')}, estorno maior que as compras`
+                                                : `${plural(c.count, 'compra', 'compras')}, ${stats.shareOf(c.total)}% das compras`
                                         }))}
                                     />
                                 </Block>
@@ -809,8 +816,10 @@ export default function CardDashboard() {
                                 <>
                                     <div className="pc-toolbar">
                                         <ul className="pc-facts">
-                                            <li><span>Total</span><strong>{brl(monthTotal)}</strong></li>
-                                            <li><span>Compras</span><strong>{items.length}</strong></li>
+                                            {monthRefunds < 0 && <li><span>Compras</span><strong>{brl(monthPurchases)}</strong></li>}
+                                            {monthRefunds < 0 && <li className="is-refund"><span>Estornos</span><strong>{brl(monthRefunds)}</strong></li>}
+                                            <li><span>{monthRefunds < 0 ? 'Total da fatura' : 'Total'}</span><strong>{brl(monthTotal)}</strong></li>
+                                            <li><span>Itens</span><strong>{items.length}</strong></li>
                                             {selectedInvoice?.dueDate && <li><span>Vence</span><strong>{formatDate(selectedInvoice.dueDate)}</strong></li>}
                                             {toReview > 0 && <li className="is-warn"><span>Para conferir</span><strong>{toReview}</strong></li>}
                                         </ul>
