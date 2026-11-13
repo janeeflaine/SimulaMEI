@@ -313,7 +313,7 @@ export default function Dashboard() {
         if (userPlan) {
             fetchTransactions()
         }
-        if (userPlan && (userPlan.name === 'Ouro' || Number(userPlan.id) === 3 || user?.isInTrial)) {
+        if (userPlan && (userPlan.features?.multi_carteiras || user?.isInTrial)) {
             fetchWalletBreakdown()
         }
     }, [startDate, endDate, walletId])
@@ -550,7 +550,7 @@ export default function Dashboard() {
     const categoryData = useMemo(() => {
         const categories = {}
         const safeTransactions = Array.isArray(transactions) ? transactions : []
-        safeTransactions.filter(t => t.type === 'DESPESA').forEach(t => {
+        safeTransactions.filter(t => t.type === 'DESPESA' && t.status !== 'PENDING').forEach(t => {
             const name = t.categoryName || 'Outros'
             categories[name] = (categories[name] || 0) + t.amount
         })
@@ -952,7 +952,7 @@ export default function Dashboard() {
 
                         <div className="painel-cats">
                             <h2 className="painel-h2">Despesas por categoria</h2>
-                            <p className="painel-muted">Em {periodText}, contando também as contas ainda não pagas.</p>
+                            <p className="painel-muted">Em {periodText}, só lançamentos pagos.</p>
                             {shownCats.length > 0 ? (
                                 <ol className="painel-cats__list">
                                     {shownCats.map(c => (
