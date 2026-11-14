@@ -234,14 +234,19 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                 body: JSON.stringify({ name: newCategoryName, type: catType })
             })
 
+            const body = await res.json().catch(() => ({}))
             if (res.ok) {
-                const newCat = await res.json()
-                setCategories(prev => [...prev, newCat])
-                setField('categoryId', newCat.id)
+                setCategories(prev => [...prev, body])
+                setField('categoryId', body.id)
+                setIsAddingCategory(false)
+                setNewCategoryName('')
+            } else if (res.status === 409 && body.id) {
+                // Já existe com esse nome nesse tipo: usa a que já existe
+                setField('categoryId', body.id)
                 setIsAddingCategory(false)
                 setNewCategoryName('')
             } else {
-                showToast('Erro ao criar categoria', 'error')
+                showToast(body.message || 'Erro ao criar categoria', 'error')
             }
         } catch (err) {
             console.error(err)

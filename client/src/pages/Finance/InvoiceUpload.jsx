@@ -309,6 +309,12 @@ export default function InvoiceUpload() {
                 body: JSON.stringify({ name, type: categoryType })
             })
             const body = await res.json().catch(() => ({}))
+            if (res.status === 409 && body?.id) {
+                // Já existe com esse nome: usa a que já existe
+                setChoices(prev => ({ ...prev, [newCat.itemId]: `id:${body.id}` }))
+                setNewCat(null)
+                return
+            }
             if (!res.ok || !body?.id) { setNewCatError(body.message || 'Não deu para criar a categoria. Tente de novo.'); return }
             setCategories(prev => [...prev, body])
             // A categoria nova vale para esta compra e para as outras com a mesma sugestão

@@ -368,6 +368,12 @@ export default function CardDashboard() {
                 body: JSON.stringify({ name, type: categoryType })
             })
             const body = await res.json().catch(() => ({}))
+            if (res.status === 409 && body?.id) {
+                // Já existe com esse nome: usa a que já existe
+                setField('category', `id:${body.id}`)
+                setNewCat(null)
+                return
+            }
             if (!res.ok || !body?.id) {
                 setFormError(body.message || 'Não deu para criar a categoria. Tente de novo.')
                 return
