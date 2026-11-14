@@ -443,8 +443,9 @@ export default function Dashboard() {
         }
     }
 
+    // Avisos dos alertas do MEI (limite, DAS, declaração): só com o recurso "alertas" do plano
     const fetchActiveAlerts = async () => {
-
+        if (!(user?.planFeatures?.alertas || user?.isInTrial || user?.role === 'ADMIN')) return
         try {
             const token = localStorage.getItem('token')
             const res = await fetch('/api/alerts/check', {
@@ -879,6 +880,18 @@ export default function Dashboard() {
                         </div>
                     </div>
                 )}
+
+                {activeAlerts.map(alert => (
+                    <div key={`alerta-${alert.type}-${alert.id}`} className={`painel-notice ${alert.severity === 'danger' ? 'painel-notice--danger' : ''}`} role="status">
+                        <div className="painel-notice__text">
+                            <strong>{alert.title || alert.message}</strong>
+                            {alert.title && <span>{alert.message}</span>}
+                        </div>
+                        <div className="painel-notice__actions">
+                            <Link to="/alertas" className="painel-btn painel-btn--quiet">Ver alertas</Link>
+                        </div>
+                    </div>
+                ))}
 
                 {/* Resultado do período: o destaque da página */}
                 <section className="painel-result" aria-labelledby="painel-result-title">

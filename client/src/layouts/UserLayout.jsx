@@ -202,7 +202,8 @@ export default function UserLayout() {
                                         </div>
                                     </div>
 
-                                    {(user.plan === 'Ouro' || Number(user.planId) === 3) && (
+                                    {/* Pelo recurso do plano (o admin decide), não pelo nome do plano */}
+                                    {(user.planFeatures?.alertas || user.isInTrial || user.role === 'ADMIN') && (
                                         <Link to="/alertas" className={`nav-link ${location.pathname === '/alertas' ? 'active' : ''}`}>
                                             <Bell size={16} aria-hidden="true" /> Alertas
                                         </Link>

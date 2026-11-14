@@ -1,0 +1,445 @@
+/* Alertas (/alertas) — prefixo .alr- dentro de .alertas.
+   Usa também: .csp-* (quadros de números de Cartões) e o Select. */
+
+.alertas {
+    --alr-ink: #12284a;
+    --alr-text: #0f172a;
+    --alr-muted: #5b6b80;
+    --alr-line: #e3e8ef;
+    --alr-paper: #f6f8fa;
+    padding: 40px 0 64px;
+    color: var(--alr-text);
+}
+
+.alr-container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+.alr-head {
+    margin-bottom: 28px;
+}
+
+.alertas .alr-title {
+    margin: 0 0 6px;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    text-align: left;
+    color: var(--alr-text);
+}
+
+.alr-sub {
+    max-width: 640px;
+    margin: 0;
+    color: var(--alr-muted);
+    line-height: 1.5;
+}
+
+.alr-sub--wa {
+    margin-top: 6px;
+    font-size: 0.9375rem;
+}
+
+.alr-sub a {
+    color: var(--alr-ink);
+    font-weight: 600;
+}
+
+/* ── Topo: faturamento (destaque) e prazos ────────────────────────────── */
+
+.alr-top {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 14px;
+    align-items: stretch;
+}
+
+.alr-revenue {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    min-width: 0;
+    padding: 24px;
+    border-radius: 20px;
+    background: var(--alr-ink);
+    color: #fff;
+}
+
+.alertas .alr-revenue__label {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-align: left;
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.alr-revenue__value {
+    margin: 0;
+    font-size: 2.25rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+.alr-bar {
+    position: relative;
+    height: 10px;
+    margin-top: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.alr-bar i {
+    display: block;
+    height: 100%;
+    max-width: 100%;
+    border-radius: inherit;
+    background: #fff;
+}
+
+/* Marca de onde o aviso dispara */
+.alr-bar b {
+    position: absolute;
+    top: -4px;
+    width: 2px;
+    height: 18px;
+    margin-left: -1px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.alr-revenue__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    font-size: 0.9375rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.alr-revenue__tag {
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--alr-ink);
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+
+.alr-revenue__note {
+    margin: 2px 0 0;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.alr-revenue__note a {
+    color: #fff;
+    font-weight: 700;
+}
+
+.alr-dates .csp-stats {
+    grid-template-columns: 1fr;
+    height: 100%;
+    margin: 0;
+}
+
+/* ── Seções ───────────────────────────────────────────────────────────── */
+
+.alr-section {
+    margin-top: 32px;
+}
+
+.alertas .alr-h2 {
+    margin: 0 0 12px;
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    text-align: left;
+    color: var(--alr-text);
+}
+
+.alr-clear {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid #a7f3d0;
+    background: #ecfdf5;
+    color: #047857;
+    line-height: 1.5;
+}
+
+.alr-clear svg,
+.alr-notice svg {
+    flex: none;
+    margin-top: 2px;
+}
+
+.alr-notices {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.alr-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.alr-notice.is-danger {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.alr-notice div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.alr-notice strong {
+    font-weight: 700;
+}
+
+.alr-notice span {
+    font-size: 0.9375rem;
+    line-height: 1.45;
+}
+
+/* ── Lista de alertas ─────────────────────────────────────────────────── */
+
+.alr-list {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.alr-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px 20px;
+    border: 1px solid var(--alr-line);
+    border-radius: 16px;
+    background: #fff;
+}
+
+.alr-item__icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: rgba(18, 40, 74, 0.07);
+    color: var(--alr-ink);
+}
+
+.alr-item.is-off .alr-item__icon {
+    background: var(--alr-paper);
+    color: #94a3b8;
+}
+
+.alr-item__main {
+    flex: 1;
+    min-width: 0;
+}
+
+.alertas .alr-item__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-align: left;
+    color: var(--alr-text);
+}
+
+.alr-item__text {
+    margin: 4px 0 0;
+    color: var(--alr-muted);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+}
+
+.alr-config {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin: 12px 0 0;
+    font-size: 0.9375rem;
+    color: #334155;
+}
+
+.alr-config .sel-trigger {
+    width: auto;
+    min-width: 170px;
+}
+
+.alr-config--text {
+    color: var(--alr-muted);
+}
+
+.alr-saved {
+    display: block;
+    min-height: 1.2em;
+    margin-top: 6px;
+    color: #047857;
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+/* Liga/desliga */
+.alr-saved:empty {
+    min-height: 0;
+    margin: 0;
+}
+
+.alr-switch {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 4px;
+    border: 0;
+    background: none;
+    color: var(--alr-muted);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.alr-switch__track {
+    position: relative;
+    width: 44px;
+    height: 26px;
+    border-radius: 999px;
+    background: #cbd5e1;
+    transition: background 0.15s ease;
+}
+
+.alr-switch__dot {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+    transition: transform 0.15s ease;
+}
+
+.alr-switch.is-on {
+    color: var(--alr-ink);
+}
+
+.alr-switch.is-on .alr-switch__track {
+    background: var(--alr-ink);
+}
+
+.alr-switch.is-on .alr-switch__dot {
+    transform: translateX(18px);
+}
+
+.alr-switch:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.alr-switch:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+    border-radius: 999px;
+}
+
+.alr-switch__label {
+    min-width: 72px;
+    text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .alr-switch__track,
+    .alr-switch__dot {
+        transition: none;
+    }
+}
+
+/* ── Tablet e celular ─────────────────────────────────────────────────── */
+
+@media (max-width: 860px) {
+    .alr-top {
+        grid-template-columns: 1fr;
+    }
+
+    .alr-dates .csp-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .alertas {
+        padding: 24px 0 48px;
+    }
+
+    .alr-container {
+        padding: 0 16px;
+    }
+
+    .alertas .alr-title {
+        font-size: 1.75rem;
+    }
+
+    .alr-revenue {
+        padding: 20px;
+    }
+
+    .alr-revenue__value {
+        font-size: 1.875rem;
+    }
+
+    .alr-dates .csp-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .alr-item {
+        flex-wrap: wrap;
+        padding: 16px;
+    }
+
+    .alr-item__main {
+        flex-basis: calc(100% - 54px);
+    }
+
+    /* No celular o liga/desliga vai para baixo, alinhado ao texto */
+    .alr-switch {
+        margin-left: 54px;
+    }
+
+    .alr-config .sel-trigger {
+        min-width: 0;
+        flex: 1 1 100%;
+    }
+}

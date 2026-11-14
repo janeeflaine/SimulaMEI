@@ -775,6 +775,21 @@
     background: rgba(146, 64, 14, 0.08);
 }
 
+/* Aviso urgente (DAS vencendo em até 2 dias, limite do MEI passado ou quase) */
+.painel-notice--danger {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.painel-notice--danger .painel-btn--quiet {
+    color: #b91c1c;
+}
+
+.painel-notice--danger .painel-btn--quiet:hover {
+    background: rgba(185, 28, 28, 0.08);
+}
+
 /* ── Resultado do período (o destaque) ────────────────────────────────── */
 
 .painel-result {

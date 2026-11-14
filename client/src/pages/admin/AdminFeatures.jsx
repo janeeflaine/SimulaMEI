@@ -136,6 +136,7 @@ export default function AdminFeatures() {
                 <AdminWhatsappLimits plans={plans} />
 
                 <AdminInvoiceUploadLimits plans={plans} />
+                <AdminWhatsAppReminders />
 
                 <AdminTrialSettings />
 
@@ -437,6 +438,115 @@ function AdminInvoiceUploadLimits({ plans }) {
                     <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
                         {saving ? 'Salvando...' : 'Salvar Limites'}
                     </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// Lembretes no WhatsApp: última rodada (contas vencendo e alertas do MEI) e "Enviar agora".
+// Mostra o motivo que a Meta deu quando a mensagem não sai (ex.: modelo ainda não aprovado).
+function AdminWhatsAppReminders() {
+    const [data, setData] = useState(null)
+    const [running, setRunning] = useState(false)
+    const [confirming, setConfirming] = useState(false)
+    const [status, setStatus] = useState(null) // { ok, text }
+
+    const token = localStorage.getItem('token')
+    const fetchData = async () => {
+        try {
+            const res = await fetch('/api/admin/whatsapp/reminders', { headers: { 'Authorization': `Bearer ${token}` } })
+            if (res.ok) setData(await res.json())
+        } catch (err) {
+            console.error('Erro ao buscar lembretes do WhatsApp:', err)
+        }
+    }
+    useEffect(() => { fetchData() }, [])
+
+    const runNow = async () => {
+        setRunning(true)
+        setStatus(null)
+        try {
+            const res = await fetch('/api/admin/whatsapp/reminders/run', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } })
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) {
+                setStatus({ ok: false, text: body.message || 'Não deu para rodar agora. Tente de novo.' })
+            } else {
+                const fails = (body.failed || 0) + (body.alertas?.failed || 0)
+                setStatus({ ok: fails === 0, text: `Rodada feita: ${body.sent || 0} lembrete(s) de contas e ${body.alertas?.sent || 0} alerta(s) enviados${fails ? `, ${fails} falha(s) (motivo abaixo)` : ''}.` })
+            }
+            fetchData()
+        } catch {
+            setStatus({ ok: false, text: 'Sem conexão. Tente de novo.' })
+        } finally {
+            setRunning(false)
+            setConfirming(false)
+        }
+    }
+
+    if (!data) return null
+    const run = data.lastRun
+    const when = run ? new Date(run.ranAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : null
+    const line = (label, part) => part ? `${label}: ${part.sent} enviado(s), ${part.failed} falha(s), ${part.skipped} sem o recurso ou já enviado(s)` : null
+    const box = { padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }
+
+    return (
+        <div className="admin-card" style={{ marginTop: '2rem' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+                    Lembretes no WhatsApp
+                </h2>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
+                    Todo dia às 8h (Brasília) o sistema manda o lembrete de contas vencendo (modelo <strong style={{ color: '#93c5fd' }}>{data.templates.contas}</strong>)
+                    e os alertas do MEI (modelo <strong style={{ color: '#93c5fd' }}>{data.templates.alertas}</strong>) para os números com lembrete ligado.
+                    Os dois modelos precisam estar aprovados no WhatsApp Manager da Meta.
+                </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {(!data.configured || !data.cronSecret) && (
+                    <div role="alert" style={{ ...box, borderColor: 'rgba(252,165,165,0.35)', color: '#fca5a5', fontSize: '0.85rem' }}>
+                        {!data.configured && <div>WhatsApp não configurado no servidor: falta WHATSAPP_TOKEN ou WHATSAPP_PHONE_NUMBER_ID na Vercel.</div>}
+                        {!data.cronSecret && <div>Falta CRON_SECRET na Vercel: sem ele o envio das 8h é recusado.</div>}
+                    </div>
+                )}
+
+                <div style={box}>
+                    <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>
+                        {run ? `Última rodada: ${when} (${run.trigger === 'admin' ? 'pelo botão' : 'automática'})` : 'Nenhuma rodada registrada ainda'}
+                    </h4>
+                    {run ? (
+                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.82rem', margin: '6px 0 0', lineHeight: 1.6 }}>
+                            {line('Contas vencendo', run.contas)}<br />
+                            {line('Alertas do MEI', run.alertas)}
+                        </p>
+                    ) : (
+                        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.82rem', margin: '6px 0 0', lineHeight: 1.5 }}>
+                            Se o horário das 8h já passou e nada aparece aqui, o envio automático não está rodando: confira o Cron Job na Vercel (Settings &gt; Cron Jobs) e o CRON_SECRET.
+                        </p>
+                    )}
+                    {run?.errors?.length > 0 && (
+                        <ul style={{ margin: '10px 0 0', paddingLeft: '18px', color: '#fca5a5', fontSize: '0.82rem', lineHeight: 1.5 }}>
+                            {run.errors.map((e, i) => (
+                                <li key={i}>{e.kind === 'contas' ? 'Contas' : 'Alertas'} ({e.template}){e.count > 1 ? `, ${e.count} vezes` : ''}: {e.reason}</li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
+                    {status && (
+                        <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>
+                    )}
+                    {confirming ? (
+                        <>
+                            <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>Manda agora para quem ainda não recebeu hoje.</span>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setConfirming(false)} disabled={running}>Voltar</button>
+                            <button className="btn btn-primary btn-sm" onClick={runNow} disabled={running}>{running ? 'Enviando...' : 'Confirmar envio'}</button>
+                        </>
+                    ) : (
+                        <button className="btn btn-primary btn-sm" onClick={() => setConfirming(true)}>Enviar agora</button>
+                    )}
                 </div>
             </div>
         </div>
