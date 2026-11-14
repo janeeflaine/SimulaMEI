@@ -45,11 +45,13 @@ Analise a fatura de cartão de crédito enviada e extraia TODOS os itens de cobr
 
 Para CADA item extraído, retorne:
 - description: texto exato da descrição do gasto (como aparece na fatura)
-- amount: valor numérico em reais (ex: 25.90, sem "R$")
+- amount: valor numérico em reais (ex: 25.90, sem "R$"). Compras, tarifas, juros e IOF são positivos. Estornos, créditos e devoluções são NEGATIVOS (ex: -45.00).
 - transactionDate: data da compra no formato YYYY-MM-DD (se disponível)
 - category: categoria sugerida entre: Alimentação, Transporte, Moradia, Saúde, Educação, Lazer, Vestuário, Assinaturas, Mercado, Restaurante, Combustível, Farmácia, Pets, Serviços, Outros
 - confidence: sua confiança na categorização de 0.0 a 1.0
 - installment: se for parcela, formato "X/Y" (ex: "3/12"), senão null
+
+NÃO inclua como item: o pagamento da fatura anterior ("PAGAMENTO EFETUADO", "PAGTO", "PAGAMENTO RECEBIDO"), o saldo anterior nem linhas de total ou subtotal.
 
 Também extraia os metadados da fatura:
 - cardLastFour: últimos 4 dígitos do cartão (se visível)
@@ -92,6 +94,15 @@ CATEGORIAS_DO_USUARIO:
 {{USER_CATEGORIES}}
 Se as categorias do usuário forem fornecidas acima, priorize-as em vez das categorias padrão.
 `
+
+/**
+ * Erro com uma mensagem que pode ir para a tela (as outras ficam só no log,
+ * porque falam de chave de API, modelo etc.)
+ */
+const userError = (message) => Object.assign(new Error(message), { userMessage: message })
+
+// Linha de pagamento da fatura anterior (não é compra)
+const PAYMENT_LINE = /\b(pagamento|pagto|pgto)\b.*\b(efetuado|recebido|fatura|obrigado)\b|^pagamento$/i
 
 /**
  * Validates file before sending to Gemini
@@ -190,7 +201,7 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
                 continue
             }
             if (msg.includes('The document has no pages')) {
-                throw new Error('O arquivo PDF enviado possui proteção digital, criptografia do banco ou páginas ilegíveis pela IA. Como resolver: abra o PDF no seu navegador ou leitor de PDF e use a opção "Imprimir como PDF" (Salvar como PDF) para gerar uma nova versão sem proteção, ou envie em formato Imagem (PNG/JPG) ou CSV.')
+                throw userError('O PDF tem proteção do banco ou páginas que a IA não consegue ler. Abra o PDF e use "Imprimir" > "Salvar como PDF" para gerar uma cópia sem proteção, ou envie em CSV ou numa foto (PNG/JPG).')
             }
             if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED')) {
                 throw new Error('Chave de API do Gemini inválida ou sem permissão. Acesse https://aistudio.google.com/apikey, crie uma nova chave e atualize a variável GEMINI_API_KEY.')
@@ -221,29 +232,31 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
         parsed = JSON.parse(cleanText)
     } catch (parseErr) {
         console.error('Gemini returned invalid JSON:', cleanText.substring(0, 200))
-        throw new Error('A IA retornou uma resposta inválida. Tente novamente com uma imagem mais clara.')
+        throw userError('A IA não conseguiu ler a fatura. Tente de novo, de preferência com o PDF ou o CSV do banco.')
     }
 
     // Validate structure
     if (!parsed.items || !Array.isArray(parsed.items)) {
-        throw new Error('Resposta da IA não contém lista de itens válida')
+        throw userError('A IA não encontrou compras nesse arquivo. Confira se é a fatura do cartão.')
     }
 
     if (!parsed.metadata) {
         parsed.metadata = {}
     }
 
-    // Sanitize items — ensure amounts are positive numbers
+    // Itens: estorno fica negativo (antes virava compra positiva); pagamento da
+    // fatura anterior e valores zerados ficam de fora
     parsed.items = parsed.items
-        .filter(item => item.description && item.amount !== undefined)
+        .filter(item => item && item.description && item.amount !== undefined)
         .map(item => ({
             description: String(item.description).trim(),
-            amount: Math.abs(parseFloat(item.amount) || 0),
+            amount: Number.parseFloat(item.amount) || 0,
             transactionDate: item.transactionDate || null,
             category: item.category || 'Outros',
             confidence: Math.min(1, Math.max(0, parseFloat(item.confidence) || 0)),
             installment: item.installment || null
         }))
+        .filter(item => item.amount !== 0 && !(item.amount < 0 && PAYMENT_LINE.test(item.description)))
 
     // Sanitize metadata
     let refMonth = parseInt(parsed.metadata.referenceMonth) || null
@@ -280,5 +293,6 @@ module.exports = {
     validateFile,
     SUPPORTED_MIME_TYPES,
     TEXT_MIME_TYPES,
-    MAX_FILE_SIZE
+    MAX_FILE_SIZE,
+    PAYMENT_LINE
 }

@@ -156,10 +156,13 @@ describe('Invoice Upload — AI API Error Handling', () => {
 
         // Mock pool.connect for the upload endpoint
         const mockClient = {
-            query: jest.fn()
-                .mockResolvedValueOnce({ rows: [{ id: 1, userId: 1 }] })  // card check
-                .mockResolvedValueOnce({ rows: [] })  // user categories
-                .mockResolvedValueOnce({ rows: [{ id: 1 }] }),  // upload record insert
+            query: jest.fn(async (sql) => {
+                const q = sql.replace(/\s+/g, ' ').trim()
+                if (q.includes('FROM credit_cards c')) return { rows: [{ id: 1, name: 'Nubank', account_type: 'PF' }] } // card check
+                if (q.includes('COUNT(*)')) return { rows: [{ total: 0 }] } // uploads nas últimas 24h
+                if (q.startsWith('INSERT INTO invoice_uploads')) return { rows: [{ id: 1 }] } // upload record insert
+                return { rows: [] }
+            }),
             release: jest.fn()
         }
         mockPool.connect.mockResolvedValue(mockClient)
@@ -171,13 +174,16 @@ describe('Invoice Upload — AI API Error Handling', () => {
             .post('/api/finance/invoices/upload')
             .set('Authorization', `Bearer ${ouroToken()}`)
             .field('cardId', '1')
-            .attach('file', Buffer.from('fake pdf content'), {
+            .attach('file', Buffer.from('%PDF-1.4 fake pdf content'), {
                 filename: 'invoice.pdf',
                 contentType: 'application/pdf'
             })
 
         expect(res.statusCode).toBe(503)
         expect(res.body).toHaveProperty('error')
+        // O erro interno da IA não vai para a tela
+        expect(res.body.message).not.toContain('Gemini')
+        expect(mockClient.release).toHaveBeenCalledTimes(1)
     })
 
     // T04 — Gemini API timeout handled
@@ -453,8 +459,8 @@ describe('Invoice CRUD — Happy Path', () => {
         mockDb.query.mockResolvedValueOnce({
             rows: [{ id: 1, userId: 1 }]
         })
-        // Mock: delete (CASCADE will handle items via DB)
-        mockDb.query.mockResolvedValueOnce({ rowCount: 1 })
+        // Mock: delete numa transação (solta os envios e apaga; itens saem por CASCADE)
+        mockPool.connect.mockResolvedValue({ query: jest.fn().mockResolvedValue({ rows: [], rowCount: 1 }), release: jest.fn() })
 
         const res = await request(app)
             .delete('/api/finance/invoices/1')

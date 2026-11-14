@@ -181,19 +181,18 @@ describe('Integration — Full Upload Flow', () => {
         const app = buildApp()
 
         const mockClient = {
-            query: jest.fn()
-                .mockResolvedValueOnce({ rows: [{ id: 1, userId: 1 }] })       // card check
-                .mockResolvedValueOnce({ rows: [{ name: 'Alimentação' }] })     // user categories
-                .mockResolvedValueOnce({ rows: [{ id: 10 }] })                  // upload record
-                .mockResolvedValueOnce(undefined)                                // BEGIN
-                .mockResolvedValueOnce({ rows: [] })                             // dup check
-                .mockResolvedValueOnce({ rows: [{ id: 100 }] })                 // insert invoice
-                .mockResolvedValueOnce({ rows: [{ id: 201, description: 'UBER', amount: 25.90 }] }) // item 1
-                .mockResolvedValueOnce({ rows: [{ id: 202, description: 'NETFLIX', amount: 55.90 }] }) // item 2
-                .mockResolvedValueOnce({ rows: [{ totalAmount: 81.80 }] })      // SUM
-                .mockResolvedValueOnce(undefined)                                // UPDATE total
-                .mockResolvedValueOnce(undefined)                                // COMMIT
-                .mockResolvedValueOnce(undefined),                               // UPDATE upload record
+            query: jest.fn(async (sql) => {
+                const q = sql.replace(/\s+/g, ' ').trim()
+                if (q.includes('FROM credit_cards c')) return { rows: [{ id: 1, name: 'Nubank', account_type: 'PF' }] } // card check
+                if (q.includes('COUNT(*)')) return { rows: [{ total: 0 }] }                                          // limite do dia
+                if (q.startsWith('SELECT name FROM finance_categories')) return { rows: [{ name: 'Alimentação' }] } // user categories
+                if (q.startsWith('INSERT INTO invoice_uploads')) return { rows: [{ id: 10 }] }                       // upload record
+                if (q.startsWith('SELECT id FROM card_invoices')) return { rows: [] }                                 // dup check
+                if (q.startsWith('INSERT INTO card_invoices')) return { rows: [{ id: 100 }] }                        // insert invoice
+                if (q.startsWith('INSERT INTO invoice_items')) return { rows: [{ id: 200 + mockClient.query.mock.calls.filter(c => c[0].includes('INSERT INTO invoice_items')).length }] }
+                if (q.startsWith('SELECT COALESCE(SUM(amount)')) return { rows: [{ totalAmount: 81.80 }] }           // SUM
+                return { rows: [] }
+            }),
             release: jest.fn()
         }
         mockPool.connect.mockResolvedValue(mockClient)
@@ -226,7 +225,7 @@ describe('Integration — Full Upload Flow', () => {
         expect(res.body.invoiceId).toBe(100)
         expect(res.body.totalAmount).toBe(81.80)
         expect(mockParseInvoice).toHaveBeenCalledTimes(1)
-        expect(mockClient.release).toHaveBeenCalled()
+        expect(mockClient.release).toHaveBeenCalledTimes(1)
     })
 
     // I02: Card not found
@@ -244,7 +243,7 @@ describe('Integration — Full Upload Flow', () => {
             .post('/api/finance/invoices/upload')
             .set('Authorization', TOKEN)
             .field('cardId', '999')
-            .attach('file', Buffer.from('fake pdf'), {
+            .attach('file', Buffer.from('%PDF-1.4 fake'), {
                 filename: 'fatura.pdf',
                 contentType: 'application/pdf'
             })

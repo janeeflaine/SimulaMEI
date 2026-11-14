@@ -372,8 +372,12 @@ router.delete('/:id', authMiddleware, cartoesGuard, async (req, res) => {
             return res.status(404).json({ message: 'Fatura não encontrada' })
         }
 
-        // Delete (items cascade via ON DELETE CASCADE)
-        await db.query('DELETE FROM card_invoices WHERE id = $1 AND "userId" = $2', [id, req.user.id])
+        // Os envios de fatura apontam para a fatura sem cascata: solta antes de apagar
+        // (antes, excluir uma fatura que veio de envio dava erro). Itens saem por cascata.
+        await withTransaction(async (client) => {
+            await client.query('UPDATE invoice_uploads SET "invoiceId" = NULL WHERE "invoiceId" = $1 AND "userId" = $2', [id, req.user.id])
+            await client.query('DELETE FROM card_invoices WHERE id = $1 AND "userId" = $2', [id, req.user.id])
+        })
 
         res.json({ message: 'Fatura excluída com sucesso' })
     } catch (err) {
@@ -680,9 +684,67 @@ router.get('/card/:cardId/summary', authMiddleware, cartoesGuard, async (req, re
     }
 })
 
+// GET /api/finance/invoices/card/:cardId/pending — Faturas lidas pela IA e ainda não conferidas
+router.get('/card/:cardId/pending', authMiddleware, cartoesGuard, async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT ci.id AS "invoiceId", ci."referenceMonth", ci."referenceYear", ci."dueDate", ci."closingDate",
+                    COUNT(ii.id)::int AS pending, COALESCE(SUM(ii.amount), 0) AS "pendingAmount"
+             FROM card_invoices ci
+             JOIN credit_cards c ON c.id = ci."cardId" AND c."userId" = $2
+             JOIN invoice_items ii ON ii."invoiceId" = ci.id AND ii."isConfirmed" = FALSE
+             WHERE ci."cardId" = $1 AND ci."userId" = $2
+             GROUP BY ci.id
+             ORDER BY ci."referenceYear" DESC, ci."referenceMonth" DESC`,
+            [toId(req.params.cardId), req.user.id]
+        )
+        res.json(rows)
+    } catch (err) {
+        console.error('Erro ao buscar faturas para conferir:', err)
+        res.status(500).json({ message: 'Erro ao buscar faturas para conferir' })
+    }
+})
+
 // =============================================
 // === INVOICE UPLOAD (GEMINI AI) ==============
 // =============================================
+
+// Limite de leituras por pessoa em 24 horas (cada leitura custa na IA).
+// O admin muda por plano em Admin > Recursos (system_settings invoice_upload_limit_<id do plano>; 0 = sem limite).
+const DEFAULT_UPLOAD_DAILY_LIMIT = 20
+
+const BINARY_SIGNATURES = {
+    'application/pdf': (b) => b.subarray(0, 1024).includes('%PDF-'),
+    'image/png': (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
+    'image/jpeg': (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+    'image/jpg': (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+    'image/webp': (b) => b.length > 12 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP'
+}
+
+// O tipo informado pelo navegador confere com o conteúdo do arquivo?
+// Texto (CSV, OFX, TXT) não pode ter bytes nulos (planilha .xls de verdade, por exemplo).
+const fileMatchesType = (buffer, mimetype) => {
+    const check = BINARY_SIGNATURES[mimetype]
+    if (check) return check(buffer)
+    return !buffer.subarray(0, 4096).includes(0)
+}
+
+const INSTALLMENT = /^\d{1,3}\s*\/\s*\d{1,3}$/
+const normalizeText = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+const itemKey = (item) => `${Number(item.amount).toFixed(2)}|${item.transactionDate ? String(item.transactionDate).slice(0, 10) : ''}|${normalizeText(item.description)}`
+const isoDate = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : (typeof v === 'string' ? v.slice(0, 10) : null))
+
+// Confere cada compra que a IA leu: o que não dá para gravar fica de fora
+const sanitizeAiItems = (items) => (Array.isArray(items) ? items : [])
+    .map(item => ({
+        description: typeof item.description === 'string' ? item.description.trim().slice(0, MAX_DESCRIPTION) : '',
+        amount: Math.round(Number(item.amount) * 100) / 100,
+        transactionDate: isValidDate(item.transactionDate) ? item.transactionDate : null,
+        category: typeof item.category === 'string' && item.category.trim() ? item.category.trim().slice(0, 80) : 'Outros',
+        confidence: Math.min(1, Math.max(0, Number(item.confidence) || 0)),
+        installment: typeof item.installment === 'string' && INSTALLMENT.test(item.installment.trim()) ? item.installment.replace(/\s/g, '') : null
+    }))
+    .filter(item => item.description && isValidItemAmount(item.amount))
 
 // POST /api/finance/invoices/upload — Upload invoice PDF/image for AI parsing
 router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
@@ -696,35 +758,61 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
         next()
     })
 }, async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ message: 'Nenhum arquivo enviado' })
+    }
+    if (!req.body.cardId) {
+        return res.status(400).json({ message: 'Escolha o cartão da fatura (cardId é obrigatório).' })
+    }
+    const cardId = toId(req.body.cardId)
+    if (!cardId) {
+        return res.status(404).json({ message: 'Cartão não encontrado' })
+    }
+    if (!fileMatchesType(req.file.buffer, req.file.mimetype)) {
+        return res.status(400).json({ message: 'O arquivo não é do tipo que diz ser. Envie o PDF, CSV, OFX ou a foto da fatura.' })
+    }
+
+    // Uma conexão só, devolvida uma única vez no finally (antes era devolvida duas vezes)
     const client = await pool.connect()
-
     try {
-        const { cardId } = req.body
-
-        if (!req.file) {
-            return res.status(400).json({ message: 'Nenhum arquivo enviado' })
-        }
-
-        if (!cardId) {
-            return res.status(400).json({ message: 'cardId é obrigatório' })
-        }
-
-        // Check card belongs to user
+        // Check card belongs to user (com o tipo da carteira, para as categorias)
         const cardResult = await client.query(
-            'SELECT * FROM credit_cards WHERE id = $1 AND "userId" = $2',
+            `SELECT c.id, c.name, c."lastFour", b.account_type
+             FROM credit_cards c
+             LEFT JOIN business_units b ON b.id = c.business_unit_id
+             WHERE c.id = $1 AND c."userId" = $2`,
             [cardId, req.user.id]
         )
         if (cardResult.rows.length === 0) {
-            client.release()
             return res.status(404).json({ message: 'Cartão não encontrado' })
         }
+        const card = cardResult.rows[0]
 
-        // Get user categories for prompt context (PF only since card is personal)
+        // Limite de leituras nas últimas 24 horas
+        const { rows: [limitRow] } = await client.query(
+            'SELECT value FROM system_settings WHERE key = $1',
+            [`invoice_upload_limit_${Number(req.user.planId) || 0}`]
+        )
+        const configured = limitRow && limitRow.value !== undefined && limitRow.value !== null && String(limitRow.value).trim() !== ''
+            ? Number(limitRow.value)
+            : NaN
+        const dailyLimit = Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : DEFAULT_UPLOAD_DAILY_LIMIT
+        if (Number.isFinite(dailyLimit) && dailyLimit > 0) {
+            const { rows: [count] } = await client.query(
+                `SELECT COUNT(*)::int AS total FROM invoice_uploads WHERE "userId" = $1 AND "createdAt" > NOW() - INTERVAL '24 hours'`,
+                [req.user.id]
+            )
+            if ((count?.total || 0) >= dailyLimit) {
+                return res.status(429).json({ message: `Você já enviou ${dailyLimit} faturas nas últimas 24 horas. Tente de novo amanhã.` })
+            }
+        }
+
+        // Categorias que combinam com a carteira do cartão (MEI ou pessoal)
         const { rows: userCategories } = await client.query(
             'SELECT name FROM finance_categories WHERE "userId" = $1 AND type = $2',
-            [req.user.id, 'DESPESA_PESSOAL']
+            [req.user.id, categoryTypeFor(card.account_type)]
         )
-        const categoryNames = userCategories.map(c => c.name)
+        const categoryNames = [...new Set(userCategories.map(c => c.name))]
 
         // Determine file type
         const fileType = req.file.mimetype === 'application/pdf' ? 'PDF' : 'IMAGE'
@@ -734,7 +822,7 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
             `INSERT INTO invoice_uploads ("userId", "cardId", "fileType", "fileSize", "originalName", status)
              VALUES ($1, $2, $3, $4, $5, 'PROCESSING')
              RETURNING id`,
-            [req.user.id, cardId, fileType, req.file.size, req.file.originalname]
+            [req.user.id, cardId, fileType, req.file.size, String(req.file.originalname || '').slice(0, 200)]
         )
 
         let aiResult
@@ -742,83 +830,108 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
             // Call Gemini API
             aiResult = await parseInvoice(req.file.buffer, req.file.mimetype, categoryNames)
         } catch (aiErr) {
-            // Update upload status to FAILED
+            console.error('Leitura da fatura pela IA falhou:', aiErr.message)
             await client.query(
                 `UPDATE invoice_uploads SET status = 'FAILED', "errorMessage" = $1, "processedAt" = CURRENT_TIMESTAMP WHERE id = $2`,
-                [aiErr.message, uploadRecord.id]
+                [String(aiErr.message || '').slice(0, 500), uploadRecord.id]
             )
-            client.release()
-            return res.status(503).json({
-                message: `Erro ao processar fatura via IA: ${aiErr.message}`,
-                error: aiErr.message,
+            // Só vai para a tela a mensagem pensada para a pessoa (o resto fala de chave, modelo...)
+            return res.status(aiErr.userMessage ? 422 : 503).json({
+                message: aiErr.userMessage || 'Não deu para ler a fatura agora. Tente de novo em alguns minutos.',
+                error: aiErr.userMessage ? 'ARQUIVO_ILEGIVEL' : 'IA_INDISPONIVEL',
                 uploadId: uploadRecord.id
             })
+        }
+
+        const items = sanitizeAiItems(aiResult?.items)
+        if (items.length === 0) {
+            await client.query(
+                `UPDATE invoice_uploads SET status = 'FAILED', "errorMessage" = $1, "processedAt" = CURRENT_TIMESTAMP WHERE id = $2`,
+                ['Nenhuma compra encontrada', uploadRecord.id]
+            )
+            return res.status(422).json({ message: 'A IA não encontrou compras nesse arquivo. Confira se é a fatura do cartão.', error: 'SEM_COMPRAS' })
         }
 
         // Begin SQL transaction for invoice + items creation
         await client.query('BEGIN')
 
         try {
-            const meta = aiResult.metadata
-            let refMonth = meta.referenceMonth
-            let refYear = meta.referenceYear
+            const meta = aiResult.metadata || {}
+            const dueDate = isValidDate(meta.dueDate) ? meta.dueDate : null
+            const closingDate = isValidDate(meta.closingDate) ? meta.closingDate : null
+            let refMonth = Number(meta.referenceMonth)
+            let refYear = Number(meta.referenceYear)
 
-            // Priority: In Brazilian credit cards, invoice reference month and year ALWAYS match dueDate
-            if (meta.dueDate && typeof meta.dueDate === 'string') {
-                const parts = meta.dueDate.split('-')
-                if (parts.length === 3) {
-                    const dueYear = parseInt(parts[0], 10)
-                    const dueMonth = parseInt(parts[1], 10)
-                    if (!isNaN(dueYear) && !isNaN(dueMonth) && dueMonth >= 1 && dueMonth <= 12) {
-                        refMonth = dueMonth
-                        refYear = dueYear
-                        meta.referenceMonth = refMonth
-                        meta.referenceYear = refYear
-                    }
-                }
+            // No Brasil, o mês da fatura é o mês do vencimento
+            if (dueDate) {
+                refYear = Number(dueDate.slice(0, 4))
+                refMonth = Number(dueDate.slice(5, 7))
             }
+            if (!Number.isInteger(refMonth) || refMonth < 1 || refMonth > 12) refMonth = new Date().getMonth() + 1
+            if (!Number.isInteger(refYear) || refYear < 2000 || refYear > 2100) refYear = new Date().getFullYear()
 
-            if (!refMonth) refMonth = new Date().getMonth() + 1
-            if (!refYear) refYear = new Date().getFullYear()
+            const metadata = {
+                cardLastFour: typeof meta.cardLastFour === 'string' && /^\d{4}$/.test(meta.cardLastFour.trim()) ? meta.cardLastFour.trim() : null,
+                totalAmount: Number.isFinite(Number(meta.totalAmount)) ? Math.abs(Number(meta.totalAmount)) : 0,
+                dueDate,
+                closingDate,
+                referenceMonth: refMonth,
+                referenceYear: refYear
+            }
 
             // Check for duplicate invoice
             const dupCheck = await client.query(
-                'SELECT id FROM card_invoices WHERE "cardId" = $1 AND "referenceMonth" = $2 AND "referenceYear" = $3',
+                'SELECT id FROM card_invoices WHERE "cardId" = $1 AND "referenceMonth" = $2 AND "referenceYear" = $3 FOR UPDATE',
                 [cardId, refMonth, refYear]
             )
 
             let invoiceId
+            let alreadyConfirmed = []
             if (dupCheck.rows.length > 0) {
                 // Use existing invoice
                 invoiceId = dupCheck.rows[0].id
 
-                // CRITICAL FIX: Delete any previous unconfirmed items for this invoice
-                // so we don't duplicate items if user uploads the same invoice again
+                // Leitura anterior não confirmada sai, para não repetir compras
                 await client.query(
                     'DELETE FROM invoice_items WHERE "invoiceId" = $1 AND "isConfirmed" = FALSE',
                     [invoiceId]
                 )
+                // Compras já lançadas nessa fatura: as iguais vêm marcadas como repetidas
+                const { rows } = await client.query(
+                    'SELECT description, amount, "transactionDate" FROM invoice_items WHERE "invoiceId" = $1 AND "isConfirmed" = TRUE',
+                    [invoiceId]
+                )
+                alreadyConfirmed = rows
             } else {
                 // Create new invoice
                 const { rows: [newInv] } = await client.query(
                     `INSERT INTO card_invoices ("userId", "cardId", "referenceMonth", "referenceYear", "totalAmount", "dueDate", "closingDate", status)
                      VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING')
                      RETURNING id`,
-                    [req.user.id, cardId, refMonth, refYear, meta.totalAmount || 0, meta.dueDate || null, meta.closingDate || null]
+                    [req.user.id, cardId, refMonth, refYear, 0, dueDate, closingDate]
                 )
                 invoiceId = newInv.id
             }
 
+            const existingKeys = new Map()
+            for (const row of alreadyConfirmed) {
+                const key = itemKey({ ...row, transactionDate: isoDate(row.transactionDate) })
+                existingKeys.set(key, (existingKeys.get(key) || 0) + 1)
+            }
+
             // Insert all items
             const insertedItems = []
-            for (const item of aiResult.items) {
+            for (const item of items) {
                 const { rows: [inserted] } = await client.query(
                     `INSERT INTO invoice_items ("invoiceId", "userId", description, amount, "transactionDate", "aiCategory", "aiConfidence", installment, "isConfirmed")
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
                      RETURNING *`,
                     [invoiceId, req.user.id, item.description, item.amount, item.transactionDate, item.category, item.confidence, item.installment]
                 )
-                insertedItems.push(inserted)
+                const key = itemKey(item)
+                const repeated = (existingKeys.get(key) || 0) > 0
+                if (repeated) existingKeys.set(key, existingKeys.get(key) - 1)
+                insertedItems.push({ ...inserted, alreadyInInvoice: repeated })
             }
 
             // Recalculate invoice total
@@ -828,7 +941,7 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
             )
             await client.query(
                 'UPDATE card_invoices SET "totalAmount" = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2',
-                [totals.totalAmount, invoiceId]
+                [totals?.totalAmount || 0, invoiceId]
             )
 
             await client.query('COMMIT')
@@ -843,25 +956,136 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                 message: 'Fatura processada com sucesso. Revise os itens antes de confirmar.',
                 uploadId: uploadRecord.id,
                 invoiceId,
-                metadata: aiResult.metadata,
+                metadata,
+                card: { id: card.id, name: card.name, lastFour: card.lastFour, walletType: card.account_type || null },
+                alreadyConfirmedCount: alreadyConfirmed.length,
                 items: insertedItems,
                 totalItems: insertedItems.length,
-                totalAmount: parseFloat(totals.totalAmount)
+                totalAmount: parseFloat(totals?.totalAmount) || 0
             })
         } catch (txErr) {
-            await client.query('ROLLBACK')
-            // Update upload status
+            await client.query('ROLLBACK').catch(() => {})
             await client.query(
                 `UPDATE invoice_uploads SET status = 'FAILED', "errorMessage" = $1, "processedAt" = CURRENT_TIMESTAMP WHERE id = $2`,
-                [txErr.message, uploadRecord.id]
-            )
+                [String(txErr.message || '').slice(0, 500), uploadRecord.id]
+            ).catch(() => {})
             throw txErr
         }
     } catch (err) {
         console.error('Erro no upload de fatura:', err)
-        res.status(500).json({ message: 'Erro interno ao processar upload' })
+        if (!res.headersSent) res.status(500).json({ message: 'Erro interno ao processar upload' })
     } finally {
         client.release()
+    }
+})
+
+// POST /api/finance/invoices/:id/review — Confirma e descarta, de uma vez, as compras lidas pela IA
+// Corpo: { confirm: [{ id, categoryId? | categoryName? }], discard: [id] }
+router.post('/:id/review', authMiddleware, cartoesGuard, async (req, res) => {
+    const invoiceId = toId(req.params.id)
+    const confirmList = Array.isArray(req.body.confirm) ? req.body.confirm : null
+    const discardList = Array.isArray(req.body.discard) ? req.body.discard : null
+    if (!confirmList || !discardList || confirmList.length + discardList.length === 0) {
+        return res.status(400).json({ message: 'Nenhuma compra para confirmar ou descartar.' })
+    }
+    if (confirmList.length + discardList.length > 1000) {
+        return res.status(400).json({ message: 'Fatura grande demais para confirmar de uma vez.' })
+    }
+    const confirmIds = confirmList.map(c => toId(c && c.id))
+    const discardIds = discardList.map(toId)
+    const allIds = [...confirmIds, ...discardIds]
+    if (allIds.some(id => id === null) || new Set(allIds).size !== allIds.length) {
+        return res.status(400).json({ message: 'Seleção de compras inválida.' })
+    }
+    for (const c of confirmList) {
+        if (c.categoryId !== undefined && c.categoryId !== null && c.categoryId !== '' && !toId(c.categoryId)) {
+            return res.status(400).json({ message: 'Categoria inválida.' })
+        }
+        if (c.categoryName !== undefined && c.categoryName !== null && typeof c.categoryName !== 'string') {
+            return res.status(400).json({ message: 'Categoria inválida.' })
+        }
+    }
+
+    try {
+        const result = await withTransaction(async (client) => {
+            const { rows: [cardInfo] } = await client.query(`${INVOICE_CARD_SQL} FOR UPDATE OF ci`, [invoiceId, req.user.id])
+            if (!cardInfo) throw new HttpError(404, 'Fatura não encontrada')
+
+            // Todas as compras precisam ser desta fatura, desta pessoa e ainda não confirmadas
+            const { rows: found } = await client.query(
+                'SELECT id FROM invoice_items WHERE "invoiceId" = $1 AND "userId" = $2 AND "isConfirmed" = FALSE AND id = ANY($3::int[])',
+                [invoiceId, req.user.id, allIds]
+            )
+            if (found.length !== allIds.length) throw new HttpError(400, 'Algumas compras não são desta fatura ou já foram confirmadas.')
+
+            // Categorias escolhidas precisam ser da própria pessoa
+            const categoryIds = [...new Set(confirmList.map(c => toId(c.categoryId)).filter(Boolean))]
+            if (categoryIds.length) {
+                const { rows: cats } = await client.query(
+                    'SELECT id FROM finance_categories WHERE "userId" = $1 AND id = ANY($2::int[])',
+                    [req.user.id, categoryIds]
+                )
+                if (cats.length !== categoryIds.length) throw new HttpError(403, 'Categoria não encontrada.')
+            }
+
+            const type = categoryTypeFor(cardInfo.account_type)
+            const nameCache = new Map()
+            for (const c of confirmList) {
+                let categoryId = toId(c.categoryId)
+                let aiCategory
+                if (!categoryId && typeof c.categoryName === 'string' && c.categoryName.trim()) {
+                    const name = c.categoryName.trim().slice(0, 80)
+                    if (!nameCache.has(name)) {
+                        const { rows } = await client.query(
+                            'SELECT id FROM finance_categories WHERE name = $1 AND "userId" = $2 AND type = $3 ORDER BY id LIMIT 1',
+                            [name, req.user.id, type]
+                        )
+                        nameCache.set(name, rows[0]?.id || null)
+                    }
+                    categoryId = nameCache.get(name)
+                    if (!categoryId) aiCategory = name
+                }
+                const { rows: [item] } = await client.query(
+                    `UPDATE invoice_items
+                     SET "isConfirmed" = TRUE, "categoryId" = $1, "aiCategory" = COALESCE($2, "aiCategory")
+                     WHERE id = $3 AND "userId" = $4
+                     RETURNING *`,
+                    [categoryId || null, aiCategory || null, toId(c.id), req.user.id]
+                )
+                await syncItemToStatement(client, req.user.id, item, cardInfo)
+            }
+
+            if (discardIds.length) {
+                await client.query(
+                    'DELETE FROM invoice_items WHERE id = ANY($1::int[]) AND "userId" = $2 AND "isConfirmed" = FALSE',
+                    [discardIds, req.user.id]
+                )
+            }
+
+            // Fatura que ficou sem nenhuma compra sai; senão, refaz o total
+            const { rows: [left] } = await client.query('SELECT COUNT(*)::int AS total FROM invoice_items WHERE "invoiceId" = $1', [invoiceId])
+            let invoiceDeleted = false
+            if ((left?.total || 0) === 0) {
+                await client.query('UPDATE invoice_uploads SET "invoiceId" = NULL WHERE "invoiceId" = $1 AND "userId" = $2', [invoiceId, req.user.id])
+                await client.query('DELETE FROM card_invoices WHERE id = $1 AND "userId" = $2', [invoiceId, req.user.id])
+                invoiceDeleted = true
+            } else {
+                await recalcInvoiceTotal(client, invoiceId)
+            }
+
+            await client.query(
+                `UPDATE invoice_uploads SET status = $1, "errorMessage" = $2, "processedAt" = CURRENT_TIMESTAMP
+                 WHERE "userId" = $3 AND status = 'REVIEW' AND ("invoiceId" = $4 OR "invoiceId" IS NULL) AND "cardId" = $5`,
+                [confirmList.length ? 'COMPLETED' : 'FAILED', confirmList.length ? null : 'Descartada na revisão', req.user.id, invoiceId, cardInfo.cardId]
+            )
+
+            return { confirmed: confirmList.length, discarded: discardIds.length, invoiceDeleted }
+        })
+        res.json(result)
+    } catch (err) {
+        if (err instanceof HttpError) return res.status(err.status).json({ message: err.message })
+        console.error('Erro ao confirmar a revisão da fatura:', err)
+        res.status(500).json({ message: 'Não deu para confirmar as compras. Nada foi gravado; tente de novo.' })
     }
 })
 

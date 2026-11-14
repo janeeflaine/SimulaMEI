@@ -237,12 +237,17 @@ describe('Faturas', () => {
         expect(mockDb.query).not.toHaveBeenCalled()
     })
 
-    test('excluir fatura sempre confere o dono também no DELETE', async () => {
+    test('excluir fatura confere o dono no DELETE e solta os envios antes (senão o banco recusava)', async () => {
         mockDb.query.mockResolvedValueOnce({ rows: [{ id: 1 }] })
         const res = await request(app).delete('/api/finance/invoices/1')
         expect(res.status).toBe(200)
-        const del = mockDb.query.mock.calls.find(c => norm(c[0]).startsWith('DELETE FROM card_invoices'))
-        expect(del[1]).toEqual(['1', 1])
+        const qs = clientSql.map(c => c.q)
+        const unlink = qs.findIndex(q => q.startsWith('UPDATE invoice_uploads SET "invoiceId" = NULL'))
+        const del = qs.findIndex(q => q.startsWith('DELETE FROM card_invoices'))
+        expect(unlink).toBeGreaterThan(-1)
+        expect(del).toBeGreaterThan(unlink)
+        expect(clientSql[del].params).toEqual(['1', 1])
+        expect(qs).toContain('COMMIT')
     })
 
     test('lista com cartão ou ano inválido dá 400, não erro 500', async () => {
