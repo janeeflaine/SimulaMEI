@@ -12,8 +12,9 @@
 }
 
 .ini-wrap {
+    /* Mesma largura do menu e do rodapé (.container): o conteúdo alinha com o logo */
     width: 100%;
-    max-width: 1120px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 0 24px;
 }
@@ -21,7 +22,7 @@
 /* ── Topo ─────────────────────────────────────────────────────────────── */
 
 .ini-hero {
-    padding: 72px 0 80px;
+    padding: 64px 0;
     background: var(--ini-paper);
     border-bottom: 1px solid var(--ini-line);
 }
@@ -239,7 +240,20 @@
 /* ── Seções ───────────────────────────────────────────────────────────── */
 
 .ini-section {
-    padding: 80px 0;
+    padding: 64px 0;
+}
+
+/* Duas seções brancas seguidas: sem somar o espaço das duas */
+.ini-section:not(.ini-section--paper) + .ini-section:not(.ini-section--paper) {
+    padding-top: 0;
+}
+
+/* Limite por ano: texto à esquerda e os anos à direita (sem metade vazia) */
+.ini-law {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 40px;
+    align-items: center;
 }
 
 .ini-section--paper {
@@ -393,16 +407,17 @@
 .ini-years {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
-    margin: 28px 0 0;
+    gap: 12px;
+    margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .ini-years li {
     display: grid;
+    align-content: start;
     gap: 4px;
-    padding: 20px 22px;
+    padding: 18px 20px;
     border-radius: 16px;
     border: 1px solid var(--ini-line);
     background: #fff;
@@ -431,16 +446,14 @@
     color: #92400e;
 }
 
-.ini-section--last {
-    padding-top: 24px;
-}
-
 .ini-end {
     display: grid;
     justify-items: center;
     text-align: center;
-    padding-top: 56px;
-    border-top: 1px solid var(--ini-line);
+    padding: 48px 24px;
+    border-radius: 24px;
+    background: var(--ini-paper);
+    border: 1px solid var(--ini-line);
 }
 
 .inicio .ini-end .ini-h2 {
@@ -456,7 +469,8 @@
 
 @media (max-width: 960px) {
     .ini-hero__grid,
-    .ini-wa {
+    .ini-wa,
+    .ini-law {
         grid-template-columns: 1fr;
         gap: 40px;
     }
@@ -468,8 +482,9 @@
 
 @media (max-width: 640px) {
     .ini-wrap { padding: 0 16px; }
-    .ini-hero { padding: 40px 0 48px; }
-    .ini-section { padding: 56px 0; }
+    .ini-hero { padding: 36px 0 44px; }
+    .ini-section { padding: 48px 0; }
+    .ini-end { padding: 36px 18px; border-radius: 20px; }
     .ini-calc { padding: 22px 18px; border-radius: 20px; }
     .ini-features,
     .ini-years { grid-template-columns: 1fr; }

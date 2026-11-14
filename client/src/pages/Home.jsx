@@ -191,12 +191,14 @@ export default function Home() {
 
             {/* O limite mudou (LC 238/2026) */}
             <section className="ini-section" aria-labelledby="ini-law-title">
-                <div className="ini-wrap">
-                    <h2 id="ini-law-title" className="ini-h2">O limite do MEI vai subir</h2>
-                    <p className="ini-lead ini-lead--sm">
-                        Pela Lei Complementar 238/2026, o teto de faturamento anual muda nos próximos anos.
-                        Os alertas e o Simulador já usam o limite de cada ano.
-                    </p>
+                <div className="ini-wrap ini-law">
+                    <div>
+                        <h2 id="ini-law-title" className="ini-h2">O limite do MEI vai subir</h2>
+                        <p className="ini-lead ini-lead--sm">
+                            Pela Lei Complementar 238/2026, o teto de faturamento anual muda nos próximos anos.
+                            Os alertas e o Simulador já usam o limite de cada ano.
+                        </p>
+                    </div>
                     <ol className="ini-years">
                         <li><span>até 2026</span><strong>R$ 81 mil</strong></li>
                         <li><span>2027</span><strong>R$ 110 mil</strong></li>
@@ -207,13 +209,15 @@ export default function Home() {
 
             {!user && (
             <section className="ini-section ini-section--last">
-                <div className="ini-wrap ini-end">
+                <div className="ini-wrap">
+                <div className="ini-end">
                     <h2 className="ini-h2">Comece pelo plano gratuito</h2>
                     <p className="ini-lead ini-lead--sm">Crie a conta, cadastre a carteira do MEI e lance a primeira venda. Na página de planos você vê o que cada um libera.</p>
                     <div className="ini-actions ini-actions--center">
                         <Link to={primary.to} className="ini-btn ini-btn--primary">{primary.label}</Link>
                         <Link to="/planos" className="ini-btn">Comparar planos</Link>
                     </div>
+                </div>
                 </div>
             </section>
             )}
