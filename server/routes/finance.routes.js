@@ -33,61 +33,35 @@ const getWalletLimits = async (planId) => {
     }
 }
 
-// Verifica limite de carteiras do plano antes de criar uma nova
-const checkWalletLimit = async (req, res, next) => {
-    try {
-        const planId  = Number(req.user.planId) || 1
-        const isAdmin = req.user?.role === 'ADMIN'
-        const inTrial = req.user?.isInTrial === true
-
-        if (isAdmin || inTrial) return next()
-
-        const accountType = normalizeAccountType(req.body.account_type) // 'PF' ou 'PJ'
-        if (!WALLET_TYPES.includes(accountType)) {
-            return res.status(400).json({ message: 'Tipo de carteira inválido. Use PF ou PJ.' })
-        }
-
-        // Buscar os 3 limites em paralelo
-        const { totalLimit, pfLimit, pjLimit } = await getWalletLimits(planId)
-
-        // Buscar contagens atuais
-        const { rows: counts } = await pool.query(
-            `SELECT account_type, COUNT(*) as count
-             FROM business_units WHERE "ownerId" = $1
-             GROUP BY account_type`,
-            [req.user.id]
-        )
-        const pfCount    = parseInt(counts.find(r => r.account_type === 'PF')?.count || 0)
-        const pjCount    = parseInt(counts.find(r => r.account_type === 'PJ')?.count || 0)
-        const totalCount = pfCount + pjCount
-
-        // Verificar limite total (0 = ilimitado)
-        if (totalLimit > 0 && totalCount >= totalLimit) {
-            return res.status(403).json({
-                message: `Seu plano permite no máximo ${totalLimit} carteira${totalLimit > 1 ? 's' : ''} no total. Faça upgrade para adicionar mais.`
-            })
-        }
-
-        // Verificar limite por tipo PF
-        if (accountType === 'PF' && pfLimit > 0 && pfCount >= pfLimit) {
-            return res.status(403).json({
-                message: `Seu plano permite no máximo ${pfLimit} carteira${pfLimit > 1 ? 's' : ''} Pessoa Física. Faça upgrade para adicionar mais.`
-            })
-        }
-
-        // Verificar limite por tipo PJ
-        if (accountType === 'PJ' && pjLimit > 0 && pjCount >= pjLimit) {
-            return res.status(403).json({
-                message: `Seu plano permite no máximo ${pjLimit} carteira${pjLimit > 1 ? 's' : ''} Pessoa Jurídica. Faça upgrade para adicionar mais.`
-            })
-        }
-
-        next()
-    } catch (err) {
-        console.error('[checkWalletLimit]', err)
-        res.status(500).json({ message: 'Erro ao verificar limite de carteiras' })
+// Limite de carteiras do plano para criar (ou trocar para) uma carteira do tipo dado.
+// Roda dentro da transação, depois de lockUserWallets: antes a conta e a gravação
+// eram separadas e pedidos ao mesmo tempo passavam do limite (6 carteiras no Gratuito).
+// excludeId: carteira que está mudando de tipo (não conta no tipo antigo).
+const walletLimitError = async (q, user, type, excludeId = null) => {
+    if (user?.role === 'ADMIN' || user?.isInTrial === true) return null
+    const { totalLimit, pfLimit, pjLimit } = await getWalletLimits(Number(user.planId) || 1)
+    const { rows } = await q.query(
+        `SELECT account_type, COUNT(*) AS count FROM business_units
+         WHERE "ownerId" = $1 AND ($2::int IS NULL OR id <> $2) GROUP BY account_type`,
+        [user.id, excludeId]
+    )
+    const count = (t) => parseInt(rows.find(r => r.account_type === t)?.count || 0)
+    const label = type === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'
+    const typeLimit = type === 'PF' ? pfLimit : pjLimit
+    // Trocar o tipo não muda o total de carteiras
+    if (!excludeId && totalLimit > 0 && count('PF') + count('PJ') >= totalLimit) {
+        return `Seu plano permite no máximo ${totalLimit} carteira${totalLimit > 1 ? 's' : ''} no total. Faça upgrade para adicionar mais.`
     }
+    if (typeLimit > 0 && count(type) >= typeLimit) {
+        return `Seu plano permite no máximo ${typeLimit} carteira${typeLimit > 1 ? 's' : ''} ${label}. Faça upgrade para adicionar mais.`
+    }
+    return null
 }
+
+// Uma operação de carteira por vez para cada pessoa (limite, principal e nome repetido
+// conferidos sem corrida). Trava liberada sozinha no fim da transação.
+const WALLET_LOCK = 7301
+const lockUserWallets = (client, userId) => client.query('SELECT pg_advisory_xact_lock($1, $2)', [WALLET_LOCK, userId])
 
 // Verifica limite mensal de transações do plano antes de criar uma nova
 const checkTransactionLimit = async (req, res, next) => {
@@ -133,6 +107,12 @@ const checkTransactionLimit = async (req, res, next) => {
 // O Painel do Gratuito pede só o mês atual, que sempre cabe nessa janela.
 const FREE_HISTORY_DAYS = 31
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+// AAAA-MM-DD que existe no calendário (2026-02-30 não passa)
+const isValidDateOnly = (v) => {
+    if (typeof v !== 'string' || !DATE_ONLY.test(v)) return false
+    const d = new Date(`${v}T00:00:00Z`)
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+}
 
 const freeHistoryStart = (user, now = new Date()) => {
     if (!user || user.role === 'ADMIN' || user.isInTrial === true) return null
@@ -803,31 +783,54 @@ router.post('/transfers', authMiddleware, transferenciasGuard, validateWalletOwn
         return res.status(400).json({ message: 'Escolha carteiras diferentes para a transferência.' });
     }
 
+    // Data AAAA-MM-DD de verdade (antes data inválida virava erro 500 no banco)
+    if (!isValidDateOnly(date)) {
+        return res.status(400).json({ message: 'Informe uma data válida para a transferência.' });
+    }
+    const note = typeof description === 'string' ? description.trim().replace(/\s+/g, ' ') : ''
+    if (note.length > 120) {
+        return res.status(400).json({ message: 'A descrição da transferência pode ter até 120 letras.' });
+    }
+
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
 
-        // 1. Create Expense in Source Wallet
+        const { rows: walletRows } = await client.query(
+            'SELECT id, name, account_type FROM business_units WHERE "ownerId" = $1 AND id = ANY($2::int[])',
+            [req.user.id, [Number(sourceWalletId), Number(targetWalletId)]]
+        );
+        const source = walletRows.find(w => w.id === Number(sourceWalletId));
+        const target = walletRows.find(w => w.id === Number(targetWalletId));
+        if (!source || !target) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Carteira não encontrada.' });
+        }
+        // Cada ponta fica com o tipo da sua carteira (antes as duas eram gravadas como do MEI)
+        const targetOf = (w) => (w.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL');
+        const suffix = note ? ` - ${note}` : '';
+
+        // 1. Saída da carteira de origem
         await client.query(
             `INSERT INTO finance_transactions 
             ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date") 
-            VALUES ($1, 'DESPESA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
-            [req.user.id, amount, date, sourceWalletId, `Transferência para carteira #${targetWalletId} - ${description || ''}`]
+            VALUES ($1, 'DESPESA', $6, $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
+            [req.user.id, amount, date, source.id, `Transferência para ${target.name}${suffix}`, targetOf(source)]
         );
 
-        // 2. Create Income in Target Wallet
+        // 2. Entrada na carteira de destino
         await client.query(
             `INSERT INTO finance_transactions 
             ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date") 
-            VALUES ($1, 'RECEITA', 'BUSINESS', $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
-            [req.user.id, amount, date, targetWalletId, `Transferência de carteira #${sourceWalletId} - ${description || ''}`]
+            VALUES ($1, 'RECEITA', $6, $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
+            [req.user.id, amount, date, target.id, `Transferência de ${source.name}${suffix}`, targetOf(target)]
         );
 
         await client.query('COMMIT');
         res.json({ message: 'Transferência realizada com sucesso!' });
     } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         console.error('Erro na transferência:', err);
         res.status(500).json({ message: 'Erro ao realizar transferência.' });
     } finally {
@@ -839,6 +842,9 @@ router.post('/transfers', authMiddleware, transferenciasGuard, validateWalletOwn
 router.get('/stats/wallet-breakdown', authMiddleware, async (req, res) => {
     try {
         const { type, startDate, endDate } = req.query;
+        if ((startDate && !isValidDateOnly(startDate)) || (endDate && !isValidDateOnly(endDate))) {
+            return res.status(400).json({ message: 'Período inválido.' });
+        }
         const txType = type === 'RECEITA' ? 'RECEITA' : 'DESPESA';
         const params = [req.user.id, txType];
 
@@ -979,124 +985,139 @@ router.get('/business-units', authMiddleware, async (req, res) => {
     }
 })
 
-// Criar: a carteira principal é decidida aqui (só a primeira carteira da pessoa vira
-// principal; quem já tem carteiras não ganha principal nova), nunca pelo navegador.
-router.post('/business-units', authMiddleware, checkWalletLimit, async (req, res) => {
+// Nome repetido confunde as listas de escolha (Extrato, Transferir, Novo lançamento)
+const duplicateWalletName = async (q, userId, name, exceptId = null) => {
+    const { rows } = await q.query(
+        `SELECT id FROM business_units
+         WHERE "ownerId" = $1 AND LOWER(TRIM(name)) = LOWER($2) AND ($3::int IS NULL OR id <> $3) LIMIT 1`,
+        [userId, name, exceptId]
+    )
+    return rows.length > 0
+}
+
+// Roda fn(client) numa transação com a trava de carteiras da pessoa
+const withWalletLock = async (userId, fn) => {
+    const client = await pool.connect()
+    try {
+        await client.query('BEGIN')
+        await lockUserWallets(client, userId)
+        const result = await fn(client)
+        await client.query(result?.status && result.status >= 400 ? 'ROLLBACK' : 'COMMIT')
+        return result
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw err
+    } finally {
+        client.release()
+    }
+}
+
+// Criar: limite do plano, nome repetido e principal conferidos dentro da trava.
+// A carteira principal é decidida aqui (só a primeira da pessoa vira principal),
+// nunca pelo que vem do navegador.
+router.post('/business-units', authMiddleware, async (req, res) => {
     const { data, error } = walletDataOf(req.body)
     if (error) return res.status(400).json({ message: error })
     try {
-        const params = [req.user.id, data.name, data.account_type, data.cnpj, data.logo_url]
-        let newUnit
-        try {
-            ({ rows: [newUnit] } = await db.query(
+        const result = await withWalletLock(req.user.id, async (client) => {
+            const limit = await walletLimitError(client, req.user, data.account_type)
+            if (limit) return { status: 403, body: { message: limit } }
+            if (await duplicateWalletName(client, req.user.id, data.name)) {
+                return { status: 409, body: { message: `Você já tem uma carteira chamada "${data.name}". Use outro nome.` } }
+            }
+            const { rows: [newUnit] } = await client.query(
                 `INSERT INTO business_units ("ownerId", name, account_type, cnpj, logo_url, "isPrimary")
                  VALUES ($1, $2, $3, $4, $5,
                          NOT EXISTS (SELECT 1 FROM business_units WHERE "ownerId" = $1))
                  RETURNING *`,
-                params
-            ))
-        } catch (err) {
-            // Duas "primeiras carteiras" ao mesmo tempo: o índice único recusa a segunda principal
-            if (err.code !== '23505') throw err
-            ;({ rows: [newUnit] } = await db.query(
-                `INSERT INTO business_units ("ownerId", name, account_type, cnpj, logo_url, "isPrimary")
-                 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING *`,
-                params
-            ))
-        }
-        res.json(newUnit)
+                [req.user.id, data.name, data.account_type, data.cnpj, data.logo_url]
+            )
+            return { status: 200, body: newUnit }
+        })
+        res.status(result.status).json(result.body)
     } catch (err) {
         console.error('ERRO AO CRIAR CARTEIRA:', err)
         res.status(500).json({ message: 'Não deu para criar a carteira. Tente de novo.' })
     }
 })
 
-// Trocar uma carteira de PF para PJ (ou o contrário) conta no limite do novo tipo
-const walletTypeChangeBlocked = async (user, newType) => {
-    if (user?.role === 'ADMIN' || user?.isInTrial === true) return null
-    const planId = Number(user.planId) || 1
-    const { pfLimit, pjLimit } = await getWalletLimits(planId)
-    const limit = newType === 'PF' ? pfLimit : pjLimit
-    if (!(limit > 0)) return null
-    const { rows: [row] } = await pool.query(
-        'SELECT COUNT(*) as count FROM business_units WHERE "ownerId" = $1 AND account_type = $2',
-        [user.id, newType]
-    )
-    if (parseInt(row?.count || 0) < limit) return null
-    return `Seu plano permite no máximo ${limit} carteira${limit > 1 ? 's' : ''} ${walletLabel(newType)}. Faça upgrade para adicionar mais.`
-}
-
 // Editar: o que não veio fica como está; "isPrimary" do navegador é ignorado.
 router.put('/business-units/:id', authMiddleware, async (req, res) => {
     const id = walletIdOf(req.params.id)
     if (!id) return res.status(404).json({ message: 'Carteira não encontrada' })
     try {
-        const { rows: [current] } = await db.query(
-            'SELECT * FROM business_units WHERE id = $1 AND "ownerId" = $2',
-            [id, req.user.id]
-        )
-        if (!current) return res.status(404).json({ message: 'Carteira não encontrada' })
+        const result = await withWalletLock(req.user.id, async (client) => {
+            const { rows: [current] } = await client.query(
+                'SELECT * FROM business_units WHERE id = $1 AND "ownerId" = $2',
+                [id, req.user.id]
+            )
+            if (!current) return { status: 404, body: { message: 'Carteira não encontrada' } }
 
-        const { data, error } = walletDataOf(req.body, current)
-        if (error) return res.status(400).json({ message: error })
+            const { data, error } = walletDataOf(req.body, current)
+            if (error) return { status: 400, body: { message: error } }
 
-        if (data.account_type !== current.account_type) {
-            // Lançamentos e cartões ficariam com o tipo errado (despesa do MEI numa carteira pessoal)
-            const usage = await walletUsage(db, id, req.user.id)
-            if (usage.transactions || usage.cards) {
-                return res.status(409).json({
-                    message: `Essa carteira já tem ${usageText(usage)}, então o tipo não pode mudar. Crie uma carteira nova de ${walletLabel(data.account_type)}.`,
-                    usage
-                })
+            if (data.account_type !== current.account_type) {
+                // Lançamentos e cartões ficariam com o tipo errado (despesa do MEI numa carteira pessoal)
+                const usage = await walletUsage(client, id, req.user.id)
+                if (usage.transactions || usage.cards) {
+                    return {
+                        status: 409,
+                        body: {
+                            message: `Essa carteira já tem ${usageText(usage)}, então o tipo não pode mudar. Crie uma carteira nova de ${walletLabel(data.account_type)}.`,
+                            usage
+                        }
+                    }
+                }
+                // Trocar de tipo conta no limite do tipo novo
+                const limit = await walletLimitError(client, req.user, data.account_type, id)
+                if (limit) return { status: 403, body: { message: limit } }
             }
-            const blocked = await walletTypeChangeBlocked(req.user, data.account_type)
-            if (blocked) return res.status(403).json({ message: blocked })
-        }
 
-        const { rows: [updated] } = await db.query(
-            'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "logo_url" = $4 WHERE id = $5 AND "ownerId" = $6 RETURNING *',
-            [data.name, data.account_type, data.cnpj, data.logo_url, id, req.user.id]
-        )
-        if (!updated) return res.status(404).json({ message: 'Carteira não encontrada' })
-        res.json(updated)
+            if (data.name.toLowerCase() !== String(current.name || '').trim().toLowerCase()
+                && await duplicateWalletName(client, req.user.id, data.name, id)) {
+                return { status: 409, body: { message: `Você já tem uma carteira chamada "${data.name}". Use outro nome.` } }
+            }
+
+            const { rows: [updated] } = await client.query(
+                'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "logo_url" = $4 WHERE id = $5 AND "ownerId" = $6 RETURNING *',
+                [data.name, data.account_type, data.cnpj, data.logo_url, id, req.user.id]
+            )
+            if (!updated) return { status: 404, body: { message: 'Carteira não encontrada' } }
+            return { status: 200, body: updated }
+        })
+        res.status(result.status).json(result.body)
     } catch (err) {
         console.error(err)
         res.status(500).json({ message: 'Erro ao atualizar carteira' })
     }
 })
 
-// Tornar principal: tira a marca da principal atual e põe nesta, numa transação
-// (o índice único do banco não deixa ficarem duas).
+// Tornar principal: tira a marca da principal atual e põe nesta, dentro da trava
+// (duas trocas ao mesmo tempo não brigam pelo índice único).
 router.patch('/business-units/:id/primary', authMiddleware, async (req, res) => {
     const id = walletIdOf(req.params.id)
     if (!id) return res.status(404).json({ message: 'Carteira não encontrada' })
-    const client = await pool.connect()
     try {
-        await client.query('BEGIN')
-        const { rows: [wallet] } = await client.query(
-            'SELECT id FROM business_units WHERE id = $1 AND "ownerId" = $2 FOR UPDATE',
-            [id, req.user.id]
-        )
-        if (!wallet) {
-            await client.query('ROLLBACK')
-            return res.status(404).json({ message: 'Carteira não encontrada' })
-        }
-        await client.query(
-            'UPDATE business_units SET "isPrimary" = FALSE WHERE "ownerId" = $1 AND "isPrimary" = TRUE AND id <> $2',
-            [req.user.id, id]
-        )
-        const { rows: [updated] } = await client.query(
-            'UPDATE business_units SET "isPrimary" = TRUE WHERE id = $1 AND "ownerId" = $2 RETURNING *',
-            [id, req.user.id]
-        )
-        await client.query('COMMIT')
-        res.json(updated)
+        const result = await withWalletLock(req.user.id, async (client) => {
+            const { rows: [wallet] } = await client.query(
+                'SELECT id FROM business_units WHERE id = $1 AND "ownerId" = $2 FOR UPDATE',
+                [id, req.user.id]
+            )
+            if (!wallet) return { status: 404, body: { message: 'Carteira não encontrada' } }
+            await client.query(
+                'UPDATE business_units SET "isPrimary" = FALSE WHERE "ownerId" = $1 AND "isPrimary" = TRUE AND id <> $2',
+                [req.user.id, id]
+            )
+            const { rows: [updated] } = await client.query(
+                'UPDATE business_units SET "isPrimary" = TRUE WHERE id = $1 AND "ownerId" = $2 RETURNING *',
+                [id, req.user.id]
+            )
+            return { status: 200, body: updated }
+        })
+        res.status(result.status).json(result.body)
     } catch (err) {
-        await client.query('ROLLBACK').catch(() => {})
         console.error(err)
         res.status(500).json({ message: 'Não deu para trocar a carteira principal. Nada foi alterado; tente de novo.' })
-    } finally {
-        client.release()
     }
 })
 

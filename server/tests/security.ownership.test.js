@@ -59,8 +59,10 @@ function route(sql, params = []) {
     if (q.startsWith('SELECT * FROM business_units WHERE id = $1 AND "ownerId" = $2')) {
         return { rows: DATA.business_units.filter(b => b.id === Number(params[0]) && b.ownerId === params[1]) }
     }
-    if (q.startsWith('SELECT COUNT(*) as count FROM business_units WHERE "ownerId" = $1 AND account_type = $2')) {
-        return { rows: [{ count: String(DATA.business_units.filter(b => b.ownerId === params[0] && b.account_type === params[1]).length) }] }
+    if (q.startsWith('SELECT account_type, COUNT(*) AS count FROM business_units')) {
+        // contagem por tipo, sem a carteira que está mudando de tipo ($2)
+        const mine = DATA.business_units.filter(b => b.ownerId === params[0] && (params[1] == null || b.id !== params[1]))
+        return { rows: ['PF', 'PJ'].map(t => ({ account_type: t, count: String(mine.filter(b => b.account_type === t).length) })).filter(r => r.count !== '0') }
     }
     if (q.startsWith('SELECT COUNT(*) as count FROM finance_transactions')) return { rows: [{ count: '0' }] }
     if (q.startsWith('SELECT COUNT(*), COALESCE')) return { rows: [{ count: '0', receitas: 0, despesas: 0, pendentes: 0 }] }
@@ -83,6 +85,8 @@ beforeEach(() => {
     settings = {}
     mockCurrentUser = { id: 1, role: 'USER', planId: 2, isInTrial: false }
     mockDb.query.mockImplementation(async (sql, params) => route(sql, params))
+    // Carteiras rodam numa transação com trava (pool.connect)
+    mockDb.connect = jest.fn(async () => ({ query: async (sql, params) => route(sql, params), release: () => {} }))
     jest.spyOn(console, 'warn').mockImplementation(() => {})
 })
 

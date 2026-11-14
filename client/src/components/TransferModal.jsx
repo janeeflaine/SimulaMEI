@@ -7,7 +7,8 @@ export default function TransferModal({ onClose, onSuccess, wallets }) {
         sourceWalletId: '',
         targetWalletId: '',
         amount: '',
-        date: new Date().toISOString().split('T')[0],
+        // Data de hoje no horário de Brasília (toISOString usava Londres: depois das 21h virava amanhã)
+        date: new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }),
         description: ''
     })
     const [loading, setLoading] = useState(false)
@@ -136,6 +137,7 @@ export default function TransferModal({ onClose, onSuccess, wallets }) {
                             <input
                                 type="text"
                                 placeholder="Ex: Aporte mensal, Pagamento de empréstimo..."
+                                maxLength={120}
                                 value={formData.description}
                                 onChange={e => setFormData({ ...formData, description: e.target.value })}
                             />

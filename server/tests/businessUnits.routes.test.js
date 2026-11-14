@@ -36,12 +36,13 @@ beforeEach(() => {
         usage: { transactions: 0, cards: 0 },
         deleted: 1,
         limits: { total: 0, pf: 0, pj: 0 },
-        counts: []
+        counts: [],
+        dupName: false,
+        wallets: [{ id: 4, name: 'Oficina', account_type: 'PJ' }, { id: 5, name: 'Casa', account_type: 'PF' }]
     }
     const handler = async (rawSql, params = []) => {
         const q = norm(rawSql)
         sql.push({ q, params })
-        if (q.startsWith('INSERT INTO business_units') && state.raceOnce && params.length === 5 && q.includes('NOT EXISTS')) { state.raceOnce = false; const e = new Error('dup'); e.code = '23505'; throw e }
         if (q.startsWith('SELECT value FROM system_settings')) {
             const key = params[0]
             const v = key.startsWith('wallet_pf') ? state.limits.pf : key.startsWith('wallet_pj') ? state.limits.pj : state.limits.total
@@ -58,6 +59,9 @@ beforeEach(() => {
         if (q.startsWith('UPDATE business_units SET "isPrimary" = FALSE')) return { rows: [], rowCount: 1 }
         if (q.startsWith('UPDATE business_units')) return { rows: [{ id: params[4], name: params[0], account_type: params[1], cnpj: params[2], logo_url: params[3] }] }
         if (q.startsWith('DELETE FROM business_units')) return { rowCount: state.deleted }
+        if (q.startsWith('SELECT id, name, account_type FROM business_units')) return { rows: state.wallets.filter(w => params[1].includes(w.id)) }
+        if (q.startsWith('SELECT id FROM business_units WHERE "ownerId" = $1 AND LOWER(TRIM(name))')) return { rows: state.dupName ? [{ id: 9 }] : [] }
+        if (q.startsWith('INSERT INTO finance_transactions')) return { rows: [], rowCount: 1 }
         if (q.startsWith('SELECT b.*')) return { rows: [{ id: 4, transactionsCount: 3, cardsCount: 1 }] }
         return { rows: [], rowCount: 0 }
     }
@@ -273,14 +277,102 @@ describe('Tornar principal', () => {
     })
 })
 
-describe('Criar carteira ao mesmo tempo', () => {
-    test('se o banco recusar a segunda principal, a carteira entra sem ser principal', async () => {
-        state.raceOnce = true
+describe('Trava por pessoa (pedidos ao mesmo tempo)', () => {
+    test('criar: limite e gravação na mesma transação, depois da trava', async () => {
         const res = await request(app).post('/api/finance/business-units').send({ name: 'Casa', account_type: 'PF' })
         expect(res.status).toBe(200)
-        const inserts = ran('INSERT INTO business_units')
-        expect(inserts).toHaveLength(2)
-        expect(inserts[1].q).toContain('$5, FALSE)')
+        const order = sql.map(x => x.q)
+        const i = (start) => order.findIndex(q => q.startsWith(start))
+        expect(i('BEGIN')).toBeGreaterThan(-1)
+        expect(i('SELECT pg_advisory_xact_lock')).toBeGreaterThan(i('BEGIN'))
+        expect(sql[i('SELECT pg_advisory_xact_lock')].params).toEqual([7301, 1])
+        expect(i('SELECT account_type, COUNT(*)')).toBeGreaterThan(i('SELECT pg_advisory_xact_lock'))
+        expect(i('INSERT INTO business_units')).toBeGreaterThan(i('SELECT account_type, COUNT(*)'))
+        expect(i('COMMIT')).toBeGreaterThan(i('INSERT INTO business_units'))
+        expect(mockClient.release).toHaveBeenCalled()
+    })
+
+    test('limite estourado: desfaz e não grava', async () => {
+        state.limits = { total: 2, pf: 1, pj: 1 }
+        state.counts = [{ account_type: 'PF', count: '1' }]
+        const res = await request(app).post('/api/finance/business-units').send({ name: 'Outra', account_type: 'PF' })
+        expect(res.status).toBe(403)
+        expect(ran('ROLLBACK')).toHaveLength(1)
+        expect(ran('COMMIT')).toHaveLength(0)
+    })
+
+    test('trocar o tipo confere o limite do tipo novo sem contar a própria carteira', async () => {
+        state.limits = { total: 2, pf: 1, pj: 1 }
+        state.counts = [{ account_type: 'PF', count: '1' }]
+        const res = await request(app).put('/api/finance/business-units/4').send({ account_type: 'PJ', cnpj: '' })
+        expect(res.status).toBe(200) // PJ ainda não tem nenhuma; o total não muda ao trocar
+        expect(ran('SELECT account_type, COUNT(*)')[0].params).toEqual([1, 4])
+    })
+
+    test('tornar principal também passa pela trava', async () => {
+        await request(app).patch('/api/finance/business-units/4/primary')
+        expect(ran('SELECT pg_advisory_xact_lock')).toHaveLength(1)
+    })
+})
+
+describe('Nome repetido', () => {
+    test('criar com nome que já existe: 409 sem gravar', async () => {
+        state.dupName = true
+        const res = await request(app).post('/api/finance/business-units').send({ name: 'casa', account_type: 'PF' })
+        expect(res.status).toBe(409)
+        expect(res.body.message).toMatch(/já tem uma carteira chamada "casa"/)
+        expect(ran('INSERT INTO business_units')).toHaveLength(0)
+    })
+
+    test('renomear para nome de outra: 409', async () => {
+        state.dupName = true
+        const res = await request(app).put('/api/finance/business-units/4').send({ name: 'Oficina' })
+        expect(res.status).toBe(409)
+        expect(ran('UPDATE business_units')).toHaveLength(0)
+    })
+
+    test('editar sem mudar o nome não confere repetido (carteiras antigas repetidas continuam editáveis)', async () => {
+        state.dupName = true
+        const res = await request(app).put('/api/finance/business-units/4').send({ name: 'Pessoal', cnpj: '' })
+        expect(res.status).toBe(200)
+    })
+})
+
+describe('Transferência entre carteiras', () => {
+    const base = { sourceWalletId: 4, targetWalletId: 5, amount: 150, date: '2026-11-10', description: '  pró-labore ' }
+
+    test('cada ponta com o tipo da sua carteira e o nome na descrição', async () => {
+        const res = await request(app).post('/api/finance/transfers').send(base)
+        expect(res.status).toBe(200)
+        const [out, inc] = ran('INSERT INTO finance_transactions')
+        expect(out.q).toContain("'DESPESA', $6")
+        expect(out.params).toEqual([1, 150, '2026-11-10', 4, 'Transferência para Casa - pró-labore', 'BUSINESS'])
+        expect(inc.params).toEqual([1, 150, '2026-11-10', 5, 'Transferência de Oficina - pró-labore', 'PERSONAL'])
+    })
+
+    test.each(['2026-02-30', '10/11/2026', 'amanhã', ''])('data "%s" é recusada', async (date) => {
+        const res = await request(app).post('/api/finance/transfers').send({ ...base, date })
+        expect(res.status).toBe(400)
+        expect(ran('INSERT INTO finance_transactions')).toHaveLength(0)
+    })
+
+    test('descrição com mais de 120 letras é recusada', async () => {
+        const res = await request(app).post('/api/finance/transfers').send({ ...base, description: 'x'.repeat(121) })
+        expect(res.status).toBe(400)
+    })
+
+    test('carteira que não é da pessoa: 404 sem gravar', async () => {
+        state.wallets = [state.wallets[0]]
+        const res = await request(app).post('/api/finance/transfers').send(base)
+        expect(res.status).toBe(404)
+        expect(ran('INSERT INTO finance_transactions')).toHaveLength(0)
+    })
+})
+
+describe('Entrou e saiu por carteira', () => {
+    test('data inválida no período: 400 (antes erro 500 no banco)', async () => {
+        const res = await request(app).get('/api/finance/stats/wallet-breakdown?type=RECEITA&startDate=2026-13-01')
+        expect(res.status).toBe(400)
     })
 })
 
