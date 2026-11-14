@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import './AdminPages.css'
 
 export default function AdminRules() {
@@ -6,8 +7,10 @@ export default function AdminRules() {
         inssPercentage: 5,
         icmsValue: 1,
         issValue: 5,
-        employeeCost: 1412
+        minimumWage: null
     })
+    const [effective, setEffective] = useState(null)
+    const { notify, dialog } = useConfirmDialog()
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
 
@@ -22,7 +25,11 @@ export default function AdminRules() {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             const data = await res.json()
-            if (data) setRules(data)
+            if (res.ok && data) {
+                const { effective: eff, ...saved } = data
+                setRules(saved)
+                setEffective(eff || null)
+            }
         } catch (error) {
             console.error('Erro ao carregar regras:', error)
         } finally {
@@ -32,6 +39,8 @@ export default function AdminRules() {
 
     const handleChange = (e) => {
         const { name, value } = e.target
+        // Salário mínimo vazio = usar o da lei
+        if (name === 'minimumWage' && value === '') return setRules(prev => ({ ...prev, minimumWage: null }))
         setRules(prev => ({ ...prev, [name]: parseFloat(value) || 0 }))
     }
 
@@ -39,18 +48,29 @@ export default function AdminRules() {
         setSaving(true)
         try {
             const token = localStorage.getItem('token')
-            await fetch('/api/admin/rules', {
+            const res = await fetch('/api/admin/rules', {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(rules)
+                body: JSON.stringify({
+                    inssPercentage: rules.inssPercentage,
+                    icmsValue: rules.icmsValue,
+                    issValue: rules.issValue,
+                    minimumWage: rules.minimumWage
+                })
             })
-            alert('Regras atualizadas com sucesso!')
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) {
+                notify({ title: 'Não foi salvo', message: body.message || 'Erro ao salvar regras', tone: 'error' })
+                return
+            }
+            notify({ title: 'Regras salvas', message: 'As próximas simulações já usam os valores novos.', tone: 'success' })
+            fetchRules()
         } catch (error) {
             console.error('Erro ao salvar regras:', error)
-            alert('Erro ao salvar regras')
+            notify({ title: 'Não foi salvo', message: 'Erro ao salvar regras. Confira a conexão.', tone: 'error' })
         } finally {
             setSaving(false)
         }
@@ -66,6 +86,7 @@ export default function AdminRules() {
 
     return (
         <div className="admin-page">
+            {dialog}
             <div className="page-header">
                 <h1>Regras de Cálculo</h1>
                 <p className="text-secondary">Configure os valores usados nas simulações</p>
@@ -123,17 +144,23 @@ export default function AdminRules() {
                     </div>
 
                     <div className="form-group">
-                        <label className="form-label">Custo Base Funcionário (R$)</label>
+                        <label className="form-label" htmlFor="rules-min-wage">Salário mínimo (R$)</label>
                         <input
+                            id="rules-min-wage"
                             type="number"
-                            name="employeeCost"
-                            value={rules.employeeCost}
+                            name="minimumWage"
+                            value={rules.minimumWage ?? ''}
+                            placeholder={effective ? String(effective.lawMinimumWage) : ''}
                             onChange={handleChange}
                             className="form-input"
-                            step="1"
+                            step="0.01"
                             min="0"
                         />
-                        <span className="form-hint">Salário mínimo + encargos estimados</span>
+                        <span className="form-hint">
+                            {effective
+                                ? `Em ${effective.year} o site usa R$ ${effective.minimumWage.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}. Vazio: vale o da lei. Funcionário (salário + 8% FGTS + 3% INSS): R$ ${effective.employeeCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+                                : 'Base do INSS do DAS e do custo do funcionário. Vazio: vale o da lei.'}
+                        </span>
                     </div>
                 </div>
 
@@ -143,7 +170,7 @@ export default function AdminRules() {
                         onClick={handleSave}
                         disabled={saving}
                     >
-                        {saving ? 'Salvando...' : '💾 Salvar Alterações'}
+                        {saving ? 'Salvando...' : 'Salvar alterações'}
                     </button>
                 </div>
             </div>

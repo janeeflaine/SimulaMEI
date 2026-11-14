@@ -1,137 +1,388 @@
-.simulator-page {
-    padding: var(--spacing-12) 0;
-    min-height: calc(100vh - 200px);
-    background: var(--color-bg-secondary);
+/* Simulador (/simular). Prefixo .sim- dentro de .simulador */
+
+.simulador {
+    --sim-ink: #12284a;
+    --sim-text: #0f172a;
+    --sim-muted: #5b6b80;
+    --sim-line: #e3e8ef;
+    --sim-paper: #f6f8fa;
+    --sim-green: #10b981;
+    padding: 40px 0 64px;
+    background: var(--sim-paper);
+    color: var(--sim-text);
+    min-height: 70vh;
 }
 
-.simulator-container {
-    max-width: 640px;
+.sim-wrap {
+    width: 100%;
+    max-width: 1200px;
     margin: 0 auto;
+    padding: 0 24px;
 }
 
-.simulator-header {
-    text-align: center;
-    margin-bottom: var(--spacing-8);
+.simulador .sim-title {
+    margin: 0;
+    font-size: clamp(1.875rem, 3.6vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--sim-ink);
+    text-align: left;
 }
 
-.simulator-title {
-    font-size: var(--font-size-3xl);
-    font-weight: var(--font-weight-bold);
-    margin-bottom: var(--spacing-2);
+.sim-sub {
+    margin: 8px 0 0;
+    max-width: 60ch;
+    color: var(--sim-muted);
+    font-size: 1.0625rem;
+    line-height: 1.55;
 }
 
-.simulator-subtitle {
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-lg);
-}
-
-.simulator-form {
-    background: var(--color-surface);
-    padding: var(--spacing-8);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-lg);
-    border: 1px solid var(--color-border-light);
-}
-
-.simulator-form .form-group {
-    margin-bottom: var(--spacing-6);
-}
-
-.simulator-form .form-label {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    margin-bottom: var(--spacing-3);
-}
-
-/* Activity Options */
-.activity-options {
+.sim-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--spacing-3);
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr);
+    gap: 20px;
+    align-items: start;
+    margin-top: 28px;
 }
 
-@media (max-width: 600px) {
-    .activity-options {
-        grid-template-columns: 1fr;
-    }
+.sim-card,
+.sim-aside {
+    padding: 24px;
+    border: 1px solid var(--sim-line);
+    border-radius: 20px;
+    background: #fff;
 }
 
-.activity-option {
-    position: relative;
+.sim-field {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    margin: 0 0 24px;
+    padding: 0;
+    border: 0;
+}
+
+.sim-field legend,
+.sim-field__row > label {
+    padding: 0;
+    margin-bottom: 4px;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--sim-text);
+}
+
+.sim-field small {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--sim-muted);
+}
+
+.sim-field__row {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     align-items: center;
-    padding: var(--spacing-4);
-    border: 2px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    text-align: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
-.activity-option input {
+/* Atividade: a escolhida em azul-marinho (o destaque da página) */
+.sim-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.sim-option {
+    position: relative;
+    display: grid;
+    gap: 2px;
+    min-height: 44px;
+    padding: 14px;
+    border: 1.5px solid var(--sim-line);
+    border-radius: 14px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.sim-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.sim-option__icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    background: rgba(18, 40, 74, 0.07);
+    color: var(--sim-ink);
+}
+
+.sim-option strong {
+    font-size: 0.9375rem;
+}
+
+.sim-option span:last-child {
+    font-size: 0.8125rem;
+    color: var(--sim-muted);
+}
+
+.sim-option.is-on {
+    border-color: var(--sim-ink);
+    background: var(--sim-ink);
+    color: #fff;
+}
+
+.sim-option.is-on .sim-option__icon {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+}
+
+.sim-option.is-on span:last-child {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.sim-option:has(input:focus-visible) {
+    outline: 2px solid var(--sim-green);
+    outline-offset: 2px;
+}
+
+.sim-seg {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--sim-paper);
+    border: 1px solid var(--sim-line);
+}
+
+.sim-seg button {
+    min-height: 40px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--sim-muted);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.sim-seg button.is-on {
+    background: var(--sim-ink);
+    color: #fff;
+}
+
+.sim-money {
+    position: relative;
+}
+
+.sim-money b {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.125rem;
+    color: var(--sim-muted);
+    pointer-events: none;
+}
+
+.sim-money input {
+    width: 100%;
+    min-height: 58px;
+    padding: 0 16px 0 50px;
+    border: 1.5px solid var(--sim-line);
+    border-radius: 14px;
+    background: #fff;
+    color: var(--sim-text);
+    font: inherit;
+    font-size: 1.5rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.sim-money input:focus {
+    outline: none;
+    border-color: var(--sim-green);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.sim-switch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.sim-switch input {
     position: absolute;
     opacity: 0;
 }
 
-.activity-option:hover {
-    border-color: var(--color-primary-light);
+.sim-switch__track {
+    flex: none;
+    position: relative;
+    width: 44px;
+    height: 26px;
+    border-radius: 999px;
+    background: #cbd5e1;
+    transition: background 150ms ease;
 }
 
-.activity-option.active {
-    border-color: var(--color-primary);
-    background: rgba(16, 185, 129, 0.05);
+.sim-switch__track span {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 150ms ease;
 }
 
+.sim-switch input:checked + .sim-switch__track {
+    background: var(--sim-ink);
+}
+
+.sim-switch input:checked + .sim-switch__track span {
+    transform: translateX(18px);
+}
+
+.sim-switch input:focus-visible + .sim-switch__track {
+    outline: 2px solid var(--sim-green);
+    outline-offset: 2px;
+}
+
+.sim-alert {
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.sim-btn {
+    width: 100%;
+    min-height: 52px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--sim-ink);
+    color: #fff;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.sim-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.sim-btn:focus-visible {
+    outline: 2px solid var(--sim-green);
+    outline-offset: 3px;
+}
+
+@media (hover: hover) {
+    .sim-option:not(.is-on):hover { border-color: var(--sim-ink); }
+    .sim-btn:not(:disabled):hover { background: #1f3d6b; }
+}
+
+/* Como o DAS é calculado */
+.simulador .sim-aside__title {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    text-align: left;
+    color: var(--sim-ink);
+}
+
+.sim-aside > p {
+    margin: 6px 0 0;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: var(--sim-muted);
+}
+
+.sim-das {
+    margin: 16px 0 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.sim-das > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--sim-line);
+    font-size: 0.9375rem;
+}
+
+.sim-das dt {
+    color: var(--sim-muted);
+}
+
+.sim-das dd {
+    margin: 0;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sim-das .is-total dt,
+.sim-das .is-total dd {
+    color: var(--sim-text);
+    font-weight: 700;
+}
+
+.sim-das > div.is-total:first-of-type,
+.sim-das > div:nth-child(4) {
+    margin-top: 6px;
+}
+
+.sim-das--loading {
+    height: 220px;
+    border-radius: 12px;
+    background: var(--sim-paper);
+}
+
+.sim-aside > .sim-note {
+    margin-top: 16px;
+    font-size: 0.8125rem;
+}
+
+@media (max-width: 900px) {
+    .sim-grid { grid-template-columns: 1fr; }
+}
+
+/* Toque: 44 px */
+@media (max-width: 1200px), (pointer: coarse) {
+    .sim-seg button { min-height: 44px; }
+}
+
+@media (max-width: 560px) {
+    .simulador { padding: 28px 0 48px; }
+    .sim-wrap { padding: 0 16px; }
+    .sim-card, .sim-aside { padding: 18px; border-radius: 16px; }
+    .sim-options { grid-template-columns: 1fr; }
+    .sim-option { grid-template-columns: auto 1fr; column-gap: 12px; align-items: center; }
+    .sim-option__icon { grid-row: span 2; margin: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sim-switch__track, .sim-switch__track span { transition: none; }
+}
+
+/* Regras antigas usadas por outras telas (admin): ficam até o admin ser redesenhado */
 .activity-icon {
     font-size: 2rem;
     margin-bottom: var(--spacing-2);
-}
-
-.activity-name {
-    font-weight: var(--font-weight-semibold);
-    margin-bottom: var(--spacing-1);
-}
-
-.activity-desc {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-}
-
-/* Revenue Group */
-.revenue-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-3);
-}
-
-.revenue-type-toggle {
-    display: flex;
-    background: var(--color-bg-tertiary);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-1);
-}
-
-.toggle-btn {
-    flex: 1;
-    padding: var(--spacing-2) var(--spacing-4);
-    border-radius: var(--radius-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-secondary);
-    transition: all var(--transition-fast);
-}
-
-.toggle-btn.active {
-    background: var(--color-surface);
-    color: var(--color-primary);
-    box-shadow: var(--shadow-sm);
-}
-
-.revenue-input {
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    text-align: center;
 }
 
 .form-hint {
@@ -139,63 +390,4 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
     margin-top: var(--spacing-2);
-}
-
-/* Checkbox */
-.checkbox-option {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    cursor: pointer;
-    padding: var(--spacing-4);
-    border: 2px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    transition: all var(--transition-fast);
-}
-
-.checkbox-option:hover {
-    border-color: var(--color-primary-light);
-}
-
-.checkbox-option input {
-    display: none;
-}
-
-.checkbox-custom {
-    width: 24px;
-    height: 24px;
-    border: 2px solid var(--color-border);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--transition-fast);
-    flex-shrink: 0;
-}
-
-.checkbox-option input:checked+.checkbox-custom {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-}
-
-.checkbox-option input:checked+.checkbox-custom::after {
-    content: '✓';
-    color: white;
-    font-size: 14px;
-    font-weight: bold;
-}
-
-.checkbox-text {
-    font-weight: var(--font-weight-medium);
-}
-
-/* Submit Button */
-.submit-btn {
-    width: 100%;
-    margin-top: var(--spacing-4);
-}
-
-/* Disclaimer */
-.simulator-page .disclaimer {
-    margin-top: var(--spacing-6);
-}
+}

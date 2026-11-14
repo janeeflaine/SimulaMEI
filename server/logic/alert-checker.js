@@ -120,11 +120,12 @@ async function revenueStatus(userId, year) {
             [userId]
         )
         if (sim && Number(sim.revenue) > 0) {
-            const isMonthly = sim.revenueType !== 'anual' // igual ao Simulador
-            monthly = isMonthly ? Number(sim.revenue) : null
+            // O Simulador grava sempre o valor por mês, mesmo quando a pessoa digitou o
+            // do ano (antes o "anual" era lido como total do ano: 1/12 do valor certo)
+            monthly = Number(sim.revenue)
             source = 'simulacao'
             // A simulação é de um MEI só: não dá para dividir entre vários
-            meis = [{ key: 'sim', name: null, document: null, wallets: 0, count: 0, total: isMonthly ? Number(sim.revenue) * 12 : Number(sim.revenue) }]
+            meis = [{ key: 'sim', name: null, document: null, wallets: 0, count: 0, total: monthly * 12 }]
         }
     }
 

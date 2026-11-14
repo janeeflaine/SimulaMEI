@@ -5,94 +5,105 @@ const { authMiddleware, optionalAuth } = require('../middleware/auth')
 
 const router = express.Router()
 
-// Get calculation rules and limits
-const getRulesAndLimits = async () => {
-    const rulesResult = await db.query('SELECT * FROM calculation_rules ORDER BY id DESC LIMIT 1')
-    // Limite do ano atual (Brasília): muda sozinho em 1º de janeiro
-    const limits = await getMeiLimits()
-    return {
-        rules: rulesResult.rows[0],
-        limits
-    }
+const tax = require('../logic/meiTax')
+
+// Regras do admin (calculation_rules) e limite do MEI de um ano
+const getRulesAndLimits = async (year = currentYearBR()) => {
+    const [rulesResult, limits] = await Promise.all([
+        db.query('SELECT * FROM calculation_rules ORDER BY id DESC LIMIT 1'),
+        getMeiLimits(year)
+    ])
+    const saved = rulesResult.rows[0] || {}
+    return { saved, rules: tax.rulesFor(saved, year), limits }
 }
 
-// Calculate DAS based on activity type and rules
-const calculateDAS = (activityType, rules) => {
-    // Base: 5% of minimum wage for INSS (fixed)
-    const salarioMinimo = 1412 // 2024 value
-    const inss = salarioMinimo * (rules.inssPercentage / 100)
+const MAX_REVENUE = 100000000 // R$ 100 milhões: acima disso é erro de digitação
 
-    let icms = 0
-    let iss = 0
-
-    switch (activityType) {
-        case 'comercio':
-            icms = rules.icmsValue
-            break
-        case 'servico':
-            iss = rules.issValue
-            break
-        case 'ambos':
-            icms = rules.icmsValue
-            iss = rules.issValue
-            break
-    }
-
-    return {
-        inss,
-        icms,
-        iss,
-        total: inss + icms + iss
-    }
+// Número vindo do corpo: aceita 6000 ou "6000"; o resto vira NaN
+const toNumber = (v) => {
+    if (typeof v === 'number') return v
+    if (typeof v === 'string' && v.trim() !== '') return Number(v)
+    return NaN
 }
+
+// Valores do ano para o Simulador: DAS de cada atividade e limite (público)
+router.get('/info', async (req, res) => {
+    try {
+        const year = currentYearBR()
+        const [{ rules, limits }, next] = await Promise.all([getRulesAndLimits(year), getMeiLimits(year + 1)])
+        res.set('Cache-Control', 'public, max-age=600')
+        res.json({
+            year,
+            das: tax.dasTable(rules),
+            employeeCost: tax.employeeCost(rules),
+            employeesAllowed: tax.employeesAllowed(year),
+            limits: { annualLimit: limits.annualLimit, nextYear: year + 1, nextAnnualLimit: next.annualLimit }
+        })
+    } catch (error) {
+        console.error('Simulation info error:', error)
+        res.status(500).json({ message: 'Erro ao buscar os valores do MEI' })
+    }
+})
 
 // Simulate (no auth required)
 router.post('/', optionalAuth, async (req, res) => {
     try {
-        const { activityType, revenue, revenueType, hasEmployee } = req.body
+        const { activityType } = req.body || {}
+        const revenueType = (req.body || {}).revenueType === 'anual' ? 'anual' : 'mensal'
+        const hasEmployee = [true, 1, 'true', '1'].includes((req.body || {}).hasEmployee)
+        const revenue = toNumber((req.body || {}).revenue)
 
-        if (!activityType || revenue === undefined) {
-            return res.status(400).json({ message: 'Tipo de atividade e faturamento são obrigatórios' })
+        if (!tax.ACTIVITIES.includes(activityType)) {
+            return res.status(400).json({ message: 'Escolha a atividade: comércio, serviço ou os dois.' })
         }
+        if (!Number.isFinite(revenue) || revenue < 0) {
+            return res.status(400).json({ message: 'Digite o faturamento em reais, por exemplo 6.000,00.' })
+        }
+        const annualRevenue = Math.round((revenueType === 'anual' ? revenue : revenue * 12) * 100) / 100
+        if (annualRevenue > MAX_REVENUE) {
+            return res.status(400).json({ message: 'Esse faturamento é alto demais para o MEI. Confira o valor digitado.' })
+        }
+        const monthlyRevenue = Math.round(annualRevenue / 12 * 100) / 100
 
-        const { rules, limits } = await getRulesAndLimits()
+        const year = currentYearBR()
+        const [{ saved, rules, limits }, next] = await Promise.all([getRulesAndLimits(year), getMeiLimits(year + 1)])
 
-        // Calculate annual revenue
-        const annualRevenue = revenueType === 'anual' ? revenue : revenue * 12
-        const monthlyRevenue = revenueType === 'anual' ? revenue / 12 : revenue
-
-        // Calculate DAS
-        const breakdown = calculateDAS(activityType, rules)
+        const breakdown = tax.dasFor(activityType, rules)
         const dasMonthly = breakdown.total
-        const dasAnnual = dasMonthly * 12
-
-        // Calculate limit percentage
-        const limitPercentage = (annualRevenue / limits.annualLimit) * 100
-
-        // Calculate employee cost if applicable
-        const employeeCost = hasEmployee ? rules.employeeCost : 0
+        const dasAnnual = Math.round(dasMonthly * 12 * 100) / 100
+        const limitPercentage = limits.annualLimit > 0 ? (annualRevenue / limits.annualLimit) * 100 : 0
+        const employeeCost = hasEmployee ? tax.employeeCost(rules) : 0
 
         const result = {
+            activityType,
             dasMonthly,
             dasAnnual,
             annualRevenue,
             monthlyRevenue,
             limitPercentage,
             employeeCost,
+            employeesAllowed: tax.employeesAllowed(year),
             breakdown: {
                 inss: breakdown.inss,
                 icms: breakdown.icms,
-                iss: breakdown.iss
+                iss: breakdown.iss,
+                minimumWage: rules.minimumWage
             },
             limits: {
                 year: limits.year,
                 annualLimit: limits.annualLimit,
                 warningPercentage: limits.warningPercentage,
                 dangerPercentage: limits.dangerPercentage
-            }
+            },
+            next: {
+                year: year + 1,
+                annualLimit: next.annualLimit,
+                limitPercentage: next.annualLimit > 0 ? (annualRevenue / next.annualLimit) * 100 : 0
+            },
+            excess: tax.excessFor(annualRevenue, limits.annualLimit)
         }
 
-        // Save simulation if user is logged in
+        // Save simulation if user is logged in ("revenue" é sempre o valor por mês)
         if (req.user) {
             await db.query(`
                 INSERT INTO simulations ("userId", "activityType", revenue, "revenueType", "hasEmployee", "dasMonthly", "dasAnnual", "limitPercentage", "rulesSnapshot")
@@ -106,7 +117,7 @@ router.post('/', optionalAuth, async (req, res) => {
                 dasMonthly,
                 dasAnnual,
                 limitPercentage,
-                JSON.stringify({ rules, limits })
+                JSON.stringify({ rules: { ...saved, ...rules }, limits })
             ])
         }
 
@@ -200,49 +211,47 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 })
 
-// MEI vs ME Comparison
+// MEI x Microempresa (Simples Nacional, anexo I ou III)
 router.post('/comparison', authMiddleware, async (req, res) => {
     try {
-        const { annualRevenue } = req.body
-        const { limits } = await getRulesAndLimits()
+        const annualRevenue = toNumber((req.body || {}).annualRevenue)
+        const activityType = tax.ACTIVITIES.includes((req.body || {}).activityType) ? req.body.activityType : 'comercio'
 
-        // MEI calculation (already done)
-        const meiMonthlyTax = 71.60 // Current fixed value approximation
-        const meiAnnualTax = meiMonthlyTax * 12
-
-        // ME (Simples Nacional) estimation - simplified
-        // Anexo I (Comércio) starts at 4%, Anexo III (Serviços) starts at 6%
-        const simplesRate = 0.06 // 6% as average
-        const meMonthlyTax = (annualRevenue / 12) * simplesRate
-        const meAnnualTax = annualRevenue * simplesRate
-
-        const limitPercentage = (annualRevenue / limits.annualLimit) * 100
-
-        let recommendation = 'mei'
-        let message = 'Com seu faturamento atual, o MEI é mais vantajoso financeiramente.'
-
-        if (limitPercentage > 80) {
-            recommendation = 'me'
-            message = 'Você está próximo do limite MEI. Considere migrar para ME para evitar problemas futuros.'
+        if (!Number.isFinite(annualRevenue) || annualRevenue <= 0) {
+            return res.status(400).json({ message: 'Faça uma simulação com o faturamento para comparar.' })
+        }
+        if (annualRevenue > tax.SIMPLES_LIMIT) {
+            return res.status(400).json({ message: 'Acima de R$ 4,8 milhões por ano a empresa sai do Simples Nacional, e este comparativo não se aplica.' })
         }
 
-        if (annualRevenue > limits.annualLimit) {
+        const year = currentYearBR()
+        const { rules, limits } = await getRulesAndLimits(year)
+        const meiMonthlyTax = tax.dasFor(activityType, rules).total
+        const me = tax.simplesTax(annualRevenue, tax.annexFor(activityType))
+
+        const limitPercentage = limits.annualLimit > 0 ? (annualRevenue / limits.annualLimit) * 100 : 0
+        const overLimit = annualRevenue > limits.annualLimit
+        let recommendation = 'mei'
+        let message = 'Com esse faturamento, o MEI paga bem menos imposto e não precisa de contador.'
+        if (overLimit) {
             recommendation = 'me'
-            message = 'Seu faturamento já ultrapassa o limite MEI. A migração para ME é necessária.'
+            message = 'O faturamento passa do limite do MEI: a mudança para Microempresa é obrigatória.'
+        } else if (limitPercentage > 80) {
+            recommendation = 'me'
+            message = 'Você está perto do limite do MEI. Planeje a mudança para Microempresa antes de passar.'
         }
 
         res.json({
             mei: {
                 monthlyTax: meiMonthlyTax,
-                annualTax: meiAnnualTax,
-                limit: limits.annualLimit
+                annualTax: Math.round(meiMonthlyTax * 12 * 100) / 100,
+                limit: limits.annualLimit,
+                year,
+                employeesAllowed: tax.employeesAllowed(year)
             },
-            me: {
-                monthlyTax: meMonthlyTax,
-                annualTax: meAnnualTax,
-                limit: 4800000 // ME limit in Simples Nacional
-            },
+            me: { ...me, limit: tax.SIMPLES_LIMIT },
             recommendation,
+            overLimit,
             message
         })
     } catch (error) {

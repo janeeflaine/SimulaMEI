@@ -545,6 +545,13 @@ const seedDefaults = async () => {
       console.log('Migration note (limite do MEI por ano):', limitYearErr.message)
     }
 
+    // Salário mínimo do ano gravado pelo admin (Regras de Cálculo)
+    try {
+      await upgrades.rulesMinimumWage((sql, params) => pool.query(sql, params))
+    } catch (wageErr) {
+      console.log('Migration note (salário mínimo):', wageErr.message)
+    }
+
     // Default System Settings for Trial
     const trialEnabled = await pool.query("SELECT * FROM system_settings WHERE key = 'trial_enabled'")
     if (trialEnabled.rows.length === 0) {

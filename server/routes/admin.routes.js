@@ -4,6 +4,7 @@ const { db, pool } = require('../db')
 const { authMiddleware, adminMiddleware } = require('../middleware/auth')
 const auditLogger = require('../utils/auditLogger')
 const { deleteUserData, cancelStripeSubscriptionIfActive } = require('../utils/userDeletion')
+const meiTax = require('../logic/meiTax')
 
 const router = express.Router()
 
@@ -274,7 +275,14 @@ router.get('/rules', async (req, res) => {
     try {
         const rulesResult = await db.query('SELECT * FROM calculation_rules ORDER BY id DESC LIMIT 1')
         const rules = rulesResult.rows[0]
-        res.json(rules || { inssPercentage: 5, icmsValue: 1, issValue: 5, employeeCost: 1412 })
+        const year = currentYearBR()
+        const effective = meiTax.rulesFor(rules, year)
+        // minimumWage: o gravado (vazio = o da lei); "effective" mostra o que o site usa no ano
+        res.json({
+            ...(rules || { inssPercentage: 5, icmsValue: 1, issValue: 5, employeeCost: 1412 }),
+            minimumWage: rules && rules.minimumWage != null ? Number(rules.minimumWage) : null,
+            effective: { year, minimumWage: effective.minimumWage, lawMinimumWage: meiTax.lawMinimumWage(year), employeeCost: meiTax.employeeCost(effective) }
+        })
     } catch (error) {
         console.error('Get rules error:', error)
         res.status(500).json({ message: 'Erro ao carregar regras' })
@@ -283,14 +291,37 @@ router.get('/rules', async (req, res) => {
 
 router.put('/rules', async (req, res) => {
     try {
-        const { inssPercentage, icmsValue, issValue, employeeCost } = req.body
+        const body = req.body || {}
+        // Cada valor: número dentro da faixa (dado ruim vira 400, nunca 500 nem DAS errado)
+        const field = (name, min, max, { optional = false } = {}) => {
+            const v = body[name]
+            if (optional && (v === null || v === undefined || v === '')) return { value: null }
+            const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN)
+            if (!Number.isFinite(n) || n < min || n > max) return { error: name }
+            return { value: Math.round(n * 100) / 100 }
+        }
+        const checks = {
+            inssPercentage: field('inssPercentage', 0, 100),
+            icmsValue: field('icmsValue', 0, 1000),
+            issValue: field('issValue', 0, 1000),
+            minimumWage: field('minimumWage', 500, 100000, { optional: true })
+        }
+        const bad = Object.values(checks).find(c => c.error)
+        if (bad) {
+            const labels = { inssPercentage: 'Percentual do INSS (0 a 100)', icmsValue: 'Valor do ICMS (0 a 1.000)', issValue: 'Valor do ISS (0 a 1.000)', minimumWage: 'Salário mínimo (500 a 100.000, ou vazio)' }
+            return res.status(400).json({ message: `Confira o campo ${labels[bad.error]}.` })
+        }
+        const { inssPercentage, icmsValue, issValue, minimumWage } = Object.fromEntries(Object.entries(checks).map(([k, c]) => [k, c.value]))
 
         const oldResult = await db.query('SELECT * FROM calculation_rules ORDER BY id DESC LIMIT 1')
+        const old = oldResult.rows[0] || {}
+        // employeeCost: coluna antiga, mantida como estava (o custo agora vem do salário mínimo)
+        const employeeCost = old.employeeCost != null ? old.employeeCost : 1412
 
         await db.query(`
-            INSERT INTO calculation_rules ("inssPercentage", "icmsValue", "issValue", "employeeCost", "updatedBy")
-            VALUES ($1, $2, $3, $4, $5)
-        `, [inssPercentage, icmsValue, issValue, employeeCost, req.user.id])
+            INSERT INTO calculation_rules ("inssPercentage", "icmsValue", "issValue", "employeeCost", "minimumWage", "updatedBy")
+            VALUES ($1, $2, $3, $4, $5, $6)
+        `, [inssPercentage, icmsValue, issValue, employeeCost, minimumWage, req.user.id])
 
         await auditLogger.log({
             level: 'INFO',
@@ -298,13 +329,13 @@ router.put('/rules', async (req, res) => {
             actor: { user_id: req.user.id, role: req.user.role },
             context: req.context || {},
             target: { resource_type: 'CALCULATION_RULES' },
-            changes: { old_value: oldResult.rows[0] || {}, new_value: req.body }
+            changes: { old_value: old, new_value: { inssPercentage, icmsValue, issValue, minimumWage } }
         })
 
         await db.query(`
             INSERT INTO admin_logs ("userId", action, details)
             VALUES ($1, 'UPDATE_RULES', $2)
-        `, [req.user.id, JSON.stringify(req.body)])
+        `, [req.user.id, JSON.stringify({ inssPercentage, icmsValue, issValue, minimumWage })])
 
         res.json({ message: 'Regras atualizadas com sucesso' })
     } catch (error) {

@@ -230,6 +230,16 @@ describe('Limite de faturamento é de cada MEI (dono, 14/11)', () => {
         expect(revenue).toMatchObject({ source: 'simulacao', total: 72000, monthly: 6000 })
         expect(revenue.meis).toHaveLength(1)
     })
+
+    test('simulação feita "por ano": o valor gravado é o do mês, então o ano é 12 vezes ele', async () => {
+        state.wallets = []
+        state.sums = []
+        // Simulador recebeu R$ 84.000 por ano e gravou R$ 7.000 (por mês)
+        state.simulation = { revenue: 7000, revenueType: 'anual' }
+        const { revenue, triggered } = await revenueOf()
+        expect(revenue).toMatchObject({ source: 'simulacao', total: 84000, monthly: 7000 })
+        expect(triggered.some(t => t.type === 'REVENUE_LIMIT')).toBe(true)
+    })
 })
 
 describe('Limite do MEI por ano (LC 238/2026)', () => {

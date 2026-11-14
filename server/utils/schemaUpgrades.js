@@ -46,10 +46,16 @@ const meiLimitYear = async (q) => {
     await q(`UPDATE mei_limits SET year = EXTRACT(YEAR FROM COALESCE("updatedAt", NOW()) AT TIME ZONE 'America/Sao_Paulo')::int WHERE year IS NULL`)
 }
 
+// Salário mínimo gravado pelo admin em Regras de Cálculo (vazio: vale o da lei, logic/meiTax.js)
+const rulesMinimumWage = async (q) => {
+    await q('ALTER TABLE calculation_rules ADD COLUMN IF NOT EXISTS "minimumWage" REAL')
+}
+
 const UPGRADES = [
     { table: 'user_alerts', column: 'lastSentKey', run: alertSentKey },
     { table: 'finance_transactions', column: 'transferId', run: transferLinks },
-    { table: 'mei_limits', column: 'year', run: meiLimitYear }
+    { table: 'mei_limits', column: 'year', run: meiLimitYear },
+    { table: 'calculation_rules', column: 'minimumWage', run: rulesMinimumWage }
 ]
 
 // Roda só as que faltam (uma consulta rápida quando já está tudo certo)
@@ -69,4 +75,4 @@ async function applyMissing(q) {
     return ran
 }
 
-module.exports = { alertSentKey, transferLinks, meiLimitYear, applyMissing, UPGRADES }
+module.exports = { alertSentKey, transferLinks, meiLimitYear, rulesMinimumWage, applyMissing, UPGRADES }

@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { ArrowLeft, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import './Results.css'
+
+const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const reais = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+const pct = (v) => `${(Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+const thousand = (v) => `R$ ${(Number(v) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} mil`
+const ACTIVITY = { comercio: 'Comércio', servico: 'Serviço', ambos: 'Comércio e serviço' }
 
 export default function Results() {
     const navigate = useNavigate()
@@ -9,197 +16,112 @@ export default function Results() {
     const [result, setResult] = useState(null)
 
     useEffect(() => {
-        const stored = sessionStorage.getItem('simulationResult')
-        if (stored) {
-            setResult(JSON.parse(stored))
-        } else {
-            navigate('/simular')
+        try {
+            const stored = JSON.parse(sessionStorage.getItem('simulationResult') || 'null')
+            if (stored && Number.isFinite(Number(stored.dasMonthly))) setResult(stored)
+            else navigate('/simular', { replace: true })
+        } catch {
+            navigate('/simular', { replace: true })
         }
     }, [navigate])
 
-    if (!result) {
-        return (
-            <div className="flex items-center justify-center" style={{ minHeight: '50vh' }}>
-                <div className="loader"></div>
-            </div>
-        )
-    }
+    if (!result) return null
 
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('pt-BR', {
-            style: 'currency',
-            currency: 'BRL'
-        }).format(value)
-    }
+    const { limits = {}, breakdown = {} } = result
+    const year = limits.year
+    const percent = Number(result.limitPercentage) || 0
+    const left = (Number(limits.annualLimit) || 0) - (Number(result.annualRevenue) || 0)
+    const tone = percent > 100 ? 'over' : percent >= (Number(limits.warningPercentage) || 70) ? 'near' : 'ok'
+    const excess = result.excess?.kind
+    const next = result.next
 
-    const getStatusColor = (percentage) => {
-        if (percentage < result.limits.warningPercentage) return 'success'
-        if (percentage < result.limits.dangerPercentage) return 'warning'
-        return 'danger'
-    }
-
-    const statusColor = getStatusColor(result.limitPercentage)
-
-    const getStatusMessage = () => {
-        if (statusColor === 'success') {
-            return {
-                icon: '✅',
-                title: 'Você está dentro do limite!',
-                message: 'Seu faturamento está saudável e bem abaixo do limite MEI.'
-            }
-        }
-        if (statusColor === 'warning') {
-            return {
-                icon: '⚠️',
-                title: 'Atenção ao limite!',
-                message: 'Você está se aproximando do limite de faturamento MEI. Fique atento!'
-            }
-        }
-        return {
-            icon: '🚨',
-            title: 'Limite em risco!',
-            message: 'Você está muito próximo ou acima do limite. Considere migrar para ME.'
-        }
-    }
-
-    const status = getStatusMessage()
+    const notice = tone === 'ok'
+        ? { title: 'Dentro do limite', text: `Com esse faturamento ainda cabem ${brl(left)} no ano.` }
+        : tone === 'near'
+            ? { title: 'Perto do limite', text: `Sobram ${brl(left)} até o limite de ${year || 'este ano'}. Acompanhe mês a mês para não passar.` }
+            : excess === 'acima20'
+                ? { title: `Passa mais de 20% do limite`, text: `São ${brl(-left)} acima. Nesse caso o MEI é desenquadrado desde janeiro do mesmo ano e paga os impostos como Microempresa sobre o ano todo. Converse com um contador.` }
+                : { title: 'Passa do limite em até 20%', text: `São ${brl(-left)} acima. O MEI paga imposto extra sobre o que passou, numa guia própria, e vira Microempresa a partir de janeiro do ano seguinte.` }
 
     return (
-        <div className="results-page">
-            <div className="container">
-                <div className="results-container">
-                    {/* Status Alert */}
-                    <div className={`status-alert status-${statusColor}`}>
-                        <span className="status-icon">{status.icon}</span>
-                        <div>
-                            <strong>{status.title}</strong>
-                            <p>{status.message}</p>
-                        </div>
-                    </div>
+        <div className="resultado">
+            <div className="res-wrap">
+                <Link to="/simular" className="res-back"><ArrowLeft size={18} aria-hidden="true" /> Nova simulação</Link>
 
-                    {/* Main Results */}
-                    <div className="results-grid">
-                        <div className="result-card main-card">
-                            <span className="result-icon">📋</span>
-                            <span className="result-label">DAS Mensal</span>
-                            <span className="result-value">{formatCurrency(result.dasMonthly)}</span>
-                            <span className="result-detail">
-                                INSS: {formatCurrency(result.breakdown.inss)} +
-                                {result.breakdown.icms > 0 ? ` ICMS: ${formatCurrency(result.breakdown.icms)}` : ''}
-                                {result.breakdown.iss > 0 ? ` ISS: ${formatCurrency(result.breakdown.iss)}` : ''}
-                            </span>
-                        </div>
+                <div className="res-top">
+                    {/* DAS: o elemento marcante */}
+                    <section className="res-das" aria-labelledby="res-das-title">
+                        <h1 id="res-das-title" className="res-das__label">
+                            DAS{year ? ` de ${year}` : ''}{ACTIVITY[result.activityType] ? `, ${ACTIVITY[result.activityType]}` : ''}
+                        </h1>
+                        <p className="res-das__value">{brl(result.dasMonthly)}<span> por mês</span></p>
+                        <p className="res-das__year">{brl(result.dasAnnual)} no ano</p>
+                        <ul className="res-chips" aria-label="Do que é feito o DAS">
+                            <li>INSS {brl(breakdown.inss)}</li>
+                            {Number(breakdown.icms) > 0 && <li>ICMS {brl(breakdown.icms)}</li>}
+                            {Number(breakdown.iss) > 0 && <li>ISS {brl(breakdown.iss)}</li>}
+                        </ul>
+                        <p className="res-das__note">O valor é o mesmo todo mês e vence no dia 20.</p>
+                    </section>
 
-                        <div className="result-card">
-                            <span className="result-icon">📅</span>
-                            <span className="result-label">Total Anual Estimado</span>
-                            <span className="result-value">{formatCurrency(result.dasAnnual)}</span>
-                            <span className="result-detail">12x DAS mensal</span>
-                        </div>
-
-                        <div className="result-card">
-                            <span className="result-icon">📊</span>
-                            <span className="result-label">Uso do Limite MEI</span>
-                            <span className={`result-value text-${statusColor}`}>
-                                {result.limitPercentage.toFixed(1)}%
-                            </span>
-                            <span className="result-detail">
-                                {formatCurrency(result.annualRevenue)} de {formatCurrency(result.limits.annualLimit)}
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="limit-section">
-                        <div className="limit-header">
-                            <span>Limite de Faturamento MEI</span>
-                            <span className={`badge badge-${statusColor}`}>
-                                {result.limitPercentage.toFixed(1)}%
-                            </span>
-                        </div>
-                        <div className="progress-bar">
-                            <div
-                                className={`progress-bar-fill ${statusColor}`}
-                                style={{ width: `${Math.min(result.limitPercentage, 100)}%` }}
-                            ></div>
-                        </div>
-                        <div className="limit-labels">
-                            <span>R$ 0</span>
-                            <span className="limit-value">{formatCurrency(result.limits.annualLimit)}</span>
-                        </div>
-                    </div>
-
-                    {/* Employee Cost */}
-                    {result.employeeCost > 0 && (
-                        <div className="employee-section">
-                            <h3>👤 Custo com Funcionário</h3>
-                            <p>
-                                Custo estimado mensal: <strong>{formatCurrency(result.employeeCost)}</strong>
-                                <br />
-                                <span className="text-muted">Inclui salário mínimo, FGTS (8%) e férias proporcionais.</span>
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Upgrade CTA - Prominent when limit is exceeded */}
-                    {statusColor !== 'success' && (
-                        <div className="upgrade-banner-prominent">
-                            <div className="upgrade-banner-content">
-                                <span className="upgrade-icon">💎</span>
-                                <div className="upgrade-text">
-                                    <h3>
-                                        {statusColor === 'danger'
-                                            ? '🚨 Você está acima do limite MEI!'
-                                            : '⚠️ Seu faturamento está alto'}
-                                    </h3>
-                                    <p>
-                                        {statusColor === 'danger'
-                                            ? 'Compare os custos MEI x ME e descubra a melhor opção para seu negócio.'
-                                            : 'Acompanhe seu limite com alertas personalizados e evite surpresas.'}
-                                    </p>
+                    <section className="res-limit" aria-labelledby="res-limit-title">
+                        <h2 id="res-limit-title" className="res-h2">Faturamento e limite</h2>
+                        <dl className="res-rows">
+                            <div>
+                                <dt>Faturamento no ano<small>{reais(result.monthlyRevenue)} por mês</small></dt>
+                                <dd>{reais(result.annualRevenue)}</dd>
+                            </div>
+                            <div>
+                                <dt>Uso do limite{year ? ` de ${year}` : ''}<small>de {thousand(limits.annualLimit)}</small></dt>
+                                <dd className={`is-${tone}`}>{pct(percent)}</dd>
+                            </div>
+                            <div className="res-rows__bar">
+                                <div className="res-bar" role="img" aria-label={`${pct(percent)} do limite`}>
+                                    <i className={`is-${tone}`} style={{ width: `${Math.min(100, percent)}%` }} />
                                 </div>
                             </div>
-                            <div className="upgrade-features">
-                                <span>✅ Comparativo MEI x ME</span>
-                                <span>✅ Alertas de limite</span>
-                                <span>✅ Relatórios em PDF</span>
-                            </div>
-                            <Link to="/planos" className="btn btn-upgrade btn-lg">
-                                💎 Ver Planos e Benefícios
-                            </Link>
-                        </div>
-                    )}
-
-                    {/* Actions */}
-                    <div className="results-actions">
-                        <button onClick={() => navigate('/simular')} className="btn btn-secondary">
-                            ↩️ Nova Simulação
-                        </button>
-
-                        {user ? (
-                            <Link to="/comparativo" className="btn btn-primary">
-                                📊 Ver Comparativo MEI x ME
-                            </Link>
-                        ) : (
-                            <div className="upgrade-cta">
-                                <p>Quer salvar suas simulações e ver comparativos?</p>
-                                <div className="upgrade-cta-buttons">
-                                    <Link to="/cadastro" className="btn btn-primary">
-                                        🚀 Criar Conta Grátis
-                                    </Link>
-                                    <Link to="/planos" className="btn btn-secondary">
-                                        💎 Ver Planos
-                                    </Link>
+                            {next && (
+                                <div>
+                                    <dt>Com o limite de {next.year}<small>de {thousand(next.annualLimit)}</small></dt>
+                                    <dd>{pct(next.limitPercentage)}</dd>
                                 </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="disclaimer">
-                        ⚠️ <strong>Importante:</strong> Esta simulação é baseada nas regras vigentes e valores
-                        configurados. Consulte um contador para orientações específicas ao seu negócio.
-                    </div>
+                            )}
+                        </dl>
+                    </section>
                 </div>
+
+                <div className={`res-notice is-${tone}`} role="status">
+                    <strong>{notice.title}</strong>
+                    <span>{notice.text}</span>
+                </div>
+
+                {Number(result.employeeCost) > 0 && (
+                    <section className="res-box" aria-labelledby="res-emp">
+                        <span className="res-box__icon" aria-hidden="true"><UserRound size={20} /></span>
+                        <div>
+                            <h2 id="res-emp" className="res-h2">Funcionário com salário mínimo: {brl(result.employeeCost)} por mês</h2>
+                            <p>Salário{breakdown.minimumWage ? ` de ${brl(breakdown.minimumWage)}` : ''}, mais 8% de FGTS e 3% de INSS que o MEI paga. 13º e férias ficam de fora.
+                                {result.employeesAllowed ? ` Em ${year} o MEI pode ter até ${result.employeesAllowed} funcionário${result.employeesAllowed > 1 ? 's' : ''}.` : ''}</p>
+                        </div>
+                    </section>
+                )}
+
+                <div className="res-actions">
+                    {user ? (
+                        <>
+                            <Link to="/comparativo" className="res-btn res-btn--primary">Comparar MEI e Microempresa</Link>
+                            <Link to="/alertas" className="res-btn">Ver os alertas do limite</Link>
+                        </>
+                    ) : (
+                        <>
+                            <Link to="/cadastro" className="res-btn res-btn--primary">Criar conta grátis</Link>
+                            <Link to="/planos" className="res-btn">Comparar planos</Link>
+                        </>
+                    )}
+                </div>
+                {!user && <p className="res-foot">Com a conta, o site guarda as simulações e avisa quando o faturamento chega perto do limite.</p>}
+
+                <p className="res-disclaimer">Estimativa com as regras atuais. Não substitui a orientação de um contador.</p>
             </div>
         </div>
     )

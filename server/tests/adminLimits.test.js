@@ -65,3 +65,35 @@ test.each([
     expect(res.status).toBe(400)
     expect(inserts()).toHaveLength(0)
 })
+
+describe('Regras de Cálculo: salário mínimo e valores conferidos', () => {
+    const ruleInserts = () => sql.filter(s => s.q.startsWith('INSERT INTO calculation_rules'))
+
+    test('grava o salário mínimo; vazio grava nulo (vale o da lei)', async () => {
+        let res = await request(app).put('/api/admin/rules').send({ inssPercentage: 5, icmsValue: 1, issValue: 5, minimumWage: 1700 })
+        expect(res.status).toBe(200)
+        expect(ruleInserts()[0].params.slice(0, 5)).toEqual([5, 1, 5, 1412, 1700])
+        res = await request(app).put('/api/admin/rules').send({ inssPercentage: 5, icmsValue: 1, issValue: 5, minimumWage: null })
+        expect(res.status).toBe(200)
+        expect(ruleInserts()[1].params[4]).toBeNull()
+    })
+
+    test.each([
+        [{ inssPercentage: 'cinco', icmsValue: 1, issValue: 5 }],
+        [{ inssPercentage: 500, icmsValue: 1, issValue: 5 }],
+        [{ inssPercentage: 5, icmsValue: -1, issValue: 5 }],
+        [{ inssPercentage: 5, icmsValue: 1 }],
+        [{ inssPercentage: 5, icmsValue: 1, issValue: 5, minimumWage: 12 }],
+        [{ inssPercentage: 5, icmsValue: 1, issValue: 5, minimumWage: 'abc' }]
+    ])('dado ruim %j: 400 e nada gravado', async (body) => {
+        const res = await request(app).put('/api/admin/rules').send(body)
+        expect(res.status).toBe(400)
+        expect(ruleInserts()).toHaveLength(0)
+    })
+
+    test('GET mostra o salário que o site usa no ano e o custo do funcionário', async () => {
+        const res = await request(app).get('/api/admin/rules')
+        expect(res.status).toBe(200)
+        expect(res.body.effective).toMatchObject({ year: currentYearBR(), minimumWage: 1621, employeeCost: 1799.31 })
+    })
+})
