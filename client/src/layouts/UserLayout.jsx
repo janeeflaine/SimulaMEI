@@ -45,7 +45,9 @@ export default function UserLayout() {
                 })
                 if (!res.ok) return
                 const data = await res.json()
+                // A principal primeiro; sem principal, a mais antiga
                 const first = [...data].sort((a, b) => {
+                    if (Boolean(a.isPrimary) !== Boolean(b.isPrimary)) return a.isPrimary ? -1 : 1
                     const byDate = new Date(a.createdAt) - new Date(b.createdAt)
                     return byDate !== 0 && !Number.isNaN(byDate) ? byDate : a.id - b.id
                 })[0]

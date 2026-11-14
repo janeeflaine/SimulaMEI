@@ -18,6 +18,9 @@ import ImageCropperModal from '../../components/ImageCropperModal'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Stat } from '../../components/cards/CardsSummaryPanel'
 import { maskDocument, documentError } from '../../utils/brDocument'
+
+// Documento antigo gravado só com números aparece com máscara (se for válido no tipo)
+const showDocument = (doc, type) => (documentError(doc, type) ? doc : maskDocument(doc, type))
 import './AccountManager.css'
 
 const TYPES = [
@@ -324,7 +327,7 @@ export default function AccountManager() {
                                         </div>
 
                                         <p className={`crt-doc ${w.cnpj ? '' : 'is-empty'}`}>
-                                            {w.cnpj ? <>{t.doc} <span>{w.cnpj}</span></> : `Sem ${t.doc} cadastrado`}
+                                            {w.cnpj ? <>{t.doc} <span>{showDocument(w.cnpj, w.account_type)}</span></> : `Sem ${t.doc} cadastrado`}
                                         </p>
 
                                         <dl className="crt-facts">
