@@ -251,6 +251,8 @@ export default function CardDashboard() {
     // Estorno é dinheiro que volta: o total da fatura é compras menos estornos
     const monthRefunds = items.reduce((s, i) => s + Math.min(Number(i.amount) || 0, 0), 0)
     const monthPurchases = monthTotal - monthRefunds
+    // Lidas pela IA e ainda não conferidas: estão na fatura, mas não no Extrato
+    const unconfirmedCount = items.filter(i => i.isConfirmed === false).length
     const toReview = items.filter(i => !i.categoryId || (Number(i.aiConfidence) > 0 && Number(i.aiConfidence) < REVIEW_BELOW)).length
     const visibleItems = useMemo(() => {
         const q = search.trim().toLowerCase()
@@ -840,6 +842,13 @@ export default function CardDashboard() {
                                         )}
                                     </div>
 
+                                    {unconfirmedCount > 0 && (
+                                        <p className="pc-unconfirmed">
+                                            {plural(unconfirmedCount, 'compra lida pela IA ainda não foi conferida', 'compras lidas pela IA ainda não foram conferidas')} e não {unconfirmedCount === 1 ? 'está' : 'estão'} no Extrato.{' '}
+                                            <Link to={`/financas/cartoes/${cardId}/upload`}>Conferir agora</Link>
+                                        </p>
+                                    )}
+
                                     {visibleItems.length === 0 ? (
                                         <p className="csp-muted pc-nofind">Nenhuma compra com “{search.trim()}”.</p>
                                     ) : (
@@ -882,6 +891,7 @@ export default function CardDashboard() {
                                                             <th scope="row" className="pc-table__desc">
                                                                 {item.description}
                                                                 {item.installment && <span className="pc-installment">{item.installment}</span>}
+                                                                {item.isConfirmed === false && <span className="pc-flag">não conferida</span>}
                                                             </th>
                                                             <td className="pc-table__cat">
                                                                 {item.categoryId ? (

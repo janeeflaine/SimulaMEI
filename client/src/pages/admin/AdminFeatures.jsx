@@ -135,6 +135,8 @@ export default function AdminFeatures() {
 
                 <AdminWhatsappLimits plans={plans} />
 
+                <AdminInvoiceUploadLimits plans={plans} />
+
                 <AdminTrialSettings />
 
                 <div className="alert-banner" style={{ marginTop: 'var(--spacing-6)', marginBottom: 0 }}>
@@ -325,6 +327,113 @@ function AdminWhatsappLimits({ plans }) {
                 })}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                        {saving ? 'Salvando...' : 'Salvar Limites'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// Leituras de fatura com IA por dia (cada leitura custa na IA). Padrão igual ao servidor.
+const INVOICE_UPLOAD_LIMIT_DEFAULT = '20'
+
+function AdminInvoiceUploadLimits({ plans }) {
+    const [limits, setLimits] = useState({})
+    const [saving, setSaving] = useState(false)
+    const [loaded, setLoaded] = useState(false)
+    const [status, setStatus] = useState(null) // { ok, text }
+
+    useEffect(() => { fetchLimits() }, [])
+
+    const fetchLimits = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+            const data = await res.json()
+            const parsed = {}
+            plans.forEach(p => {
+                const setting = data.find(s => s.key === `invoice_upload_limit_${p.id}`)
+                parsed[p.id] = setting && setting.value !== '' ? setting.value : INVOICE_UPLOAD_LIMIT_DEFAULT
+            })
+            setLimits(parsed)
+        } catch (err) {
+            console.error('Erro ao buscar limites de leitura de faturas:', err)
+        } finally {
+            setLoaded(true)
+        }
+    }
+
+    const handleSave = async () => {
+        setSaving(true)
+        setStatus(null)
+        try {
+            const token = localStorage.getItem('token')
+            const results = await Promise.all(
+                plans.map(p =>
+                    fetch('/api/settings', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ key: `invoice_upload_limit_${p.id}`, value: String(Math.max(0, parseInt(limits[p.id], 10) || 0)) })
+                    })
+                )
+            )
+            setStatus(results.every(r => r.ok)
+                ? { ok: true, text: 'Limites de leitura de faturas salvos.' }
+                : { ok: false, text: 'Alguns limites não foram salvos. Tente de novo.' })
+        } catch (err) {
+            console.error(err)
+            setStatus({ ok: false, text: 'Erro ao salvar os limites. Tente de novo.' })
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    if (!loaded) return null
+
+    return (
+        <div className="admin-card" style={{ marginTop: '2rem' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+                    Leituras de fatura com IA por dia
+                </h2>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
+                    Quantas faturas cada conta pode enviar para a IA ler a cada 24 horas. Cada leitura tem custo na IA.
+                    Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
+                    Para ligar ou desligar a leitura em um plano, use <strong style={{ color: '#93c5fd' }}>Leitura de faturas com IA</strong> na tabela acima.
+                </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {plans.map(plan => {
+                    const enabled = !!plan.features?.upload_faturas
+                    const value = limits[plan.id] ?? INVOICE_UPLOAD_LIMIT_DEFAULT
+                    return (
+                        <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div>
+                                <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
+                                <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
+                                    {String(value) === '0' ? 'Ilimitado' : `Até ${value} leitura(s) a cada 24 horas`}
+                                    {!enabled && ' · leitura de faturas desligada neste plano'}
+                                </p>
+                            </div>
+                            <input
+                                type="number"
+                                min="0"
+                                value={value}
+                                onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
+                                aria-label={`Leituras de fatura por dia no plano ${plan.name}`}
+                                style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
+                            />
+                        </div>
+                    )
+                })}
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
+                    {status && (
+                        <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>
+                    )}
                     <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
                         {saving ? 'Salvando...' : 'Salvar Limites'}
                     </button>
