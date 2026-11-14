@@ -243,7 +243,9 @@ export default function InvoiceUpload() {
     const selectedItems = items.filter(i => selected.has(i.id))
     const selectedTotal = selectedItems.reduce((s, i) => s + (Number(i.amount) || 0), 0)
     const printedTotal = Number(review?.metadata?.totalAmount) || 0
-    const totalDiff = printedTotal > 0 ? Math.round((selectedTotal - printedTotal) * 100) / 100 : null
+    // As já lançadas (desmarcadas) também contam para bater com o total impresso
+    const launchedTotal = items.filter(i => i.alreadyInInvoice && !selected.has(i.id)).reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    const totalDiff = printedTotal > 0 ? Math.round((selectedTotal + launchedTotal - printedTotal) * 100) / 100 : null
     const repeatedCount = items.filter(i => i.alreadyInInvoice).length
     const toCheck = items.filter(i => Number(i.aiConfidence) > 0 && Number(i.aiConfidence) < REVIEW_BELOW).length
     // Aviso de outro cartão só quando o final deste cartão não aparece em nenhum cartão da fatura (titular ou adicional)
@@ -458,7 +460,7 @@ export default function InvoiceUpload() {
                                 label="Soma das marcadas"
                                 value={brl(selectedTotal)}
                                 tone={totalDiff === null || Math.abs(totalDiff) < 0.05 ? '' : 'warn'}
-                                note={totalDiff === null ? `${plural(selectedItems.length, 'compra', 'compras')}` : Math.abs(totalDiff) < 0.05 ? 'bate com o total da fatura' : `${brl(Math.abs(totalDiff))} ${totalDiff > 0 ? 'a mais' : 'a menos'} que a fatura`}
+                                note={totalDiff === null ? `${plural(selectedItems.length, 'compra', 'compras')}` : Math.abs(totalDiff) < 0.05 ? (launchedTotal ? 'com as já lançadas, bate com a fatura' : 'bate com o total da fatura') : `${brl(Math.abs(totalDiff))} ${totalDiff > 0 ? 'a mais' : 'a menos'} que a fatura`}
                             />
                             <Stat
                                 icon={CalendarClock}
