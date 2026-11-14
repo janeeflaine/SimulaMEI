@@ -985,13 +985,25 @@ router.post('/business-units', authMiddleware, checkWalletLimit, async (req, res
     const { data, error } = walletDataOf(req.body)
     if (error) return res.status(400).json({ message: error })
     try {
-        const { rows: [newUnit] } = await db.query(
-            `INSERT INTO business_units ("ownerId", name, account_type, cnpj, logo_url, "isPrimary")
-             VALUES ($1, $2, $3, $4, $5,
-                     NOT EXISTS (SELECT 1 FROM business_units WHERE "ownerId" = $1))
-             RETURNING *`,
-            [req.user.id, data.name, data.account_type, data.cnpj, data.logo_url]
-        )
+        const params = [req.user.id, data.name, data.account_type, data.cnpj, data.logo_url]
+        let newUnit
+        try {
+            ({ rows: [newUnit] } = await db.query(
+                `INSERT INTO business_units ("ownerId", name, account_type, cnpj, logo_url, "isPrimary")
+                 VALUES ($1, $2, $3, $4, $5,
+                         NOT EXISTS (SELECT 1 FROM business_units WHERE "ownerId" = $1))
+                 RETURNING *`,
+                params
+            ))
+        } catch (err) {
+            // Duas "primeiras carteiras" ao mesmo tempo: o índice único recusa a segunda principal
+            if (err.code !== '23505') throw err
+            ;({ rows: [newUnit] } = await db.query(
+                `INSERT INTO business_units ("ownerId", name, account_type, cnpj, logo_url, "isPrimary")
+                 VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING *`,
+                params
+            ))
+        }
         res.json(newUnit)
     } catch (err) {
         console.error('ERRO AO CRIAR CARTEIRA:', err)
@@ -1050,6 +1062,41 @@ router.put('/business-units/:id', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error(err)
         res.status(500).json({ message: 'Erro ao atualizar carteira' })
+    }
+})
+
+// Tornar principal: tira a marca da principal atual e põe nesta, numa transação
+// (o índice único do banco não deixa ficarem duas).
+router.patch('/business-units/:id/primary', authMiddleware, async (req, res) => {
+    const id = walletIdOf(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Carteira não encontrada' })
+    const client = await pool.connect()
+    try {
+        await client.query('BEGIN')
+        const { rows: [wallet] } = await client.query(
+            'SELECT id FROM business_units WHERE id = $1 AND "ownerId" = $2 FOR UPDATE',
+            [id, req.user.id]
+        )
+        if (!wallet) {
+            await client.query('ROLLBACK')
+            return res.status(404).json({ message: 'Carteira não encontrada' })
+        }
+        await client.query(
+            'UPDATE business_units SET "isPrimary" = FALSE WHERE "ownerId" = $1 AND "isPrimary" = TRUE AND id <> $2',
+            [req.user.id, id]
+        )
+        const { rows: [updated] } = await client.query(
+            'UPDATE business_units SET "isPrimary" = TRUE WHERE id = $1 AND "ownerId" = $2 RETURNING *',
+            [id, req.user.id]
+        )
+        await client.query('COMMIT')
+        res.json(updated)
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {})
+        console.error(err)
+        res.status(500).json({ message: 'Não deu para trocar a carteira principal. Nada foi alterado; tente de novo.' })
+    } finally {
+        client.release()
     }
 })
 

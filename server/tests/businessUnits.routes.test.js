@@ -4,7 +4,8 @@
  * lançamento órfão nem apaga a carteira principal.
  */
 const mockDb = { query: jest.fn() }
-const mockPool = { query: jest.fn() }
+const mockClient = { query: jest.fn(), release: jest.fn() }
+const mockPool = { query: jest.fn(), connect: jest.fn(async () => mockClient) }
 jest.mock('../db', () => ({ db: mockDb, pool: mockPool }))
 jest.mock('../middleware/auth', () => ({
     authMiddleware: (req, res, next) => { req.user = { id: 1, role: 'USER', planId: 2, isInTrial: false }; next() }
@@ -40,6 +41,7 @@ beforeEach(() => {
     const handler = async (rawSql, params = []) => {
         const q = norm(rawSql)
         sql.push({ q, params })
+        if (q.startsWith('INSERT INTO business_units') && state.raceOnce && params.length === 5 && q.includes('NOT EXISTS')) { state.raceOnce = false; const e = new Error('dup'); e.code = '23505'; throw e }
         if (q.startsWith('SELECT value FROM system_settings')) {
             const key = params[0]
             const v = key.startsWith('wallet_pf') ? state.limits.pf : key.startsWith('wallet_pj') ? state.limits.pj : state.limits.total
@@ -51,6 +53,9 @@ beforeEach(() => {
         if (q.startsWith('SELECT * FROM business_units WHERE id = $1')) return { rows: state.exists ? [state.current] : [] }
         if (q.startsWith('SELECT id, "isPrimary" FROM business_units')) return { rows: state.exists ? [{ id: state.current.id, isPrimary: state.current.isPrimary }] : [] }
         if (q.startsWith('SELECT (SELECT COUNT(*) FROM finance_transactions')) return { rows: [state.usage] }
+        if (q.startsWith('SELECT id FROM business_units WHERE id = $1 AND "ownerId" = $2 FOR UPDATE')) return { rows: state.exists ? [{ id: state.current.id }] : [] }
+        if (q.startsWith('UPDATE business_units SET "isPrimary" = TRUE')) return { rows: [{ ...state.current, isPrimary: true }] }
+        if (q.startsWith('UPDATE business_units SET "isPrimary" = FALSE')) return { rows: [], rowCount: 1 }
         if (q.startsWith('UPDATE business_units')) return { rows: [{ id: params[4], name: params[0], account_type: params[1], cnpj: params[2], logo_url: params[3] }] }
         if (q.startsWith('DELETE FROM business_units')) return { rowCount: state.deleted }
         if (q.startsWith('SELECT b.*')) return { rows: [{ id: 4, transactionsCount: 3, cardsCount: 1 }] }
@@ -58,6 +63,7 @@ beforeEach(() => {
     }
     mockDb.query.mockImplementation(handler)
     mockPool.query.mockImplementation(handler)
+    mockClient.query.mockImplementation(handler)
     jest.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => console.error.mockRestore())
@@ -233,6 +239,48 @@ describe('Excluir carteira', () => {
         expect((await request(app).delete('/api/finance/business-units/4')).status).toBe(404)
         expect((await request(app).delete('/api/finance/business-units/1.5')).status).toBe(404)
         expect(ran('DELETE FROM business_units')).toHaveLength(0)
+    })
+})
+
+describe('Tornar principal', () => {
+    test('tira a marca da atual e põe nesta, numa transação', async () => {
+        const res = await request(app).patch('/api/finance/business-units/4/primary')
+        expect(res.status).toBe(200)
+        expect(res.body.isPrimary).toBe(true)
+        const order = sql.map(s => s.q.split(' ').slice(0, 4).join(' '))
+        const unset = sql.findIndex(s => s.q.startsWith('UPDATE business_units SET "isPrimary" = FALSE'))
+        const set = sql.findIndex(s => s.q.startsWith('UPDATE business_units SET "isPrimary" = TRUE'))
+        expect(order[0]).toBe('BEGIN')
+        expect(unset).toBeGreaterThan(-1)
+        expect(set).toBeGreaterThan(unset) // primeiro tira, senão o índice único recusa
+        expect(sql[unset].params).toEqual([1, 4])
+        expect(order[order.length - 1]).toBe('COMMIT')
+        expect(mockClient.release).toHaveBeenCalled()
+    })
+
+    test('carteira de outra pessoa ou id inválido: 404 sem mudar nada', async () => {
+        state.exists = false
+        expect((await request(app).patch('/api/finance/business-units/4/primary')).status).toBe(404)
+        expect((await request(app).patch('/api/finance/business-units/x/primary')).status).toBe(404)
+        expect(ran('UPDATE business_units')).toHaveLength(0)
+    })
+
+    test('erro no meio desfaz tudo', async () => {
+        mockClient.query.mockImplementation(async (q) => { if (/SET "isPrimary" = TRUE/.test(q)) throw new Error('falhou'); return { rows: [{ id: 4 }] } })
+        const res = await request(app).patch('/api/finance/business-units/4/primary')
+        expect(res.status).toBe(500)
+        expect(mockClient.query.mock.calls.map(c => c[0])).toContain('ROLLBACK')
+    })
+})
+
+describe('Criar carteira ao mesmo tempo', () => {
+    test('se o banco recusar a segunda principal, a carteira entra sem ser principal', async () => {
+        state.raceOnce = true
+        const res = await request(app).post('/api/finance/business-units').send({ name: 'Casa', account_type: 'PF' })
+        expect(res.status).toBe(200)
+        const inserts = ran('INSERT INTO business_units')
+        expect(inserts).toHaveLength(2)
+        expect(inserts[1].q).toContain('$5, FALSE)')
     })
 })
 

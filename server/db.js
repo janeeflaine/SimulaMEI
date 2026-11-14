@@ -415,6 +415,35 @@ const init = async () => {
       console.log('Migration note (finance):', migErr.message)
     }
 
+    // Carteira principal: uma por pessoa, a mais antiga quando ninguém escolheu.
+    // Nenhuma tela marcava carteira como principal e a edição antiga gravava null,
+    // então a maioria das contas não tinha nenhuma. Roda a cada início sem mudar nada
+    // em quem já está certo; o índice único impede duas principais na mesma pessoa.
+    try {
+      await pool.query('UPDATE business_units SET "isPrimary" = FALSE WHERE "isPrimary" IS NULL')
+      await pool.query(`
+        UPDATE business_units SET "isPrimary" = FALSE
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY "ownerId" ORDER BY "createdAt" ASC NULLS LAST, id ASC) AS rn
+            FROM business_units WHERE "isPrimary" = TRUE
+          ) dup WHERE dup.rn > 1
+        )
+      `)
+      await pool.query(`
+        UPDATE business_units SET "isPrimary" = TRUE
+        WHERE id IN (
+          SELECT DISTINCT ON (b."ownerId") b.id
+          FROM business_units b
+          WHERE NOT EXISTS (SELECT 1 FROM business_units p WHERE p."ownerId" = b."ownerId" AND p."isPrimary" = TRUE)
+          ORDER BY b."ownerId", b."createdAt" ASC NULLS LAST, b.id ASC
+        )
+      `)
+      await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS business_units_one_primary ON business_units ("ownerId") WHERE "isPrimary" = TRUE')
+    } catch (primaryErr) {
+      console.log('Migration note (carteira principal):', primaryErr.message)
+    }
+
     // Fix Date Offset Bug (Phase 23) - Migrate TIMESTAMP to DATE
     try {
       console.log('🔄 Migrating TIMESTAMP columns to DATE...')
