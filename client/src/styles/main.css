@@ -889,3 +889,52 @@ img {
   color: var(--color-text-muted);
   border-left: 4px solid var(--color-warning);
 }
+
+/* Aviso flutuante (utils/toast.js): embaixo, no meio, por cima das janelas */
+.global-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #12284a;
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: 0 16px 40px -12px rgba(12, 28, 54, 0.45);
+  opacity: 0;
+  transform: translate(-50%, 12px);
+  transition: opacity 200ms ease, transform 200ms ease;
+  pointer-events: none;
+}
+
+.global-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.global-toast + .global-toast {
+  bottom: calc(80px + env(safe-area-inset-bottom));
+}
+
+.global-toast.toast-error {
+  background: #b91c1c;
+}
+
+.global-toast .toast-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-toast {
+    transition: none;
+  }
+}

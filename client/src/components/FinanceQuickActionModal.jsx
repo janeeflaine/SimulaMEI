@@ -59,6 +59,11 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
     const [savingWallet, setSavingWallet] = useState(false)
     const [justCreatedWalletId, setJustCreatedWalletId] = useState(null)
     const [formError, setFormError] = useState('')
+    const formErrorRef = useRef(null)
+    // Erro aparece onde o olho está (no celular a janela rola)
+    useEffect(() => {
+        if (formError) formErrorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, [formError])
 
     // Sempre a partir do valor mais recente do formulário: criar categoria/cartão
     // é assíncrono e, sem isso, a resposta podia apagar o que foi escolhido nesse meio-tempo
@@ -333,6 +338,10 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                 : 'Escolha o cartão.')
             return
         }
+        // Conferido aqui, com a mensagem na janela (o aviso do navegador às vezes não aparece)
+        if (!(Number(formData.amount) > 0)) { setFormError('Informe o valor, maior que zero.'); return }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(formData.date || '')) { setFormError('Informe a data.'); return }
+        if (formData.paymentMethod === 'Boleto' && !formData.dueDate) { setFormError('Informe a data de vencimento do boleto.'); return }
         setFormError('')
         setLoading(true)
         try {
@@ -370,12 +379,15 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                     })
                 }
             } else {
-                const data = await res.json()
-                showToast(`Erro: ${data.message || 'Falha ao processar'}`, 'error')
+                // O motivo do servidor aparece na própria janela (antes só num aviso que não aparecia)
+                const data = await res.json().catch(() => ({}))
+                const message = data.message || 'Não deu para salvar. Tente de novo em instantes.'
+                setFormError(message)
+                showToast(message, 'error')
             }
         } catch (err) {
             console.error(err)
-            showToast('Erro de conexão ao processar transação.', 'error')
+            setFormError('Sem conexão. Nada foi salvo; confira a internet e tente de novo.')
         } finally {
             setLoading(false)
         }
@@ -589,7 +601,7 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                     : formData.type === 'RECEITA' ? 'Salvar receita' : 'Salvar despesa'
 
                 return (
-                    <form onSubmit={handleSubmit}>
+                    <form onSubmit={handleSubmit} noValidate>
                         <h2 id="nl-title" className="cd-title">{title}</h2>
 
                         <div className="nl-grid">
@@ -740,7 +752,7 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                         </div>
 
                         {formError && (
-                            <div className="nl-notice" role="alert">
+                            <div className="nl-notice" role="alert" ref={formErrorRef}>
                                 <span>{formError}</span>
                             </div>
                         )}
