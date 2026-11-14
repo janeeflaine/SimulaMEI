@@ -55,6 +55,7 @@ const planWith = (plans, feature, fallback) => {
     return found?.name || fallback
 }
 
+const NEW_CATEGORY = '__nova__'
 const emptyForm = { description: '', amount: '', refund: false, transactionDate: '', category: '', month: '' }
 
 export default function CardDashboard() {
@@ -345,6 +346,8 @@ export default function CardDashboard() {
                 options: cardCategories.map(c => ({ value: `id:${c.id}`, label: c.name }))
             })
         }
+        // No fim da lista, para achar sem procurar o link embaixo do campo
+        options.push({ value: NEW_CATEGORY, label: '+ Criar categoria nova' })
         return options
     }, [cardCategories, form, card?.walletType])
 
@@ -991,10 +994,10 @@ export default function CardDashboard() {
 
                         <div className="cc-field">
                             <label htmlFor="pc-category">Categoria</label>
-                            <Select id="pc-category" ariaLabel="Categoria" value={formData.category} onChange={v => setField('category', String(v))} options={categoryOptions} />
+                            <Select id="pc-category" ariaLabel="Categoria" value={formData.category} onChange={v => { if (v === NEW_CATEGORY) setNewCat(''); else setField('category', String(v)) }} options={categoryOptions} />
                             {newCat === null ? (
                                 <button type="button" className="pc-link pc-newcat-open" onClick={() => setNewCat('')}>
-                                    <Plus size={16} aria-hidden="true" /> Criar categoria
+                                    <Plus size={16} aria-hidden="true" /> Criar categoria nova
                                 </button>
                             ) : (
                                 <div className="pc-newcat">

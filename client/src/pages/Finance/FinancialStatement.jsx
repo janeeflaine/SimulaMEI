@@ -411,8 +411,12 @@ export default function FinancialStatement() {
 
     const shortDate = (dateString) => formatDate(dateString).slice(0, 5)
 
+    // Estorno de cartão: despesa com valor negativo, é dinheiro que voltou
+    const isRefund = (t) => t.type === 'DESPESA' && Number(t.amount) < 0
+
     function signedAmount(t) {
-        return `${t.type === 'RECEITA' ? '+' : '−'}\u00a0${formatCurrency(t.amount)}`
+        const back = t.type === 'RECEITA' || isRefund(t)
+        return `${back ? '+' : '−'}\u00a0${formatCurrency(Math.abs(Number(t.amount) || 0))}`
     }
 
     // ── Carteiras e filtros ──────────────────────────────────────────────
@@ -763,6 +767,7 @@ export default function FinancialStatement() {
                                                 <strong>
                                                     {title}
                                                     {isPending && <span className="ext-chip-status">Pendente</span>}
+                                                    {isRefund(t) && <span className="ext-chip-status ext-chip-status--refund">Estorno</span>}
                                                 </strong>
                                                 {category && <span className="ext-row__cat">{category}</span>}
                                                 {/* No celular: categoria · data · pagamento numa linha só */}
@@ -776,7 +781,7 @@ export default function FinancialStatement() {
                                                 {invoiceNote && <small>{invoiceNote}</small>}
                                             </div>
 
-                                            <span className={`ext-row__amount ${t.type === 'RECEITA' ? 'is-in' : isPending ? 'is-pending' : 'is-out'}`}>
+                                            <span className={`ext-row__amount ${t.type === 'RECEITA' || isRefund(t) ? 'is-in' : isPending ? 'is-pending' : 'is-out'}`}>
                                                 {signedAmount(t)}
                                             </span>
 
