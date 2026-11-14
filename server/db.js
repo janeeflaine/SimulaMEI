@@ -1,4 +1,5 @@
 const { Pool, types } = require('pg')
+const upgrades = require('./utils/schemaUpgrades')
 // Force pg to return DATE columns as strings (YYYY-MM-DD) instead of JS Date objects
 types.setTypeParser(1082, (stringValue) => stringValue)
 require('dotenv').config()
@@ -447,7 +448,7 @@ const init = async () => {
     // Alertas do MEI no WhatsApp: guarda a última ocasião enviada de cada alerta
     // (ex.: "D:2026-11-20" para o DAS que vence nesse dia) para não mandar de novo
     try {
-      await pool.query('ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS "lastSentKey" TEXT')
+      await upgrades.alertSentKey((sql, params) => pool.query(sql, params))
     } catch (alertMigErr) {
       console.log('Migration note (alertas no WhatsApp):', alertMigErr.message)
     }
@@ -458,28 +459,7 @@ const init = async () => {
     // Cada lado fica com o tipo da sua carteira (antes as duas pontas iam como do MEI).
     // Tudo idempotente: roda a cada início sem mexer no que já está certo.
     try {
-      await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "transferId" TEXT')
-      await pool.query('CREATE INDEX IF NOT EXISTS idx_finance_transactions_transfer ON finance_transactions ("transferId") WHERE "transferId" IS NOT NULL')
-      await pool.query(`
-        WITH pairs AS (
-          SELECT d.id AS out_id, r.id AS in_id
-          FROM finance_transactions d
-          JOIN finance_transactions r
-            ON r.id = d.id + 1 AND r."userId" = d."userId" AND r.amount = d.amount AND r.date = d.date
-           AND r.type = 'RECEITA' AND r."paymentMethod" = 'Transferência' AND r."transferId" IS NULL
-          WHERE d.type = 'DESPESA' AND d."paymentMethod" = 'Transferência' AND d."transferId" IS NULL
-        )
-        UPDATE finance_transactions t SET "transferId" = 'old-' || p.out_id
-        FROM pairs p WHERE t.id IN (p.out_id, p.in_id)
-      `)
-      await pool.query(`
-        UPDATE finance_transactions t
-        SET target = CASE b."account_type" WHEN 'PJ' THEN 'BUSINESS' ELSE 'PERSONAL' END
-        FROM business_units b
-        WHERE b.id = t."business_unit_id" AND b."ownerId" = t."userId"
-          AND t."paymentMethod" = 'Transferência'
-          AND t.target IS DISTINCT FROM (CASE b."account_type" WHEN 'PJ' THEN 'BUSINESS' ELSE 'PERSONAL' END)
-      `)
+      await upgrades.transferLinks((sql, params) => pool.query(sql, params))
     } catch (transferMigErr) {
       console.log('Migration note (transferências ligadas):', transferMigErr.message)
     }
@@ -560,8 +540,7 @@ const seedDefaults = async () => {
     // a partir de 2028). Linhas antigas, sem ano, ficam com o ano em que foram
     // gravadas; ano sem linha usa o valor da lei (utils/meiLimits.js).
     try {
-      await pool.query('ALTER TABLE mei_limits ADD COLUMN IF NOT EXISTS year INTEGER')
-      await pool.query(`UPDATE mei_limits SET year = EXTRACT(YEAR FROM COALESCE("updatedAt", NOW()) AT TIME ZONE 'America/Sao_Paulo')::int WHERE year IS NULL`)
+      await upgrades.meiLimitYear((sql, params) => pool.query(sql, params))
     } catch (limitYearErr) {
       console.log('Migration note (limite do MEI por ano):', limitYearErr.message)
     }
@@ -761,8 +740,22 @@ VALUES('Administrador', 'admin@eusempremei.com.br', $1, 'ADMIN')
   }
 }
 
+// Confere as colunas novas uma vez por servidor (antes do primeiro pedido) e cria
+// as que faltam: na Vercel o init roda sem ninguém esperar e pode não terminar.
+// Falhou: tenta de novo no próximo pedido.
+let schemaReady = null
+const ensureSchema = () => {
+  if (!schemaReady) {
+    schemaReady = upgrades.applyMissing((sql, params) => pool.query(sql, params))
+      .then(ran => { if (ran.length) console.log('Colunas novas criadas:', ran.join(', ')) })
+      .catch(err => { schemaReady = null; console.error('Não deu para conferir as colunas novas:', err.message) })
+  }
+  return schemaReady
+}
+
 module.exports = {
   db,
   init,
-  pool
+  pool,
+  ensureSchema
 }

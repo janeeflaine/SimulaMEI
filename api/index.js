@@ -2,7 +2,7 @@ const express = require('express')
 const cors = require('cors')
 require('dotenv').config()
 
-const { init } = require('../server/db')
+const { init, ensureSchema } = require('../server/db')
 
 // Initialize DB
 init()
@@ -40,6 +40,14 @@ app.post('/api/whatsapp/webhook', express.raw({ type: '*/*', limit: '1mb' }), wh
 
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))
+
+// Antes do primeiro pedido de cada servidor: colunas novas criadas (o init acima
+// roda solto e, na Vercel, pode não terminar). Depois disso não custa nada.
+// No máximo 8 s de espera: se o banco travar, o pedido segue e a conferência tenta de novo.
+app.use('/api', async (req, res, next) => {
+    await Promise.race([ensureSchema(), new Promise(r => setTimeout(r, 8000))]).catch(() => {})
+    next()
+})
 
 // Routes
 app.use('/api/settings', settingsRoutes)
