@@ -809,7 +809,7 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                 [req.user.id]
             )
             if ((count?.total || 0) >= dailyLimit) {
-                return res.status(429).json({ message: `Você já enviou ${dailyLimit} faturas nas últimas 24 horas. Tente de novo amanhã.` })
+                return res.status(429).json({ message: `Você chegou ao limite de ${dailyLimit} ${dailyLimit === 1 ? 'leitura de fatura' : 'leituras de fatura'} a cada 24 horas do seu plano. Tente de novo mais tarde.` })
             }
         }
 
