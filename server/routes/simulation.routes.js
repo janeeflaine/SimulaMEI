@@ -1,6 +1,6 @@
 const express = require('express')
 const { db } = require('../db')
-const { getMeiLimits } = require('../utils/meiLimits')
+const { getMeiLimits, currentYearBR } = require('../utils/meiLimits')
 const { authMiddleware, optionalAuth } = require('../middleware/auth')
 
 const router = express.Router()
@@ -119,6 +119,23 @@ router.post('/', optionalAuth, async (req, res) => {
 
 // Get user stats only (auth required) - Available for all plans
 // This route MUST come before '/' to avoid being caught by the general route
+// Limite do MEI do ano atual e do próximo, para a calculadora da página Início
+// (pública: só os valores do limite, nenhum dado de usuário)
+router.get('/limits', async (req, res) => {
+    try {
+        const year = currentYearBR()
+        const [current, next] = await Promise.all([getMeiLimits(year), getMeiLimits(year + 1)])
+        res.set('Cache-Control', 'public, max-age=600')
+        res.json({
+            current: { year, annualLimit: current.annualLimit },
+            next: { year: year + 1, annualLimit: next.annualLimit }
+        })
+    } catch (error) {
+        console.error('Limits error:', error)
+        res.status(500).json({ message: 'Erro ao buscar o limite do MEI' })
+    }
+})
+
 router.get('/stats', authMiddleware, async (req, res) => {
     try {
         const resultStats = await db.query(`

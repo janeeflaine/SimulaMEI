@@ -1,259 +1,222 @@
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
-    TrendingUp,
     Calculator,
-    ShieldCheck,
+    Wallet,
+    Receipt,
     CreditCard,
-    Bell,
-    PieChart,
-    Activity,
-    FileText,
-    Zap,
-    CheckCircle,
-    ArrowRight,
-    Star,
-    LayoutDashboard,
-    Wallet
+    BellRing,
+    MessageCircle,
+    ShieldCheck,
+    Check
 } from 'lucide-react'
-import {
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    PieChart as RePieChart,
-    Pie,
-    Cell
-} from 'recharts'
+import { useAuth } from '../context/AuthContext'
 import './Home.css'
 
-const demoData = [
-    { name: 'Jan', entrada: 4000, saida: 2400 },
-    { name: 'Fev', entrada: 3000, saida: 1398 },
-    { name: 'Mar', entrada: 2000, saida: 9800 },
-    { name: 'Abr', entrada: 2780, saida: 3908 },
-    { name: 'Mai', entrada: 1890, saida: 4800 },
-    { name: 'Jun', entrada: 2390, saida: 3800 },
-]
+// Limite do MEI por ano (LC 238/2026). O servidor manda o valor atual do admin;
+// estes ficam só enquanto ele não responde.
+const LAW = { 2026: 81000, 2027: 110000, 2028: 140000 }
+const lawLimit = (year) => (year >= 2028 ? LAW[2028] : year === 2027 ? LAW[2027] : LAW[2026])
+const thisYear = () => Number(new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 4))
 
-const pieData = [
-    { name: 'Operacional', value: 400 },
-    { name: 'Impostos', value: 300 },
-    { name: 'Pessoal', value: 300 },
-    { name: 'Marketing', value: 200 },
-]
+const brl = (v, cents = false) => (Number(v) || 0).toLocaleString('pt-BR', {
+    style: 'currency', currency: 'BRL', minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0
+})
+const thousand = (v) => `R$ ${(Number(v) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} mil`
+const parseMoney = (text) => {
+    let s = String(text ?? '').replace(/[R$\s]/g, '')
+    if (!s) return NaN
+    if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
+    else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
+    return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN
+}
 
-const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6']
+const FEATURES = [
+    { icon: Calculator, title: 'Simulador do MEI', text: 'Quanto vai pagar de DAS e quanto do limite anual o seu faturamento usa.' },
+    { icon: Wallet, title: 'Dinheiro do MEI separado do da casa', text: 'Carteiras do MEI e pessoais no mesmo Extrato, cada uma com o seu saldo.' },
+    { icon: Receipt, title: 'Contas a pagar', text: 'Boletos com vencimento, avisados no dia pelo WhatsApp.' },
+    { icon: CreditCard, title: 'Cartões e faturas', text: 'Compras do cartão por fatura. Mande o PDF e a IA lança as compras para você conferir.' },
+    { icon: BellRing, title: 'Alertas do MEI', text: 'Aviso quando o faturamento chega perto do limite, antes do DAS e na época da declaração anual.' },
+    { icon: MessageCircle, title: 'Assistente no WhatsApp', text: 'Escreva "gastei 45 no mercado" e o lançamento vai para o Extrato.' }
+]
 
 export default function Home() {
-    const navigate = useNavigate()
+    const { user } = useAuth()
+    const year = thisYear()
+    const [limits, setLimits] = useState({ current: lawLimit(year), next: lawLimit(year + 1) })
+    const [monthly, setMonthly] = useState('6.000')
+
+    useEffect(() => {
+        let alive = true
+        fetch('/api/simulate/limits')
+            .then(r => (r.ok ? r.json() : null))
+            .then(data => {
+                if (!alive || !data) return
+                const cur = Number(data.current?.annualLimit), nxt = Number(data.next?.annualLimit)
+                setLimits(l => ({ current: cur > 0 ? cur : l.current, next: nxt > 0 ? nxt : l.next }))
+            })
+            .catch(() => {})
+        return () => { alive = false }
+    }, [])
+
+    const value = parseMoney(monthly)
+    const calc = useMemo(() => {
+        if (!Number.isFinite(value) || value <= 0) return null
+        const annual = value * 12
+        const pct = (annual / limits.current) * 100
+        const pctNext = (annual / limits.next) * 100
+        return { annual, pct, pctNext, left: limits.current - annual }
+    }, [value, limits])
+    const pctText = (p) => `${p.toLocaleString('pt-BR', { maximumFractionDigits: p < 10 ? 1 : 0 })}%`
+    const status = !calc ? null : calc.pct > 100 ? 'over' : calc.pct >= 80 ? 'near' : 'ok'
+
+    const primary = user
+        ? { to: '/dashboard', label: 'Ir para o Painel' }
+        : { to: '/cadastro', label: 'Criar conta grátis' }
 
     return (
-        <div className="home-v2">
-            {/* 1. HERO SECTION */}
-            <section className="hero-v2">
-                <div className="hero-grid container">
-                    <div className="hero-text">
-                        <div className="badge-glow">🚀 O braço direito do MEI moderno</div>
-                        <h1>Evolua a Gestão do seu MEI para o <span>Nível Profissional</span></h1>
-                        <p>Diga adeus às planilhas confusas. O EuSempreMEI é a plataforma completa para você simular impostos, controlar finanças e nunca mais perder prazos.</p>
-                        <div className="hero-buttons">
-                            <button onClick={() => navigate('/planos')} className="btn-main">
-                                Começar Agora <ArrowRight size={20} />
-                            </button>
-                            <button onClick={() => navigate('/simular')} className="btn-outline-v2">
-                                Simular Grátis
-                            </button>
+        <div className="inicio">
+            {/* Topo: a pergunta que todo MEI faz, respondida na hora */}
+            <section className="ini-hero">
+                <div className="ini-wrap ini-hero__grid">
+                    <div className="ini-hero__text">
+                        <h1 className="ini-title">O seu MEI em dia, sem planilha.</h1>
+                        <p className="ini-lead">
+                            Simule o DAS e o limite do ano, separe o dinheiro do MEI do da casa e
+                            receba os vencimentos no WhatsApp.
+                        </p>
+                        <div className="ini-actions">
+                            <Link to={primary.to} className="ini-btn ini-btn--primary">{primary.label}</Link>
+                            <Link to="/simular" className="ini-btn">Abrir o Simulador</Link>
                         </div>
-                        <div className="hero-trust">
-                            <div className="trust-icons">
-                                <ShieldCheck size={18} /> <span>Dados protegidos (LGPD)</span>
-                                <Star size={18} /> <span>Feito para Microempreendedores</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="hero-visual">
-                        <div className="dashboard-preview-card">
-                            <div className="preview-header">
-                                <Activity size={20} /> Preview do Dashboard
-                            </div>
-                            <div className="preview-chart">
-                                <ResponsiveContainer width="100%" height={200}>
-                                    <AreaChart data={demoData}>
-                                        <defs>
-                                            <linearGradient id="colorEntrada" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                            </linearGradient>
-                                        </defs>
-                                        <Area type="monotone" dataKey="entrada" stroke="#10b981" fillOpacity={1} fill="url(#colorEntrada)" />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="preview-stats">
-                                <div className="p-stat"><span>Receita</span> <strong>+R$ 15.420</strong></div>
-                                <div className="p-stat"><span>Lucro</span> <strong className="text-emerald">↑ 12%</strong></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            {/* 2. FERRAMENTAS SECTION (THE MOST IMPORTANT PART) */}
-            <section className="tools-section container">
-                <div className="section-header-v2">
-                    <h2>Ferramentas Poderosas</h2>
-                    <p>Tudo o que você precisa para dominar seu CNPJ em um só lugar.</p>
-                </div>
-
-                <div className="tools-grid-v2">
-                    <div className="tool-card-v2 featured">
-                        <div className="tool-icon-v2"><Calculator size={32} /></div>
-                        <h3>Simulador de Impostos</h3>
-                        <p>Descubra exatamente quanto pagará de DAS e impostos excedentes com base no seu faturamento real.</p>
-                        <ul className="tool-features">
-                            <li><CheckCircle size={16} /> Limite de Faturamento</li>
-                            <li><CheckCircle size={16} /> Cálculo de Excesso</li>
-                            <li><CheckCircle size={16} /> Relatórios Exportáveis</li>
-                        </ul>
+                        {!user && <p className="ini-trust">
+                            <ShieldCheck size={16} aria-hidden="true" />
+                            Plano gratuito para começar. Seus dados ficam protegidos pela LGPD.
+                        </p>}
                     </div>
 
-                    <div className="tool-card-v2">
-                        <div className="tool-icon-v2"><Wallet size={32} /></div>
-                        <h3>Gestão Financeira</h3>
-                        <p>Controle entradas e saídas (PF e PJ) com separação inteligente para não misturar as contas.</p>
-                        <ul className="tool-features">
-                            <li><CheckCircle size={16} /> Fluxo de Caixa</li>
-                            <li><CheckCircle size={16} /> Categorias Inteligentes</li>
-                            <li><CheckCircle size={16} /> Extrato Detalhado</li>
-                        </ul>
-                    </div>
+                    <div className="ini-calc" aria-labelledby="ini-calc-title">
+                        <h2 id="ini-calc-title" className="ini-calc__title">Quanto do limite do MEI você usa?</h2>
+                        <label className="ini-calc__field">
+                            <span>O MEI recebe por mês</span>
+                            <span className="ini-calc__money">
+                                <b aria-hidden="true">R$</b>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    autoComplete="off"
+                                    value={monthly}
+                                    onChange={(e) => setMonthly(e.target.value.replace(/[^\d.,]/g, ''))}
+                                    aria-describedby="ini-calc-result"
+                                />
+                            </span>
+                        </label>
 
-                    <div className="tool-card-v2">
-                        <div className="tool-icon-v2"><Bell size={32} /></div>
-                        <h3>Alertas & Prazos</h3>
-                        <p>Nunca mais esqueça de pagar seu DAS ou de fazer sua declaração anual com nossos lembretes.</p>
-                        <ul className="tool-features">
-                            <li><CheckCircle size={16} /> Vencimento do DAS</li>
-                            <li><CheckCircle size={16} /> Alerta de Limite</li>
-                            <li><CheckCircle size={16} /> Notificações Dash</li>
-                        </ul>
-                    </div>
-
-                    <div className="tool-card-v2">
-                        <div className="tool-icon-v2"><CreditCard size={32} /></div>
-                        <h3>Gestão de Cartões</h3>
-                        <p>Cadastre seus cartões de crédito e veja o impacto das faturas no seu saldo mensal automaticamente.</p>
-                        <ul className="tool-features">
-                            <li><CheckCircle size={16} /> Cartões Visuais</li>
-                            <li><CheckCircle size={16} /> Controle de Faturas</li>
-                            <li><CheckCircle size={16} /> Lançamento Rápido</li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
-
-            {/* 3. PLANO OURO (HIGHLIGHTED) */}
-            <section className="gold-highlight">
-                <div className="container">
-                    <div className="gold-grid">
-                        <div className="gold-visual">
-                            <div className="chart-preview-v2">
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <RePieChart>
-                                        <Pie
-                                            data={pieData}
-                                            innerRadius={60}
-                                            outerRadius={80}
-                                            paddingAngle={5}
-                                            dataKey="value"
-                                        >
-                                            {pieData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip />
-                                    </RePieChart>
-                                </ResponsiveContainer>
-                                <div className="chart-overlay">
-                                    <span>Planilha do MEI</span>
-                                    <strong>PLATINA</strong>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="gold-content">
-                            <div className="gold-badge">💎 EXCLUSIVO OURO</div>
-                            <h2>A Visão Completa que faltava para o seu Negócio</h2>
-                            <p>Assinantes Ouro têm acesso a uma inteligência de dados que normalmente só grandes empresas possuem.</p>
-
-                            <div className="gold-perks">
-                                <div className="perk-item">
-                                    <PieChart size={24} />
-                                    <div>
-                                        <h4>Gráficos de Análise</h4>
-                                        <p>Visualize para onde vai cada centavo com gráficos de pizza e área dinâmicos.</p>
+                        <div id="ini-calc-result" className="ini-calc__result" aria-live="polite">
+                            {calc ? (
+                                <>
+                                    <p className="ini-calc__big">{pctText(calc.pct)}</p>
+                                    <p className="ini-calc__caption">
+                                        do limite de {year} ({thousand(limits.current)}), com {brl(calc.annual)} no ano
+                                    </p>
+                                    <div className="ini-bar" role="img" aria-label={`${pctText(calc.pct)} do limite de ${year}`}>
+                                        <i className={`is-${status}`} style={{ width: `${Math.min(100, calc.pct)}%` }} />
                                     </div>
-                                </div>
-                                <div className="perk-item">
-                                    <LayoutDashboard size={24} />
-                                    <div>
-                                        <h4>Dashboard Mestre</h4>
-                                        <p>Uma central de comando que resume toda a sua vida financeira em um clique.</p>
-                                    </div>
-                                </div>
-                                <div className="perk-item">
-                                    <FileText size={24} />
-                                    <div>
-                                        <h4>Exportação Completa</h4>
-                                        <p>PDFs profissionais para apresentar ao contador ou bancos.</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <button onClick={() => navigate('/planos')} className="btn-gold">
-                                Conhecer Plano Ouro
-                            </button>
+                                    <p className={`ini-calc__note is-${status}`}>
+                                        {Math.abs(calc.left) < 0.5
+                                            ? 'Bate exatamente no limite do ano.'
+                                            : status === 'over'
+                                            ? `Passa ${brl(-calc.left)} do limite: veja no Simulador o que acontece.`
+                                            : status === 'near'
+                                                ? `Perto do limite: sobram ${brl(calc.left)} até o fim do ano.`
+                                                : `Ainda cabem ${brl(calc.left)} no ano.`}
+                                    </p>
+                                    <p className="ini-calc__next">
+                                        Em {year + 1} o limite passa a {thousand(limits.next)}: o mesmo faturamento usaria {pctText(calc.pctNext)}.
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="ini-calc__caption">Digite quanto entra por mês, por exemplo 6.000.</p>
+                            )}
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* 4. PERSUASIVE / MEI FOCUS */}
-            <section className="persuasion-pills container">
-                <div className="section-header-v2">
-                    <h2>Por que o EuSempreMEI é essencial?</h2>
-                    <p>Feito por quem entende as dores de ser um MEI no Brasil.</p>
+            {/* O que o site faz (só o que existe) */}
+            <section className="ini-section" aria-labelledby="ini-features-title">
+                <div className="ini-wrap">
+                    <h2 id="ini-features-title" className="ini-h2">Tudo do MEI num lugar só</h2>
+                    <ul className="ini-features">
+                        {FEATURES.map(({ icon: Icon, title, text }) => (
+                            <li key={title} className="ini-feature">
+                                <span className="ini-feature__icon" aria-hidden="true"><Icon size={22} /></span>
+                                <h3>{title}</h3>
+                                <p>{text}</p>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
-                <div className="pills-grid">
-                    <div className="pill-card">
-                        <Zap size={28} />
-                        <h3>Decisões Rápidas</h3>
-                        <p>Saiba se pode faturar mais este mês sem desenquadrar do MEI.</p>
+            </section>
+
+            {/* WhatsApp: o jeito mais rápido de lançar */}
+            <section className="ini-section ini-section--paper" aria-labelledby="ini-wa-title">
+                <div className="ini-wrap ini-wa">
+                    <div className="ini-wa__text">
+                        <h2 id="ini-wa-title" className="ini-h2">Lance pelo WhatsApp, do jeito que você fala</h2>
+                        <p className="ini-lead ini-lead--sm">
+                            Vincule o seu número em Minha conta e mande mensagens como numa conversa.
+                            Antes de gravar, o assistente mostra o resumo para você confirmar.
+                        </p>
+                        <ul className="ini-checks">
+                            <li><Check size={18} aria-hidden="true" /> "vendi 120 de espetinho no pix"</li>
+                            <li><Check size={18} aria-hidden="true" /> "contas de hoje"</li>
+                            <li><Check size={18} aria-hidden="true" /> Lembrete das contas que vencem, às 8h</li>
+                        </ul>
                     </div>
-                    <div className="pill-card">
-                        <ShieldCheck size={28} />
-                        <h3>Sono Tranquilo</h3>
-                        <p>Prazos e impostos sob controle. Sem multas por esquecimento.</p>
-                    </div>
-                    <div className="pill-card">
-                        <TrendingUp size={28} />
-                        <h3>Mais Lucro</h3>
-                        <p>Ao entender suas despesas, você descobre onde pode economizar.</p>
+                    <div className="ini-chat" aria-hidden="true">
+                        <div className="ini-chat__head"><MessageCircle size={16} /> Eu Sempre MEI</div>
+                        <p className="ini-msg ini-msg--me">gastei 45 no mercado no pix</p>
+                        <div className="ini-msg ini-msg--bot">
+                            <strong>Confere?</strong>
+                            <span>Despesa de R$ 45,00</span>
+                            <span>Mercado, carteira Casa, Pix</span>
+                            <span className="ini-msg__btns"><em>Confirmar</em><em>Cancelar</em></span>
+                        </div>
+                        <p className="ini-msg ini-msg--me">Confirmar</p>
+                        <p className="ini-msg ini-msg--bot">Pronto, lançado no Extrato.</p>
                     </div>
                 </div>
             </section>
 
-            {/* 5. FINAL CTA */}
-            <section className="final-cta container">
-                <div className="final-cta-card">
-                    <h2>Não deixe sua gestão para amanhã.</h2>
-                    <p>Comece grátis e simplifique a rotina financeira do seu MEI em poucos minutos.</p>
-                    <button onClick={() => navigate('/cadastro')} className="btn-main-lg">
-                        Começar Agora - É Grátis
-                    </button>
+            {/* O limite mudou (LC 238/2026) */}
+            <section className="ini-section" aria-labelledby="ini-law-title">
+                <div className="ini-wrap">
+                    <h2 id="ini-law-title" className="ini-h2">O limite do MEI vai subir</h2>
+                    <p className="ini-lead ini-lead--sm">
+                        Pela Lei Complementar 238/2026, o teto de faturamento anual muda nos próximos anos.
+                        Os alertas e o Simulador já usam o limite de cada ano.
+                    </p>
+                    <ol className="ini-years">
+                        <li><span>até 2026</span><strong>R$ 81 mil</strong></li>
+                        <li><span>2027</span><strong>R$ 110 mil</strong></li>
+                        <li><span>a partir de 2028</span><strong>R$ 140 mil</strong><small>depende do orçamento</small></li>
+                    </ol>
                 </div>
             </section>
+
+            {!user && (
+            <section className="ini-section ini-section--last">
+                <div className="ini-wrap ini-end">
+                    <h2 className="ini-h2">Comece pelo plano gratuito</h2>
+                    <p className="ini-lead ini-lead--sm">Crie a conta, cadastre a carteira do MEI e lance a primeira venda. Na página de planos você vê o que cada um libera.</p>
+                    <div className="ini-actions ini-actions--center">
+                        <Link to={primary.to} className="ini-btn ini-btn--primary">{primary.label}</Link>
+                        <Link to="/planos" className="ini-btn">Comparar planos</Link>
+                    </div>
+                </div>
+            </section>
+            )}
         </div>
     )
 }
