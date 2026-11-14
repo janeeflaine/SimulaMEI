@@ -4,6 +4,7 @@ const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { validateWalletOwnership, validateReferenceOwnership } = require('../middleware/walletSecurity')
 const { calculateBillingDate } = require('../utils/billingDate')
+const { isValidCpf, isValidCnpj, formatCpf, formatCnpj } = require('../utils/brDocument')
 const { featureGuard } = require('../middleware/planGuard')
 const cartoesGuard = featureGuard('cartoes')
 const transferenciasGuard = featureGuard('transferencias', 2)
@@ -878,8 +879,95 @@ router.get('/stats/wallet-breakdown', authMiddleware, async (req, res) => {
 
 // --- BUSINESS UNITS (Wallets) ---
 
+const MAX_WALLET_NAME = 60
+const MAX_WALLET_LOGO_LENGTH = 3 * 1024 * 1024 // ~2 MB de imagem em base64
+const walletIdOf = categoryIdOf
+const walletLabel = (type) => (type === 'PJ' ? 'Pessoa Jurídica' : 'Pessoa Física')
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
+// Confere os dados da carteira. Na edição só confere o que veio; documento e
+// foto que já estavam gravados e não mudaram passam sem conferir de novo (dado
+// antigo não trava a troca do nome). Devolve { data } com os campos limpos ou { error }.
+const walletDataOf = (body = {}, current = null) => {
+    const data = {}
+
+    if (!current || body.name !== undefined) {
+        const name = typeof body.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : ''
+        if (!name) return { error: 'Escreva o nome da carteira.' }
+        if (name.length > MAX_WALLET_NAME) return { error: `O nome da carteira pode ter até ${MAX_WALLET_NAME} letras.` }
+        data.name = name
+    } else data.name = current.name
+
+    const type = body.account_type === undefined && current ? current.account_type : normalizeAccountType(body.account_type)
+    if (!WALLET_TYPES.includes(type)) return { error: 'Tipo de carteira inválido. Use PF ou PJ.' }
+    data.account_type = type
+
+    // Documento: opcional; CPF na PF e CNPJ (com números ou letras) na PJ
+    const doc = body.cnpj
+    if (doc === undefined && current) data.cnpj = current.cnpj
+    else if (doc === undefined || doc === null || doc === '' || (typeof doc === 'string' && !doc.trim())) data.cnpj = null
+    else if (typeof doc !== 'string' || doc.length > 30) return { error: type === 'PJ' ? 'CNPJ inválido.' : 'CPF inválido.' }
+    else if (current && doc === current.cnpj && type === current.account_type) data.cnpj = current.cnpj
+    else if (type === 'PF') {
+        if (!isValidCpf(doc)) return { error: 'CPF inválido. Confira os 11 números ou deixe em branco.' }
+        data.cnpj = formatCpf(doc)
+    } else {
+        if (!isValidCnpj(doc)) return { error: 'CNPJ inválido. Confira os 14 caracteres ou deixe em branco.' }
+        data.cnpj = formatCnpj(doc)
+    }
+
+    // Foto: imagem PNG/JPG/WebP/GIF em base64 de até 2 MB ou endereço https
+    const logo = body.photo_url
+    if (logo === undefined && current) data.logo_url = current.logo_url
+    else if (logo === undefined || logo === null || logo === '') data.logo_url = null
+    else if (current && logo === current.logo_url) data.logo_url = current.logo_url
+    else {
+        const ok = typeof logo === 'string'
+            && logo.length <= MAX_WALLET_LOGO_LENGTH
+            && (/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(logo)
+                || (logo.length <= 2048 && /^https:\/\/[^\s"'()\\<>]+$/.test(logo)))
+        if (!ok) return { error: 'Foto inválida ou grande demais. Use PNG, JPG ou WebP de até 2 MB.' }
+        data.logo_url = logo
+    }
+
+    return { data }
+}
+
+// Quantos lançamentos e cartões usam a carteira
+const walletUsage = async (q, walletId, userId) => {
+    const { rows: [row] } = await q.query(
+        `SELECT (SELECT COUNT(*) FROM finance_transactions WHERE business_unit_id = $1 AND "userId" = $2)::int AS transactions,
+                (SELECT COUNT(*) FROM credit_cards WHERE business_unit_id = $1 AND "userId" = $2)::int AS cards`,
+        [walletId, userId]
+    )
+    return { transactions: Number(row?.transactions) || 0, cards: Number(row?.cards) || 0 }
+}
+
+const usageText = ({ transactions, cards }) => [
+    transactions ? plural(transactions, 'lançamento', 'lançamentos') : null,
+    cards ? plural(cards, 'cartão', 'cartões') : null
+].filter(Boolean).join(' e ')
+
+// Lista as carteiras (principal primeiro). Com ?uso=1, traz quantos lançamentos e
+// cartões cada uma tem (a página Carteiras trava o tipo e explica a exclusão).
 router.get('/business-units', authMiddleware, async (req, res) => {
     try {
+        if (req.query.uso === '1') {
+            const { rows } = await db.query(
+                `SELECT b.*,
+                        COALESCE(t.count, 0)::int AS "transactionsCount",
+                        COALESCE(c.count, 0)::int AS "cardsCount"
+                 FROM business_units b
+                 LEFT JOIN (SELECT business_unit_id, COUNT(*) AS count FROM finance_transactions
+                            WHERE "userId" = $1 GROUP BY business_unit_id) t ON t.business_unit_id = b.id
+                 LEFT JOIN (SELECT business_unit_id, COUNT(*) AS count FROM credit_cards
+                            WHERE "userId" = $1 GROUP BY business_unit_id) c ON c.business_unit_id = b.id
+                 WHERE b."ownerId" = $1
+                 ORDER BY b."isPrimary" DESC, b.name ASC`,
+                [req.user.id]
+            )
+            return res.json(rows)
+        }
         const { rows } = await db.query(
             'SELECT * FROM business_units WHERE "ownerId" = $1 ORDER BY "isPrimary" DESC, name ASC',
             [req.user.id]
@@ -891,39 +979,23 @@ router.get('/business-units', authMiddleware, async (req, res) => {
     }
 })
 
+// Criar: a carteira principal é decidida aqui (só a primeira carteira da pessoa vira
+// principal; quem já tem carteiras não ganha principal nova), nunca pelo navegador.
 router.post('/business-units', authMiddleware, checkWalletLimit, async (req, res) => {
-    // Recebe os dados do Frontend
-    const { name, account_type, cnpj, photo_url, isPrimary } = req.body
-
+    const { data, error } = walletDataOf(req.body)
+    if (error) return res.status(400).json({ message: error })
     try {
-        // CORREÇÃO: 
-        // 1. Mudamos "userId" para "ownerId" (para bater com seu banco)
-        // 2. Mudamos "photo_url" para "logo_url" (se sua coluna no banco for logo_url)
-
-        const accountType = normalizeAccountType(account_type)
-        if (!WALLET_TYPES.includes(accountType)) {
-            return res.status(400).json({ message: 'Tipo de carteira inválido. Use PF ou PJ.' })
-        }
-
         const { rows: [newUnit] } = await db.query(
-            `INSERT INTO business_units 
-            ("ownerId", name, account_type, cnpj, logo_url, "isPrimary") 
-            VALUES ($1, $2, $3, $4, $5, $6) 
-            RETURNING *`,
-            [
-                req.user.id,        // $1: Vai para ownerId
-                name,               // $2: Vai para name
-                accountType,        // $3: Vai para account_type
-                cnpj,               // $4: Vai para cnpj
-                photo_url,          // $5: Salva em logo_url
-                isPrimary || false  // $6: isPrimary
-            ]
+            `INSERT INTO business_units ("ownerId", name, account_type, cnpj, logo_url, "isPrimary")
+             VALUES ($1, $2, $3, $4, $5,
+                     NOT EXISTS (SELECT 1 FROM business_units WHERE "ownerId" = $1))
+             RETURNING *`,
+            [req.user.id, data.name, data.account_type, data.cnpj, data.logo_url]
         )
         res.json(newUnit)
-
     } catch (err) {
-        console.error("ERRO AO CRIAR CARTEIRA:", err)
-        res.status(500).json({ message: 'Erro ao criar carteira. Verifique o console do servidor.' })
+        console.error('ERRO AO CRIAR CARTEIRA:', err)
+        res.status(500).json({ message: 'Não deu para criar a carteira. Tente de novo.' })
     }
 })
 
@@ -939,31 +1011,39 @@ const walletTypeChangeBlocked = async (user, newType) => {
         [user.id, newType]
     )
     if (parseInt(row?.count || 0) < limit) return null
-    const label = newType === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'
-    return `Seu plano permite no máximo ${limit} carteira${limit > 1 ? 's' : ''} ${label}. Faça upgrade para adicionar mais.`
+    return `Seu plano permite no máximo ${limit} carteira${limit > 1 ? 's' : ''} ${walletLabel(newType)}. Faça upgrade para adicionar mais.`
 }
 
+// Editar: o que não veio fica como está; "isPrimary" do navegador é ignorado.
 router.put('/business-units/:id', authMiddleware, async (req, res) => {
-    const { name, account_type, cnpj, photo_url, isPrimary } = req.body
+    const id = walletIdOf(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Carteira não encontrada' })
     try {
         const { rows: [current] } = await db.query(
-            'SELECT account_type FROM business_units WHERE id = $1 AND "ownerId" = $2',
-            [req.params.id, req.user.id]
+            'SELECT * FROM business_units WHERE id = $1 AND "ownerId" = $2',
+            [id, req.user.id]
         )
         if (!current) return res.status(404).json({ message: 'Carteira não encontrada' })
 
-        const accountType = account_type === undefined ? current.account_type : normalizeAccountType(account_type)
-        if (!WALLET_TYPES.includes(accountType)) {
-            return res.status(400).json({ message: 'Tipo de carteira inválido. Use PF ou PJ.' })
-        }
-        if (accountType !== current.account_type) {
-            const blocked = await walletTypeChangeBlocked(req.user, accountType)
+        const { data, error } = walletDataOf(req.body, current)
+        if (error) return res.status(400).json({ message: error })
+
+        if (data.account_type !== current.account_type) {
+            // Lançamentos e cartões ficariam com o tipo errado (despesa do MEI numa carteira pessoal)
+            const usage = await walletUsage(db, id, req.user.id)
+            if (usage.transactions || usage.cards) {
+                return res.status(409).json({
+                    message: `Essa carteira já tem ${usageText(usage)}, então o tipo não pode mudar. Crie uma carteira nova de ${walletLabel(data.account_type)}.`,
+                    usage
+                })
+            }
+            const blocked = await walletTypeChangeBlocked(req.user, data.account_type)
             if (blocked) return res.status(403).json({ message: blocked })
         }
 
         const { rows: [updated] } = await db.query(
-            'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "logo_url" = $4, "isPrimary" = $5 WHERE id = $6 AND "ownerId" = $7 RETURNING *',
-            [name, accountType, cnpj, photo_url, isPrimary, req.params.id, req.user.id]
+            'UPDATE business_units SET name = $1, "account_type" = $2, cnpj = $3, "logo_url" = $4 WHERE id = $5 AND "ownerId" = $6 RETURNING *',
+            [data.name, data.account_type, data.cnpj, data.logo_url, id, req.user.id]
         )
         if (!updated) return res.status(404).json({ message: 'Carteira não encontrada' })
         res.json(updated)
@@ -973,9 +1053,37 @@ router.put('/business-units/:id', authMiddleware, async (req, res) => {
     }
 })
 
+// Excluir: a principal não sai, e carteira com lançamentos ou cartões também não
+// (antes saía e deixava os lançamentos apontando para uma carteira que não existe).
 router.delete('/business-units/:id', authMiddleware, async (req, res) => {
+    const id = walletIdOf(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Carteira não encontrada' })
     try {
-        await db.query('DELETE FROM business_units WHERE id = $1 AND "ownerId" = $2', [req.params.id, req.user.id])
+        const { rows: [wallet] } = await db.query(
+            'SELECT id, "isPrimary" FROM business_units WHERE id = $1 AND "ownerId" = $2',
+            [id, req.user.id]
+        )
+        if (!wallet) return res.status(404).json({ message: 'Carteira não encontrada' })
+        if (wallet.isPrimary) {
+            return res.status(409).json({ message: 'A carteira principal não pode ser excluída.', reason: 'primary' })
+        }
+        const usage = await walletUsage(db, id, req.user.id)
+        if (usage.transactions || usage.cards) {
+            return res.status(409).json({
+                message: `Essa carteira tem ${usageText(usage)}. Mova ou exclua esses itens antes de excluir a carteira.`,
+                reason: 'in_use',
+                usage
+            })
+        }
+        // Confere de novo na mesma instrução, caso algo tenha entrado entre a conta e a exclusão
+        const { rowCount } = await db.query(
+            `DELETE FROM business_units b
+             WHERE b.id = $1 AND b."ownerId" = $2 AND b."isPrimary" IS NOT TRUE
+               AND NOT EXISTS (SELECT 1 FROM finance_transactions t WHERE t.business_unit_id = b.id AND t."userId" = $2)
+               AND NOT EXISTS (SELECT 1 FROM credit_cards c WHERE c.business_unit_id = b.id AND c."userId" = $2)`,
+            [id, req.user.id]
+        )
+        if (!rowCount) return res.status(409).json({ message: 'A carteira mudou enquanto você excluía. Atualize a página e tente de novo.', reason: 'changed' })
         res.json({ message: 'Carteira excluída' })
     } catch (err) {
         console.error(err)

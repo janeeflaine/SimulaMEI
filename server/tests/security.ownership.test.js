@@ -56,7 +56,7 @@ function route(sql, params = []) {
         const value = settings[params[0]]
         return { rows: value === undefined ? [] : [{ value }] }
     }
-    if (q.startsWith('SELECT account_type FROM business_units WHERE id = $1 AND "ownerId" = $2')) {
+    if (q.startsWith('SELECT * FROM business_units WHERE id = $1 AND "ownerId" = $2')) {
         return { rows: DATA.business_units.filter(b => b.id === Number(params[0]) && b.ownerId === params[1]) }
     }
     if (q.startsWith('SELECT COUNT(*) as count FROM business_units WHERE "ownerId" = $1 AND account_type = $2')) {
