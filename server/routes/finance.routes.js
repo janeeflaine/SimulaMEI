@@ -142,8 +142,58 @@ const freeHistoryStart = (user, now = new Date()) => {
 
 // --- CATEGORIES ---
 
+const CATEGORY_TYPES = ['RECEITA', 'DESPESA_MEI', 'DESPESA_PESSOAL']
+const MAX_CATEGORY_NAME = 60
+const categoryIdOf = (v) => {
+    const n = Number(v)
+    return Number.isInteger(n) && n > 0 && n <= 2147483647 ? n : null
+}
+// Confere nome e tipo. Devolve { name, type } limpos ou { error }
+const categoryDataOf = (body = {}) => {
+    const name = typeof body.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : ''
+    if (!name) return { error: 'Escreva o nome da categoria.' }
+    if (name.length > MAX_CATEGORY_NAME) return { error: `O nome pode ter até ${MAX_CATEGORY_NAME} letras.` }
+    if (!CATEGORY_TYPES.includes(body.type)) return { error: 'Escolha se a categoria é de receita, despesa do MEI ou despesa pessoal.' }
+    return { name, type: body.type }
+}
+
+// Lista as categorias. Com ?uso=1, traz quantos lançamentos e compras de cartão usam
+// cada uma e quanto somaram no ano (para a página Categorias).
 router.get('/categories', authMiddleware, async (req, res) => {
     try {
+        if (req.query.uso === '1') {
+            const year = new Date().getFullYear()
+            const { rows } = await db.query(
+                `SELECT c.*,
+                        COALESCE(t.count, 0)::int AS "transactionsCount",
+                        COALESCE(t.year_total, 0)::float AS "yearTotal",
+                        COALESCE(i.count, 0)::int AS "invoiceItemsCount"
+                 FROM finance_categories c
+                 LEFT JOIN (
+                     SELECT "categoryId", COUNT(*) AS count,
+                            SUM(CASE WHEN EXTRACT(YEAR FROM date) = $2 THEN amount ELSE 0 END) AS year_total
+                     FROM finance_transactions WHERE "userId" = $1 GROUP BY "categoryId"
+                 ) t ON t."categoryId" = c.id
+                 LEFT JOIN (
+                     -- Compras de cartão que ainda não estão no Extrato (as que estão já contam acima)
+                     SELECT ii."categoryId", COUNT(*) AS count
+                     FROM invoice_items ii
+                     WHERE ii."userId" = $1
+                       AND NOT EXISTS (SELECT 1 FROM finance_transactions ft WHERE ft.invoice_item_id = ii.id)
+                     GROUP BY ii."categoryId"
+                 ) i ON i."categoryId" = c.id
+                 WHERE c."userId" = $1
+                 ORDER BY c.name ASC`,
+                [req.user.id, year]
+            )
+            const { rows: [none] } = await db.query(
+                `SELECT COUNT(*)::int AS count FROM finance_transactions
+                 WHERE "userId" = $1 AND "categoryId" IS NULL AND EXTRACT(YEAR FROM date) = $2`,
+                [req.user.id, year]
+            )
+            res.set('X-Uncategorized-Year', String(none?.count || 0))
+            return res.json(rows)
+        }
         const { rows } = await db.query(
             'SELECT * FROM finance_categories WHERE "userId" = $1 ORDER BY name ASC',
             [req.user.id]
@@ -156,11 +206,19 @@ router.get('/categories', authMiddleware, async (req, res) => {
 })
 
 router.post('/categories', authMiddleware, featureGuard('categorias'), async (req, res) => {
-    const { name, type } = req.body
+    const data = categoryDataOf(req.body)
+    if (data.error) return res.status(400).json({ message: data.error })
     try {
+        // Mesmo nome no mesmo tipo vira categoria repetida nas listas
+        const { rows: dup } = await db.query(
+            'SELECT id FROM finance_categories WHERE "userId" = $1 AND type = $2 AND LOWER(TRIM(name)) = LOWER($3) LIMIT 1',
+            [req.user.id, data.type, data.name]
+        )
+        if (dup.length) return res.status(409).json({ message: `Já existe a categoria "${data.name}" nesse tipo.`, id: dup[0].id })
+
         const { rows: [newCat] } = await db.query(
             'INSERT INTO finance_categories ("userId", name, type) VALUES ($1, $2, $3) RETURNING *',
-            [req.user.id, name, type]
+            [req.user.id, data.name, data.type]
         )
         res.json(newCat)
     } catch (err) {
@@ -170,11 +228,38 @@ router.post('/categories', authMiddleware, featureGuard('categorias'), async (re
 })
 
 router.patch('/categories/:id', authMiddleware, featureGuard('categorias'), async (req, res) => {
-    const { name, type } = req.body
+    const id = categoryIdOf(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Categoria não encontrada' })
+    const data = categoryDataOf(req.body)
+    if (data.error) return res.status(400).json({ message: data.error })
     try {
+        const { rows: [current] } = await db.query(
+            'SELECT * FROM finance_categories WHERE id = $1 AND "userId" = $2',
+            [id, req.user.id]
+        )
+        if (!current) return res.status(404).json({ message: 'Categoria não encontrada' })
+
+        const { rows: dup } = await db.query(
+            'SELECT id FROM finance_categories WHERE "userId" = $1 AND type = $2 AND LOWER(TRIM(name)) = LOWER($3) AND id <> $4 LIMIT 1',
+            [req.user.id, data.type, data.name, id]
+        )
+        if (dup.length) return res.status(409).json({ message: `Já existe a categoria "${data.name}" nesse tipo.` })
+
+        // Trocar o tipo de uma categoria em uso deixaria receita com categoria de despesa
+        if (data.type !== current.type) {
+            const { rows: [used] } = await db.query(
+                `SELECT (SELECT COUNT(*) FROM finance_transactions WHERE "categoryId" = $1 AND "userId" = $2)
+                      + (SELECT COUNT(*) FROM invoice_items WHERE "categoryId" = $1 AND "userId" = $2) AS total`,
+                [id, req.user.id]
+            )
+            if (Number(used?.total) > 0) {
+                return res.status(409).json({ message: 'Essa categoria já tem lançamentos, então o tipo não pode mudar. Crie uma categoria nova no outro tipo.' })
+            }
+        }
+
         const { rows: [updated] } = await db.query(
             'UPDATE finance_categories SET name = $1, type = $2 WHERE id = $3 AND "userId" = $4 RETURNING *',
-            [name, type, req.params.id, req.user.id]
+            [data.name, data.type, id, req.user.id]
         )
         res.json(updated)
     } catch (err) {
@@ -183,13 +268,39 @@ router.patch('/categories/:id', authMiddleware, featureGuard('categorias'), asyn
     }
 })
 
+// Excluir: os lançamentos e as compras de cartão que usavam a categoria ficam sem
+// categoria (antes o banco recusava a exclusão e a tela não dizia nada).
 router.delete('/categories/:id', authMiddleware, featureGuard('categorias'), async (req, res) => {
+    const id = categoryIdOf(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Categoria não encontrada' })
+    const client = await pool.connect()
     try {
-        await db.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [req.params.id, req.user.id])
-        res.json({ message: 'Categoria excluída' })
+        await client.query('BEGIN')
+        const { rows: [cat] } = await client.query(
+            'SELECT id FROM finance_categories WHERE id = $1 AND "userId" = $2 FOR UPDATE',
+            [id, req.user.id]
+        )
+        if (!cat) {
+            await client.query('ROLLBACK')
+            return res.status(404).json({ message: 'Categoria não encontrada' })
+        }
+        const { rowCount: transactions } = await client.query(
+            'UPDATE finance_transactions SET "categoryId" = NULL WHERE "categoryId" = $1 AND "userId" = $2',
+            [id, req.user.id]
+        )
+        const { rowCount: invoiceItems } = await client.query(
+            'UPDATE invoice_items SET "categoryId" = NULL WHERE "categoryId" = $1 AND "userId" = $2',
+            [id, req.user.id]
+        )
+        await client.query('DELETE FROM finance_categories WHERE id = $1 AND "userId" = $2', [id, req.user.id])
+        await client.query('COMMIT')
+        res.json({ message: 'Categoria excluída', uncategorized: { transactions, invoiceItems } })
     } catch (err) {
+        await client.query('ROLLBACK').catch(() => {})
         console.error(err)
-        res.status(500).json({ message: 'Erro ao excluir categoria' })
+        res.status(500).json({ message: 'Não deu para excluir a categoria. Nada foi alterado; tente de novo.' })
+    } finally {
+        client.release()
     }
 })
 
