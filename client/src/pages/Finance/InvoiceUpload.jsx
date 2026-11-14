@@ -246,7 +246,9 @@ export default function InvoiceUpload() {
     const totalDiff = printedTotal > 0 ? Math.round((selectedTotal - printedTotal) * 100) / 100 : null
     const repeatedCount = items.filter(i => i.alreadyInInvoice).length
     const toCheck = items.filter(i => Number(i.aiConfidence) > 0 && Number(i.aiConfidence) < REVIEW_BELOW).length
-    const otherCard = review?.metadata?.cardLastFour && review?.cardLastFour && review.metadata.cardLastFour !== review.cardLastFour
+    // Aviso de outro cartão só quando o final deste cartão não aparece em nenhum cartão da fatura (titular ou adicional)
+    const invoiceCards = review?.metadata?.cardsLastFour?.length ? review.metadata.cardsLastFour : (review?.metadata?.cardLastFour ? [review.metadata.cardLastFour] : [])
+    const otherCard = invoiceCards.length > 0 && review?.cardLastFour && !invoiceCards.includes(review.cardLastFour)
     const allVisibleSelected = visibleItems.length > 0 && visibleItems.every(i => selected.has(i.id))
     const reviewMonth = review?.metadata?.referenceMonth
         ? `${MONTHS[review.metadata.referenceMonth]} de ${review.metadata.referenceYear}`
@@ -478,7 +480,7 @@ export default function InvoiceUpload() {
                             {otherCard && (
                                 <li className="is-warn">
                                     <AlertTriangle size={18} aria-hidden="true" />
-                                    <span>Esta fatura parece ser do cartão final <strong>{review.metadata.cardLastFour}</strong>, e este cartão é final {review.cardLastFour}. Confira se escolheu o cartão certo.</span>
+                                    <span>Esta fatura parece ser do cartão final <strong>{invoiceCards.join(' ou ')}</strong>, e este cartão é final {review.cardLastFour}. Confira se escolheu o cartão certo.</span>
                                 </li>
                             )}
                             {repeatedCount > 0 && (

@@ -211,6 +211,33 @@ describe('Enviar fatura: resposta da IA', () => {
         expect(res.body.metadata).toMatchObject({ cardLastFour: '4321', totalAmount: 100, dueDate: '2026-11-10' })
     })
 
+    test('compra repetida é reconhecida mesmo quando a IA escreve a parcela na descrição de um jeito diferente', async () => {
+        state.existingInvoice = 300
+        state.confirmedInInvoice = [
+            { description: 'MERCADOLIVRE*PENSEPNE', amount: 110.23, transactionDate: '2025-12-11' },
+            { description: 'POSTO MIRANTE', amount: 51.56, transactionDate: '2026-09-19' }
+        ]
+        mockParseInvoice.mockResolvedValueOnce({
+            metadata: { dueDate: '2026-11-10' },
+            items: [
+                { description: 'MERCADOLIVRE*PENSEPNE (Parcela 11 de 12)', amount: 110.23, transactionDate: '2025-12-11', installment: '11/12' },
+                { description: 'POSTO MIRANTE PARC 02/03', amount: 51.56, transactionDate: '2026-09-19', installment: '2/3' },
+                { description: 'POSTO IPIRANGA', amount: 51.56, transactionDate: '2026-09-20' }
+            ]
+        })
+        const res = await send()
+        expect(res.body.items.map(i => i.alreadyInInvoice)).toEqual([true, true, false])
+    })
+
+    test('finais de todos os cartões da fatura (titular e adicionais) vão na resposta', async () => {
+        mockParseInvoice.mockResolvedValueOnce({
+            metadata: { dueDate: '2026-11-10', cardLastFour: '6741', cardsLastFour: ['4518', '6741', 'abc', 12] },
+            items: [{ description: 'Loja', amount: 10 }]
+        })
+        const res = await send()
+        expect(res.body.metadata.cardsLastFour).toEqual(['6741', '4518'])
+    })
+
     test('fatura que já tinha compras lançadas: as repetidas vêm marcadas', async () => {
         state.existingInvoice = 300
         state.confirmedInInvoice = [{ description: 'MERCADO  bom preço', amount: 80, transactionDate: new Date('2026-10-05T00:00:00Z') }]

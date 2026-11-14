@@ -54,7 +54,8 @@ Para CADA item extraído, retorne:
 NÃO inclua como item: o pagamento da fatura anterior ("PAGAMENTO EFETUADO", "PAGTO", "PAGAMENTO RECEBIDO"), o saldo anterior nem linhas de total ou subtotal.
 
 Também extraia os metadados da fatura:
-- cardLastFour: últimos 4 dígitos do cartão (se visível)
+- cardLastFour: últimos 4 dígitos do cartão titular (se visível)
+- cardsLastFour: lista com os últimos 4 dígitos de TODOS os cartões que aparecem na fatura (titular e adicionais), ex: ["6741", "4518"]
 - holderName: nome do titular (se visível)
 - totalAmount: valor total da fatura (o valor total a pagar no mês da fatura)
 - dueDate: data de vencimento no formato YYYY-MM-DD (ex: 2026-04-10)
@@ -71,6 +72,7 @@ Retorne SOMENTE um JSON válido no seguinte formato, sem markdown, sem texto ext
 {
   "metadata": {
     "cardLastFour": "1234",
+    "cardsLastFour": ["1234"],
     "holderName": "NOME TITULAR",
     "totalAmount": 1500.50,
     "dueDate": "2026-03-12",
@@ -277,6 +279,7 @@ const parseInvoice = async (fileBuffer, mimeType, userCategories = []) => {
 
     parsed.metadata = {
         cardLastFour: parsed.metadata.cardLastFour || null,
+        cardsLastFour: Array.isArray(parsed.metadata.cardsLastFour) ? parsed.metadata.cardsLastFour : [],
         holderName: parsed.metadata.holderName || null,
         totalAmount: Math.abs(parseFloat(parsed.metadata.totalAmount) || 0),
         dueDate: parsed.metadata.dueDate || null,

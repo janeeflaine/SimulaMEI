@@ -536,7 +536,9 @@
         position: fixed;
         top: 0;
         left: 0;
-        width: 100vw;
+        /* 100% da largura do cabeçalho (que é a referência do fixed): 100vw contava a
+           barra de rolagem do Windows e criava rolagem lateral de ~15px */
+        width: 100%;
         height: 100vh;
         background: rgba(12, 28, 54, 0.45);
         opacity: 0;

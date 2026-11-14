@@ -731,7 +731,13 @@ const fileMatchesType = (buffer, mimetype) => {
 
 const INSTALLMENT = /^\d{1,3}\s*\/\s*\d{1,3}$/
 const normalizeText = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
-const itemKey = (item) => `${Number(item.amount).toFixed(2)}|${item.transactionDate ? String(item.transactionDate).slice(0, 10) : ''}|${normalizeText(item.description)}`
+// A IA às vezes escreve "(Parcela 11 de 12)" na descrição e às vezes não: tira para comparar
+const INSTALLMENT_TEXT = /\(?\s*\b(parcela|parc)\.?\s*\d{1,3}\s*(de|\/)\s*\d{1,3}\s*\)?/gi
+const comparableText = (s) => normalizeText(String(s || '').replace(INSTALLMENT_TEXT, ' '))
+const amountDate = (item) => `${Number(item.amount).toFixed(2)}|${item.transactionDate ? String(item.transactionDate).slice(0, 10) : ''}`
+const itemKey = (item) => `${amountDate(item)}|${comparableText(item.description)}`
+// Segunda chance: mesmo valor, mesma data e mesma primeira palavra da descrição
+const looseKey = (item) => `${amountDate(item)}|${comparableText(item.description).split(' ')[0] || ''}`
 const isoDate = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : (typeof v === 'string' ? v.slice(0, 10) : null))
 
 // Confere cada compra que a IA leu: o que não dá para gravar fica de fora
@@ -872,6 +878,9 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
 
             const metadata = {
                 cardLastFour: typeof meta.cardLastFour === 'string' && /^\d{4}$/.test(meta.cardLastFour.trim()) ? meta.cardLastFour.trim() : null,
+                // Finais de todos os cartões da fatura (titular e adicionais)
+                cardsLastFour: [...new Set([meta.cardLastFour, ...(Array.isArray(meta.cardsLastFour) ? meta.cardsLastFour : [])]
+                    .map(v => String(v ?? '').trim()).filter(v => /^\d{4}$/.test(v)))].slice(0, 10),
                 totalAmount: Number.isFinite(Number(meta.totalAmount)) ? Math.abs(Number(meta.totalAmount)) : 0,
                 dueDate,
                 closingDate,
@@ -913,10 +922,17 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                 invoiceId = newInv.id
             }
 
-            const existingKeys = new Map()
-            for (const row of alreadyConfirmed) {
-                const key = itemKey({ ...row, transactionDate: isoDate(row.transactionDate) })
-                existingKeys.set(key, (existingKeys.get(key) || 0) + 1)
+            // Compras já lançadas: primeiro casa pela descrição inteira, depois pela primeira palavra
+            const existing = alreadyConfirmed.map(row => ({ ...row, transactionDate: isoDate(row.transactionDate), used: false }))
+            const takeExisting = (item) => {
+                const strict = itemKey(item)
+                let found = existing.find(e => !e.used && itemKey(e) === strict)
+                if (!found) {
+                    const loose = looseKey(item)
+                    found = existing.find(e => !e.used && looseKey(e) === loose)
+                }
+                if (found) found.used = true
+                return !!found
             }
 
             // Insert all items
@@ -928,9 +944,7 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                      RETURNING *`,
                     [invoiceId, req.user.id, item.description, item.amount, item.transactionDate, item.category, item.confidence, item.installment]
                 )
-                const key = itemKey(item)
-                const repeated = (existingKeys.get(key) || 0) > 0
-                if (repeated) existingKeys.set(key, existingKeys.get(key) - 1)
+                const repeated = takeExisting(item)
                 insertedItems.push({ ...inserted, alreadyInInvoice: repeated })
             }
 
