@@ -234,6 +234,7 @@ export default function Select({
                             onMouseMove={() => { if (highlight !== index) setHighlight(index) }}
                             onClick={() => choose(index)}
                         >
+                            {item.icon && <span className="sel-option__icon" aria-hidden="true">{item.icon}</span>}
                             <span className="sel-option__label">{item.label}</span>
                             {isSelected && <Check size={16} aria-hidden="true" />}
                         </div>
@@ -259,6 +260,7 @@ export default function Select({
                 onClick={() => (open ? closeMenu(false) : openMenu())}
                 onKeyDown={onTriggerKeyDown}
             >
+                {selected?.icon && <span className="sel-trigger__icon" aria-hidden="true">{selected.icon}</span>}
                 <span className={`sel-trigger__label ${selected ? '' : 'is-placeholder'}`}>
                     {selected ? selected.label : placeholder}
                 </span>

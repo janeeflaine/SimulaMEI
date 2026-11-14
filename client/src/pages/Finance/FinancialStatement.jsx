@@ -53,6 +53,9 @@ const getDateRange = (preset) => {
 }
 
 // Nome da forma de pagamento como a pessoa fala
+// Lado de uma transferência entre carteiras (sai com o par; não se edita aqui)
+const isTransfer = (t) => Boolean(t?.transferId) || t?.paymentMethod === 'Transferência'
+
 const METHOD_LABELS = {
     PIX: 'Pix',
     'Cartão de Crédito': 'Cartão de crédito',
@@ -259,15 +262,27 @@ export default function FinancialStatement() {
         })
     }
 
+    // Tira da lista e dos totais o que o servidor apagou (lado de transferência sai com o par)
+    const removeDeleted = (deleted) => {
+        const ids = new Set(deleted.map(d => d.id))
+        setTransactions(prev => prev.filter(item => !ids.has(item.id)))
+        setTotalCount(prev => Math.max(0, prev - deleted.length))
+        subtractFromTotals(deleted)
+        setSelectedIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next })
+    }
+
     const handleDelete = async (t) => {
+        const transfer = isTransfer(t)
         const ok = await confirm({
-            title: 'Excluir este lançamento?',
-            message: 'Não dá para desfazer.',
+            title: transfer ? 'Excluir esta transferência?' : 'Excluir este lançamento?',
+            message: transfer
+                ? 'A saída de uma carteira e a entrada na outra saem juntas. Não dá para desfazer.'
+                : 'Não dá para desfazer.',
             details: [
                 { label: t.description || t.categoryName || 'Lançamento', value: signedAmount(t), strong: true },
                 { label: 'Data', value: formatDate(t.date) }
             ],
-            confirmLabel: 'Excluir lançamento',
+            confirmLabel: transfer ? 'Excluir transferência' : 'Excluir lançamento',
             tone: 'danger'
         })
         if (!ok) return
@@ -281,10 +296,8 @@ export default function FinancialStatement() {
                 }
             })
             if (res.ok) {
-                setTransactions(prev => prev.filter(item => item.id !== t.id))
-                setTotalCount(prev => Math.max(0, prev - 1))
-                subtractFromTotals([t])
-                setSelectedIds(prev => { const next = new Set(prev); next.delete(t.id); return next })
+                const data = await res.json().catch(() => ({}))
+                removeDeleted(Array.isArray(data.deleted) && data.deleted.length ? data.deleted : [t])
             } else {
                 const data = await res.json().catch(() => ({}))
                 notify({ title: 'Não foi possível excluir', message: data.message || 'Tente de novo em instantes.', tone: 'error' })
@@ -316,9 +329,12 @@ export default function FinancialStatement() {
     const handleBulkDelete = async () => {
         if (selectedIds.size === 0) return
         const count = selectedIds.size
+        const withTransfer = transactions.some(t => selectedIds.has(t.id) && isTransfer(t))
         const ok = await confirm({
             title: `Excluir ${plural(count, 'lançamento', 'lançamentos')}?`,
-            message: 'Não dá para desfazer.',
+            message: withTransfer
+                ? 'Nas transferências, a saída e a entrada saem juntas. Não dá para desfazer.'
+                : 'Não dá para desfazer.',
             confirmLabel: `Excluir ${plural(count, 'lançamento', 'lançamentos')}`,
             tone: 'danger'
         })
@@ -335,11 +351,11 @@ export default function FinancialStatement() {
                 body: JSON.stringify({ ids: Array.from(selectedIds) })
             })
             if (res.ok) {
-                subtractFromTotals(transactions.filter(t => selectedIds.has(t.id)))
-                setTransactions(prev => prev.filter(t => !selectedIds.has(t.id)))
-                setTotalCount(prev => Math.max(0, prev - count))
+                const data = await res.json().catch(() => ({}))
+                const deleted = Array.isArray(data.deleted) ? data.deleted : transactions.filter(t => selectedIds.has(t.id))
+                removeDeleted(deleted)
                 setSelectedIds(new Set())
-                showToast(`${plural(count, 'lançamento excluído', 'lançamentos excluídos')}.`, 'success')
+                showToast(`${plural(deleted.length, 'lançamento excluído', 'lançamentos excluídos')}.`, 'success')
             } else {
                 const data = await res.json().catch(() => ({}))
                 notify({ title: 'Não foi possível excluir', message: data.message || 'Tente de novo em instantes.', tone: 'error' })
@@ -748,6 +764,7 @@ export default function FinancialStatement() {
                                     const methodFull = t.cardName ? `${method} · ${t.cardName}` : method
                                     const invoiceNote = t.billing_date && t.billing_date !== t.date ? `Fatura de ${shortDate(t.billing_date)}` : null
                                     const isPending = t.status === 'PENDING'
+                                    const transfer = isTransfer(t)
                                     const selected = selectedIds.has(t.id)
 
                                     return (
@@ -787,7 +804,12 @@ export default function FinancialStatement() {
 
                                             <div className="ext-row__foot">
                                                 <div className="ext-row__wallet">
-                                                    {editingWalletTransactionId === t.id ? (
+                                                    {transfer ? (
+                                                        <span className="ext-wallet is-static" title="Lado de uma transferência: para mudar, exclua e transfira de novo">
+                                                            {isPJ ? <Building2 size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />}
+                                                            <span>{wallet ? wallet.name : 'Sem carteira'}</span>
+                                                        </span>
+                                                    ) : editingWalletTransactionId === t.id ? (
                                                         <Select
                                                             variant="compact"
                                                             defaultOpen
@@ -813,18 +835,20 @@ export default function FinancialStatement() {
                                                 </div>
 
                                                 <div className="ext-row__actions">
-                                                    <button
-                                                        type="button"
-                                                        className="ext-icon-btn"
-                                                        aria-label={`Editar ${title}`}
-                                                        title="Editar"
-                                                        onClick={() => {
-                                                            setEditingTransaction(t)
-                                                            setIsEditModalOpen(true)
-                                                        }}
-                                                    >
-                                                        <Pencil size={17} aria-hidden="true" />
-                                                    </button>
+                                                    {!transfer && (
+                                                        <button
+                                                            type="button"
+                                                            className="ext-icon-btn"
+                                                            aria-label={`Editar ${title}`}
+                                                            title="Editar"
+                                                            onClick={() => {
+                                                                setEditingTransaction(t)
+                                                                setIsEditModalOpen(true)
+                                                            }}
+                                                        >
+                                                            <Pencil size={17} aria-hidden="true" />
+                                                        </button>
+                                                    )}
                                                     <button
                                                         type="button"
                                                         className="ext-icon-btn"
@@ -912,9 +936,10 @@ export default function FinancialStatement() {
                     <TransferModal
                         wallets={wallets}
                         onClose={() => setIsTransferModalOpen(false)}
-                        onSuccess={() => {
+                        onSuccess={(summary) => {
                             setIsTransferModalOpen(false)
                             fetchTransactions()
+                            notify({ title: 'Transferência feita', message: summary, tone: 'success' })
                         }}
                     />
                 )

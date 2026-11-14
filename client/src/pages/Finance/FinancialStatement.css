@@ -1113,6 +1113,11 @@
     color: var(--e-muted);
 }
 
+/* Lado de transferência: a carteira aparece, mas não troca por aqui */
+.ext-wallet.is-static {
+    cursor: default;
+}
+
 .extrato .ext-wallet-select {
     width: 100%;
     max-width: 200px;
@@ -1248,7 +1253,7 @@
     .ext-seg button:hover:not([aria-pressed="true"]) { color: var(--e-text); }
     .ext-menu__item:hover { background: var(--e-paper); }
     .ext-chip:hover { border-color: var(--e-ink); }
-    .ext-wallet:hover { border-color: var(--e-line); background: #fff; }
+    .ext-wallet:not(.is-static):hover { border-color: var(--e-line); background: #fff; }
     .ext-icon-btn:hover { background: var(--e-paper); color: var(--e-ink); }
     .ext-rows .ext-row:hover { background: #fafbfc; }
     .ext-rows .ext-row.is-selected:hover { background: rgba(18, 40, 74, 0.05); }
