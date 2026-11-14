@@ -6,6 +6,7 @@ import FinanceQuickActionModal from '../components/FinanceQuickActionModal'
 import { useConfirmDialog } from '../components/ui/ConfirmDialog'
 import Select from '../components/ui/Select'
 import { tierOf } from '../components/plans/planFeatures'
+import { maskDocument, documentError } from '../utils/brDocument'
 import './Dashboard.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -131,12 +132,7 @@ function NewWalletDialog({ form, setForm, saving, onSave, onClose }) {
     const setType = (type) => setForm(prev => ({ ...prev, account_type: type, document: '' }))
 
     const onDocument = (e) => {
-        let v = e.target.value.replace(/\D/g, '')
-        if (form.account_type === 'PF') {
-            v = v.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
-        } else {
-            v = v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2').slice(0, 18)
-        }
+        const v = maskDocument(e.target.value, form.account_type)
         setForm(prev => ({ ...prev, document: v }))
     }
 
@@ -191,7 +187,9 @@ function NewWalletDialog({ form, setForm, saving, onSave, onClose }) {
                     <span>{isPJ ? 'CNPJ' : 'CPF'} <em>(opcional)</em></span>
                     <input
                         type="text"
-                        inputMode="numeric"
+                        inputMode={isPJ ? 'text' : 'numeric'}
+                        autoCapitalize="characters"
+                        autoComplete="off"
                         placeholder={isPJ ? '00.000.000/0000-00' : '000.000.000-00'}
                         value={form.document}
                         onChange={onDocument}
@@ -662,6 +660,15 @@ export default function Dashboard() {
     }
 
     const handleCreateWallet = async () => {
+        const docError = documentError(newWalletForm.document, newWalletForm.account_type)
+        if (docError) {
+            notify({ title: 'Confira o documento', message: docError, tone: 'error' })
+            return
+        }
+        if ((newWalletForm.photo_url || '').length > 3 * 1024 * 1024) {
+            notify({ title: 'Foto grande demais', message: 'Escolha uma foto de até 2 MB, ou crie a carteira sem foto.', tone: 'error' })
+            return
+        }
         setSavingWallet(true)
         try {
             const token = localStorage.getItem('token')

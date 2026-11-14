@@ -4,26 +4,9 @@ import { ArrowLeft, X, User, Building2, ArrowDownLeft, ArrowUpRight, ChevronRigh
 import { useAuth } from '../context/AuthContext'
 import { showToast } from '../utils/toast'
 import Select from './ui/Select'
+import { maskDocument, documentError } from '../utils/brDocument'
 import './ui/ConfirmDialog.css'
 import './FinanceQuickActionModal.css'
-
-// Máscara de CPF (PF) ou CNPJ (PJ) enquanto a pessoa digita
-const maskDocument = (value, accountType) => {
-    const n = value.replace(/\D/g, '')
-    if (accountType === 'PJ') {
-        return n
-            .replace(/^(\d{2})(\d)/, '$1.$2')
-            .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-            .replace(/\.(\d{3})(\d)/, '.$1/$2')
-            .replace(/(\d{4})(\d)/, '$1-$2')
-            .slice(0, 18)
-    }
-    return n
-        .replace(/(\d{3})(\d)/, '$1.$2')
-        .replace(/(\d{3})(\d)/, '$1.$2')
-        .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
-        .slice(0, 14)
-}
 
 // name: null = ainda não mexeu (usa a sugestão); string = o que a pessoa digitou
 const EMPTY_NEW_WALLET = { name: null, document: '' }
@@ -277,14 +260,14 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
 
         const accountType = walletTypeForTarget
         const name = newWalletName.trim()
-        const digits = newWallet.document.replace(/\D/g, '')
+        const docError = documentError(newWallet.document, accountType)
 
         if (!name) {
             setWalletError({ message: accountType === 'PJ' ? 'Digite o nome da empresa.' : 'Dê um nome para a carteira.' })
             return
         }
-        if (digits && digits.length !== (accountType === 'PJ' ? 14 : 11)) {
-            setWalletError({ message: accountType === 'PJ' ? 'O CNPJ precisa ter 14 números, ou deixe em branco.' : 'O CPF precisa ter 11 números, ou deixe em branco.' })
+        if (docError) {
+            setWalletError({ message: docError })
             return
         }
 
@@ -529,7 +512,8 @@ export default function FinanceQuickActionModal({ onClose, onSuccess, onWalletCr
                                 <span>{isPJ ? 'CNPJ' : 'CPF'} <em>(opcional)</em></span>
                                 <input
                                     type="text"
-                                    inputMode="numeric"
+                                    inputMode={isPJ ? 'text' : 'numeric'}
+                                    autoCapitalize="characters"
                                     autoComplete="off"
                                     placeholder={isPJ ? '00.000.000/0000-00' : '000.000.000-00'}
                                     value={newWallet.document}
