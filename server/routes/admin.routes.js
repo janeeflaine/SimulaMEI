@@ -621,4 +621,45 @@ router.get('/logs/sessions', async (req, res) => {
     }
 })
 
+// ─── Lembretes no WhatsApp (contas vencendo e alertas do MEI) ───────────────
+
+// Última rodada: quando foi, quantos foram e por que falharam (motivo da Meta)
+router.get('/whatsapp/reminders', async (req, res) => {
+    try {
+        const { rows: [row] } = await db.query("SELECT value FROM system_settings WHERE key = 'whatsapp_last_run'")
+        let lastRun = null
+        try { lastRun = row ? JSON.parse(row.value) : null } catch { lastRun = null }
+        res.json({
+            lastRun,
+            templates: {
+                contas: process.env.WHATSAPP_REMINDER_TEMPLATE || 'contas_vencendo_hoje',
+                alertas: process.env.WHATSAPP_ALERT_TEMPLATE || 'alerta_mei'
+            },
+            configured: Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
+            cronSecret: Boolean(process.env.CRON_SECRET)
+        })
+    } catch (err) {
+        console.error('[admin] lembretes WhatsApp:', err.message)
+        res.status(500).json({ message: 'Erro ao buscar os lembretes do WhatsApp' })
+    }
+})
+
+// Roda agora a rodada do dia (quem já recebeu hoje não recebe de novo)
+router.post('/whatsapp/reminders/run', async (req, res) => {
+    try {
+        const bot = require('../utils/whatsappBot')
+        const result = await bot.sendDailyReminders(new Date(), { trigger: 'admin' })
+        await auditLogger.log({
+            event_type: 'WHATSAPP_REMINDERS_RUN',
+            actor: { user_id: req.user.id, role: req.user.role },
+            context: req.context || {},
+            metadata: { contas: result.sent, alertas: result.alertas?.sent, falhas: (result.failed || 0) + (result.alertas?.failed || 0) }
+        }).catch(() => {})
+        res.json(result)
+    } catch (err) {
+        console.error('[admin] rodar lembretes WhatsApp:', err.message)
+        res.status(500).json({ message: 'Não deu para rodar os lembretes agora. Tente de novo.' })
+    }
+})
+
 module.exports = router

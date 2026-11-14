@@ -1,91 +1,196 @@
 const { db } = require('../db')
 
 /**
- * Checks all active alerts for a user and returns triggered notifications.
- * @param {number} userId 
- * @returns {Promise<Array>} List of triggered alerts with messages.
+ * Alertas do MEI: limite de faturamento, vencimento do DAS e declaração anual.
+ *
+ * - "Hoje" é sempre o dia no horário de Brasília (o servidor roda em UTC: antes,
+ *   depois das 21h o alerta do DAS já contava o dia seguinte).
+ * - Faturamento: receitas da carteira do MEI recebidas no ano, sem transferências
+ *   entre carteiras (decisão do dono, 14/11/2026). Sem nenhuma, usa a última simulação.
+ * - O DAS do mês vence no dia 20; a DASN-SIMEI do ano anterior, em 31 de maio.
  */
-async function checkUserAlerts(userId) {
+
+const TZ = 'America/Sao_Paulo'
+const TYPES = ['REVENUE_LIMIT', 'DAS_EXPIRY', 'ANNUAL_DECLARATION']
+const DEFAULT_CONFIG = {
+    REVENUE_LIMIT: { trigger_at_percentage: 80 },
+    DAS_EXPIRY: { days_before: 5 },
+    ANNUAL_DECLARATION: {}
+}
+const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+
+const pad = (n) => String(n).padStart(2, '0')
+const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
+// Dia de hoje no Brasil
+const todayBR = (now = new Date()) => {
+    const [year, month, day] = now.toLocaleDateString('sv-SE', { timeZone: TZ }).split('-').map(Number)
+    return { year, month, day }
+}
+
+// Dias entre duas datas de calendário (sem hora)
+const daysBetween = (a, b) => Math.round((Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / 86400000)
+
+const parseConfig = (raw) => {
+    if (raw && typeof raw === 'object') return raw
     try {
-        const { rows: alerts } = await db.query(
-            'SELECT * FROM user_alerts WHERE "userId" = $1 AND enabled = TRUE',
+        const parsed = JSON.parse(raw || '{}')
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    } catch {
+        return {}
+    }
+}
+
+const configOf = (alert) => ({ ...DEFAULT_CONFIG[alert.type], ...parseConfig(alert.config) })
+
+/** Faturamento do MEI no ano e limite anual. */
+async function revenueStatus(userId, year) {
+    const { rows: [lim] } = await db.query('SELECT "annualLimit" FROM mei_limits ORDER BY "updatedAt" DESC NULLS LAST LIMIT 1')
+    const limit = Number(lim?.annualLimit) > 0 ? Number(lim.annualLimit) : 81000
+
+    const { rows: [sum] } = await db.query(
+        `SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::float AS total
+         FROM finance_transactions
+         WHERE "userId" = $1 AND type = 'RECEITA' AND target = 'BUSINESS' AND status = 'PAID'
+           AND COALESCE("paymentMethod", '') <> 'Transferência'
+           AND date >= make_date($2::int, 1, 1) AND date < make_date($2::int + 1, 1, 1)`,
+        [userId, year]
+    )
+    let total = Number(sum?.total) || 0
+    let source = sum?.count > 0 ? 'extrato' : null
+    let monthly = null
+
+    if (!source) {
+        const { rows: [sim] } = await db.query(
+            'SELECT revenue, "revenueType" FROM simulations WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 1',
             [userId]
         )
+        if (sim && Number(sim.revenue) > 0) {
+            const isMonthly = sim.revenueType !== 'anual' // igual ao Simulador
+            total = isMonthly ? Number(sim.revenue) * 12 : Number(sim.revenue)
+            monthly = isMonthly ? Number(sim.revenue) : null
+            source = 'simulacao'
+        }
+    }
 
-        const triggered = []
+    return { year, total, limit, percent: limit ? (total / limit) * 100 : 0, source, monthly }
+}
 
-        for (const alert of alerts) {
-            const config = JSON.parse(alert.config || '{}')
+/** Próximo DAS (dia 20) a partir de hoje. */
+function dasStatus(today) {
+    let { year, month } = today
+    if (today.day > 20) {
+        month += 1
+        if (month > 12) { month = 1; year += 1 }
+    }
+    const due = { year, month, day: 20 }
+    // O DAS que vence no dia 20 é o do mês anterior
+    const ref = month === 1 ? 12 : month - 1
+    return { dueDate: `${year}-${pad(month)}-20`, daysLeft: daysBetween(today, due), referenceMonth: MONTHS[ref - 1] }
+}
 
-            if (alert.type === 'REVENUE_LIMIT') {
-                const triggerPercentage = config.trigger_at_percentage || 80
+/** Declaração anual (DASN-SIMEI): prazo em 31 de maio, aviso em abril e maio. */
+function dasnStatus(today) {
+    const deadlineYear = today.month > 5 ? today.year + 1 : today.year
+    const deadline = { year: deadlineYear, month: 5, day: 31 }
+    return {
+        deadline: `${deadlineYear}-05-31`,
+        referenceYear: deadlineYear - 1,
+        daysLeft: daysBetween(today, deadline),
+        season: today.month === 4 || today.month === 5
+    }
+}
 
-                // Get latest simulation
-                const { rows: [sim] } = await db.query(
-                    'SELECT * FROM simulations WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 1',
-                    [userId]
-                )
+/** Avisos disparados pelos alertas ligados. */
+function triggeredFrom(alerts, status) {
+    const out = []
+    for (const alert of alerts) {
+        if (!alert.enabled) continue
+        const config = configOf(alert)
 
-                if (sim) {
-                    // Get current MEI limits
-                    const { rows: [limits] } = await db.query('SELECT * FROM mei_limits ORDER BY "updatedAt" DESC LIMIT 1')
-                    const annualLimit = limits ? limits.annualLimit : 81000
-
-                    // Logic: If monthly simulation * 12 or annual simulation > threshold
-                    const estimatedAnnualRevenue = sim.revenueType === 'mensal' ? sim.revenue * 12 : sim.revenue
-                    const usagePercentage = (estimatedAnnualRevenue / annualLimit) * 100
-
-                    if (usagePercentage >= triggerPercentage) {
-                        triggered.push({
-                            id: alert.id,
-                            type: 'REVENUE_LIMIT',
-                            severity: usagePercentage >= 95 ? 'danger' : 'warning',
-                            message: `Atenção: Seu faturamento estimado está em ${usagePercentage.toFixed(1)}% do limite anual do MEI.`,
-                            usage: usagePercentage
-                        })
-                    }
-                }
-            }
-
-            if (alert.type === 'DAS_EXPIRY') {
-                const now = new Date()
-                const day = now.getDate()
-                const daysBefore = config.days_before || 5
-
-                // DAS expires on the 20th of each month
-                if (day >= (20 - daysBefore) && day <= 20) {
-                    triggered.push({
-                        id: alert.id,
-                        type: 'DAS_EXPIRY',
-                        severity: day >= 18 ? 'danger' : 'warning',
-                        message: `Lembrete: O vencimento do seu DAS é no dia 20. Faltam ${20 - day} dias.`,
-                        day: day
-                    })
-                }
-            }
-
-            if (alert.type === 'ANNUAL_DECLARATION') {
-                const now = new Date()
-                const month = now.getMonth() // 0-indexed (April is 3, May is 4)
-
-                // DASN-SIMEI deadline is May 31st
-                if (month === 3 || month === 4) { // April or May
-                    triggered.push({
-                        id: alert.id,
-                        type: 'ANNUAL_DECLARATION',
-                        severity: month === 4 ? 'danger' : 'warning',
-                        message: `Importante: O prazo para entregar a Declaração Anual (DASN-SIMEI) termina em 31 de Maio.`,
-                        month: month
-                    })
-                }
+        if (alert.type === 'REVENUE_LIMIT' && status.revenue.source) {
+            const { percent, total, limit, year, source } = status.revenue
+            const trigger = Number(config.trigger_at_percentage) || 80
+            if (percent >= trigger) {
+                const over = percent >= 100
+                out.push({
+                    id: alert.id,
+                    type: alert.type,
+                    severity: over || percent >= 95 ? 'danger' : 'warning',
+                    title: over
+                        ? `Faturamento do MEI passou do limite de ${year}`
+                        : `Faturamento do MEI em ${percent.toFixed(1).replace('.', ',')}% do limite`,
+                    message: source === 'extrato'
+                        ? `${brl(total)} recebidos em ${year}, de ${brl(limit)} por ano.`
+                        : `Pela sua última simulação, ${brl(total)} no ano, de ${brl(limit)}.`,
+                    usage: percent
+                })
             }
         }
 
-        return triggered
+        if (alert.type === 'DAS_EXPIRY') {
+            const { daysLeft, dueDate, referenceMonth } = status.das
+            const before = Number(config.days_before) || 5
+            if (daysLeft >= 0 && daysLeft <= before) {
+                const [y, m, d] = dueDate.split('-')
+                out.push({
+                    id: alert.id,
+                    type: alert.type,
+                    severity: daysLeft <= 2 ? 'danger' : 'warning',
+                    title: daysLeft === 0 ? 'O DAS vence hoje' : `O DAS vence em ${plural(daysLeft, 'dia', 'dias')}`,
+                    message: `O DAS de ${referenceMonth} vence em ${d}/${m}/${y}.`,
+                    day: daysLeft
+                })
+            }
+        }
+
+        if (alert.type === 'ANNUAL_DECLARATION' && status.dasn.season) {
+            const { daysLeft, referenceYear, deadline } = status.dasn
+            const [y] = deadline.split('-')
+            out.push({
+                id: alert.id,
+                type: alert.type,
+                severity: daysLeft <= 15 ? 'danger' : 'warning',
+                title: daysLeft === 0
+                    ? 'A declaração anual do MEI vence hoje'
+                    : `Declaração anual do MEI: ${daysLeft === 1 ? 'falta 1 dia' : `faltam ${daysLeft} dias`}`,
+                message: `A DASN-SIMEI de ${referenceYear} deve ser entregue até 31/05/${y}.`
+            })
+        }
+    }
+    return out
+}
+
+/** Situação completa: faturamento, DAS, declaração e avisos disparados. */
+async function alertStatus(userId, alerts, now = new Date()) {
+    const today = todayBR(now)
+    const status = {
+        today: `${today.year}-${pad(today.month)}-${pad(today.day)}`,
+        revenue: await revenueStatus(userId, today.year),
+        das: dasStatus(today),
+        dasn: dasnStatus(today)
+    }
+    status.triggered = triggeredFrom(alerts, status)
+    return status
+}
+
+/** Avisos disparados (usado pelo Painel). */
+async function checkUserAlerts(userId, now = new Date()) {
+    try {
+        const { rows: alerts } = await db.query(
+            'SELECT * FROM user_alerts WHERE "userId" = $1 AND enabled = TRUE ORDER BY id ASC',
+            [userId]
+        )
+        // Linhas repetidas do mesmo tipo (de antes da trava): vale a primeira
+        const seen = new Set()
+        const unique = alerts.filter(a => TYPES.includes(a.type) && !seen.has(a.type) && seen.add(a.type))
+        if (!unique.length) return []
+        return (await alertStatus(userId, unique, now)).triggered
     } catch (err) {
         console.error('Error checking alerts logic:', err)
         return []
     }
 }
 
-module.exports = { checkUserAlerts }
+module.exports = { checkUserAlerts, alertStatus, todayBR, dasStatus, dasnStatus, configOf, TYPES, DEFAULT_CONFIG }

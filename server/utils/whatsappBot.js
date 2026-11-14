@@ -714,18 +714,34 @@ async function handleWebhookPayload(body) {
 
 // ─── Lembrete diário ─────────────────────────────────────────────────────────
 
+// Motivo de falha da Meta em português simples (para o painel admin)
+function explainWhatsAppError(message) {
+    const m = String(message || '')
+    if (/não configurado/i.test(m)) return 'WhatsApp não configurado no servidor (WHATSAPP_TOKEN ou WHATSAPP_PHONE_NUMBER_ID).'
+    if (/\b132001\b/.test(m)) return 'O modelo de mensagem não existe com esse nome e idioma, ou ainda não foi aprovado pela Meta.'
+    if (/\b132000\b/.test(m)) return 'O número de variáveis enviadas não bate com o modelo aprovado na Meta.'
+    if (/\b132015\b|\b132016\b/.test(m)) return 'O modelo foi pausado ou desativado pela Meta.'
+    if (/\b131026\b/.test(m)) return 'O número não pode receber a mensagem (não usa WhatsApp ou não aceitou os termos).'
+    if (/\b131047\b/.test(m)) return 'Fora da janela de 24 horas: só modelo aprovado pode ser enviado.'
+    if (/\b(190|10)\b/.test(m) && /WhatsApp API (401|403)/.test(m)) return 'Token do WhatsApp inválido, vencido ou sem permissão.'
+    if (/\b131042\b/.test(m)) return 'Problema de pagamento na conta do WhatsApp Business.'
+    return m.slice(0, 200)
+}
+
 /**
- * Envia o template de lembrete para quem tem conta vencendo hoje ou atrasada.
- * Cada número recebe no máximo um lembrete por dia, mesmo se o cron repetir.
+ * Manda o lembrete de contas para quem tem conta vencendo hoje ou atrasada.
+ * Cada número recebe no máximo um por dia. O dia só fica marcado se a Meta aceitar:
+ * antes, a marca vinha antes do envio e, se a Meta recusasse (modelo não aprovado,
+ * por exemplo), o lembrete do dia se perdia sem aviso.
  */
-async function sendDailyReminders(now = new Date()) {
-    const today = fa.todayISO(now)
+async function sendBillReminders(today, summary) {
     const templateName = process.env.WHATSAPP_REMINDER_TEMPLATE || 'contas_vencendo_hoje'
     const templateLang = process.env.WHATSAPP_REMINDER_TEMPLATE_LANG || 'pt_BR'
 
     // Cada número da conta recebe o lembrete com todas as contas da conta
     const { rows } = await db.query(
-        `SELECT l.id AS "linkId", l.phone, l."userId", pw.name AS "personalWalletName",
+        `SELECT l.id AS "linkId", l.phone, l."userId", l."lastReminderOn" AS "previousOn",
+                pw.name AS "personalWalletName",
                 COUNT(t.id)::int AS count, COALESCE(SUM(t.amount), 0) AS total
          FROM whatsapp_links l
          JOIN finance_transactions t
@@ -734,47 +750,172 @@ async function sendDailyReminders(now = new Date()) {
          LEFT JOIN business_units pw ON pw.id = l."personalWalletId" AND pw."ownerId" = l."userId"
          WHERE l."reminderEnabled" = TRUE
            AND (l."lastReminderOn" IS NULL OR l."lastReminderOn" < $1)
-         GROUP BY l.id, l.phone, l."userId", pw.name`,
+         GROUP BY l.id, l.phone, l."userId", l."lastReminderOn", pw.name`,
         [today]
     )
 
-    const summary = { candidates: rows.length, sent: 0, skipped: 0, failed: 0 }
+    const out = summary.contas = { candidates: rows.length, sent: 0, skipped: 0, failed: 0 }
     const queue = [...rows]
     const worker = async () => {
         while (queue.length) {
             const row = queue.shift()
+            let claimed = false
             try {
                 const ctx = await fa.getUserContext(row.userId)
                 if (!ctx || !fa.hasFeature(ctx, 'whatsapp') || !fa.hasFeature(ctx, 'contas_pagar')) {
-                    summary.skipped++
+                    out.skipped++
                     continue
                 }
-                // Marca antes de enviar: se o cron repetir, não duplica
+                // Reserva o dia (se o cron repetir junto, só um manda)
                 const { rowCount } = await db.query(
                     `UPDATE whatsapp_links SET "lastReminderOn" = $2
                      WHERE id = $1 AND ("lastReminderOn" IS NULL OR "lastReminderOn" < $2)`,
                     [row.linkId, today]
                 )
-                if (!rowCount) { summary.skipped++; continue }
+                if (!rowCount) { out.skipped++; continue }
+                claimed = true
                 await wa.sendTemplate(row.phone, templateName, templateLang, [
                     ownerFirstName(ctx, row.personalWalletName) || 'cliente',
                     String(row.count),
                     brl(row.total)
                 ])
-                summary.sent++
+                out.sent++
             } catch (err) {
-                summary.failed++
+                out.failed++
+                summary.errors.push({ kind: 'contas', template: templateName, reason: explainWhatsAppError(err.message) })
                 console.error('[whatsapp] falha no lembrete:', err.message)
+                // Devolve o dia: a próxima rodada tenta de novo
+                if (claimed) {
+                    await db.query(
+                        `UPDATE whatsapp_links SET "lastReminderOn" = $3 WHERE id = $1 AND "lastReminderOn" = $2`,
+                        [row.linkId, today, row.previousOn || null]
+                    ).catch(() => {})
+                }
             }
         }
     }
     await Promise.all(Array.from({ length: 5 }, worker))
+}
+
+// Ocasião de cada aviso: o mesmo aviso só vai uma vez por ocasião
+function alertOccasion(trigger, status, alert) {
+    if (trigger.type === 'REVENUE_LIMIT') {
+        // Um aviso ao chegar no limite escolhido e outro se passar dos 100%
+        const level = status.revenue.percent >= 100 ? 100 : (Number(require('../logic/alert-checker').configOf(alert).trigger_at_percentage) || 80)
+        return `R:${status.revenue.year}:${level}`
+    }
+    if (trigger.type === 'DAS_EXPIRY') return `D:${status.das.dueDate}`
+    if (trigger.type === 'ANNUAL_DECLARATION') {
+        // Um no começo de abril e outro na última semana
+        return `A:${status.dasn.deadline}:${status.dasn.daysLeft <= 7 ? 'fim' : 'inicio'}`
+    }
+    return null
+}
+
+/**
+ * Manda pelo WhatsApp os alertas do MEI (limite, DAS, declaração) que dispararam,
+ * para quem tem o recurso "alertas", o WhatsApp e o lembrete ligado no número.
+ * Usa o modelo "alerta_mei" (nome, título, detalhe), que precisa estar aprovado na Meta.
+ */
+async function sendAlertReminders(now, summary) {
+    const checker = require('../logic/alert-checker')
+    const templateName = process.env.WHATSAPP_ALERT_TEMPLATE || 'alerta_mei'
+    const templateLang = process.env.WHATSAPP_ALERT_TEMPLATE_LANG || 'pt_BR'
+    const out = summary.alertas = { candidates: 0, sent: 0, skipped: 0, failed: 0 }
+
+    const { rows: users } = await db.query(
+        `SELECT DISTINCT l."userId" FROM whatsapp_links l
+         JOIN user_alerts a ON a."userId" = l."userId" AND a.enabled = TRUE
+         WHERE l."reminderEnabled" = TRUE`
+    )
+    for (const { userId } of users) {
+        try {
+            const ctx = await fa.getUserContext(userId)
+            if (!ctx || !fa.hasFeature(ctx, 'whatsapp') || !fa.hasFeature(ctx, 'alertas')) continue
+            const { rows: alertRows } = await db.query('SELECT * FROM user_alerts WHERE "userId" = $1 ORDER BY id ASC', [userId])
+            const seen = new Set()
+            const alerts = alertRows.filter(a => checker.TYPES.includes(a.type) && !seen.has(a.type) && seen.add(a.type))
+            const status = await checker.alertStatus(userId, alerts, now)
+            if (!status.triggered.length) continue
+
+            const { rows: links } = await db.query(
+                `SELECT l.id, l.phone, pw.name AS "personalWalletName" FROM whatsapp_links l
+                 LEFT JOIN business_units pw ON pw.id = l."personalWalletId" AND pw."ownerId" = l."userId"
+                 WHERE l."userId" = $1 AND l."reminderEnabled" = TRUE`,
+                [userId]
+            )
+            for (const trigger of status.triggered) {
+                const alert = alerts.find(a => a.id === trigger.id)
+                const key = alert && alertOccasion(trigger, status, alert)
+                if (!key || alert.lastSentKey === key) continue
+                out.candidates++
+                // Reserva a ocasião antes de mandar; se nada sair, devolve
+                const { rowCount } = await db.query(
+                    'UPDATE user_alerts SET "lastSentKey" = $2 WHERE id = $1 AND "lastSentKey" IS DISTINCT FROM $2',
+                    [alert.id, key]
+                )
+                if (!rowCount) { out.skipped++; continue }
+                let delivered = 0
+                for (const link of links) {
+                    try {
+                        await wa.sendTemplate(link.phone, templateName, templateLang, [
+                            ownerFirstName(ctx, link.personalWalletName) || 'cliente',
+                            trigger.title,
+                            trigger.message
+                        ])
+                        delivered++
+                    } catch (err) {
+                        summary.errors.push({ kind: 'alertas', template: templateName, reason: explainWhatsAppError(err.message) })
+                        console.error('[whatsapp] falha no alerta:', err.message)
+                    }
+                }
+                if (delivered) {
+                    out.sent += delivered
+                } else {
+                    out.failed++
+                    await db.query('UPDATE user_alerts SET "lastSentKey" = $3 WHERE id = $1 AND "lastSentKey" = $2',
+                        [alert.id, key, alert.lastSentKey || null]).catch(() => {})
+                }
+            }
+        } catch (err) {
+            out.failed++
+            summary.errors.push({ kind: 'alertas', template: templateName, reason: explainWhatsAppError(err.message) })
+            console.error('[whatsapp] falha nos alertas:', err.message)
+        }
+    }
+}
+
+/**
+ * Rodada diária (cron das 8h e botão "Enviar agora" do admin): contas vencendo e
+ * alertas do MEI. O resultado fica em system_settings "whatsapp_last_run" para o admin ver.
+ */
+async function sendDailyReminders(now = new Date(), { trigger = 'cron' } = {}) {
+    const today = fa.todayISO(now)
+    const summary = { ranAt: now.toISOString(), trigger, today, errors: [] }
+
+    await sendBillReminders(today, summary)
+    await sendAlertReminders(now, summary)
+
+    // Motivos repetidos aparecem uma vez só, com a contagem
+    const grouped = new Map()
+    for (const e of summary.errors) {
+        const k = `${e.kind}|${e.reason}`
+        grouped.set(k, { ...e, count: (grouped.get(k)?.count || 0) + 1 })
+    }
+    summary.errors = [...grouped.values()].slice(0, 10)
+
+    await db.query(
+        `INSERT INTO system_settings (key, value) VALUES ('whatsapp_last_run', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [JSON.stringify(summary)]
+    ).catch(err => console.error('[whatsapp] não salvou o resumo da rodada:', err.message))
 
     // Limpeza: ids de mensagens antigas e códigos vencidos
     await db.query(`DELETE FROM whatsapp_events WHERE "createdAt" < NOW() - ($1 || ' days')::interval`, [String(EVENTS_RETENTION_DAYS)])
     await db.query('DELETE FROM whatsapp_link_codes WHERE "expiresAt" < NOW()')
 
-    return summary
+    // Compatível com o formato antigo (candidates/sent/skipped/failed = contas)
+    return { ...summary.contas, alertas: summary.alertas, errors: summary.errors, ranAt: summary.ranAt }
 }
 
 module.exports = {
@@ -783,6 +924,7 @@ module.exports = {
     handleIncomingMessage,
     createLinkCode,
     sendDailyReminders,
+    explainWhatsAppError,
     normalizeTransactionArgs,
     matchWallets,
     hashCode

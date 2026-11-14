@@ -8,7 +8,7 @@
 const { db } = require('../db')
 
 const TIME_ZONE = 'America/Sao_Paulo'
-const PLAN_FALLBACK = { whatsapp: 2, whatsapp_midia: 3, contas_pagar: 2 }
+const PLAN_FALLBACK = { whatsapp: 2, whatsapp_midia: 3, contas_pagar: 2, alertas: 1 }
 // Números de WhatsApp por plano (Gratuito, Prata, Ouro) quando o admin ainda não
 // definiu "whatsapp_numbers_<planId>" em system_settings (0 = ilimitado).
 const WHATSAPP_NUMBERS_DEFAULT = { 1: 1, 2: 3, 3: 4 }

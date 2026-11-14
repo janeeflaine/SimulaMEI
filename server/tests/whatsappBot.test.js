@@ -587,6 +587,28 @@ describe('whatsappBot - lembrete diário', () => {
         expect(mockWa.sendTemplate).not.toHaveBeenCalled()
     })
 
+    test('Meta recusa (modelo não aprovado): devolve o dia, guarda o motivo e não conta como enviado', async () => {
+        state.reminderRows = [{ linkId: 7, phone: PHONE, userId: 42, previousOn: '2026-11-11', count: 1, total: 90 }]
+        mockWa.sendTemplate.mockRejectedValueOnce(new Error('WhatsApp API 404: 132001 (#132001) Template name does not exist in the translation'))
+        const summary = await bot.sendDailyReminders(new Date('2026-11-12T11:00:00Z'))
+        expect(summary.sent).toBe(0)
+        expect(summary.failed).toBe(1)
+        expect(summary.errors[0].reason).toMatch(/ainda não foi aprovado pela Meta/)
+        // marca o dia, tenta, e devolve a data anterior
+        const updates = sqlCalls('UPDATE whatsapp_links SET "lastReminderOn"')
+        expect(updates[0][1]).toEqual([7, '2026-11-12'])
+        expect(updates[1][1]).toEqual([7, '2026-11-12', '2026-11-11'])
+        // resumo salvo para o admin
+        const saved = sqlCalls("INSERT INTO system_settings (key, value) VALUES ('whatsapp_last_run'")
+        expect(JSON.parse(saved[0][1][0]).contas.failed).toBe(1)
+    })
+
+    test('explica os erros mais comuns da Meta', () => {
+        expect(bot.explainWhatsAppError('WhatsApp API 400: 132000 Number of parameters does not match')).toMatch(/variáveis/)
+        expect(bot.explainWhatsAppError('WhatsApp não configurado: defina WHATSAPP_TOKEN')).toMatch(/não configurado/)
+        expect(bot.explainWhatsAppError('WhatsApp API 401: 190 Invalid OAuth access token')).toMatch(/Token/)
+    })
+
     test('Cada número da conta recebe o lembrete, com o nome da carteira pessoal dele', async () => {
         state.reminderRows = [
             { linkId: 7, phone: PHONE, userId: 42, personalWalletName: null, count: 1, total: 908.94 },

@@ -444,6 +444,14 @@ const init = async () => {
       console.log('Migration note (carteira principal):', primaryErr.message)
     }
 
+    // Alertas do MEI no WhatsApp: guarda a última ocasião enviada de cada alerta
+    // (ex.: "D:2026-11-20" para o DAS que vence nesse dia) para não mandar de novo
+    try {
+      await pool.query('ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS "lastSentKey" TEXT')
+    } catch (alertMigErr) {
+      console.log('Migration note (alertas no WhatsApp):', alertMigErr.message)
+    }
+
     // Fix Date Offset Bug (Phase 23) - Migrate TIMESTAMP to DATE
     try {
       console.log('🔄 Migrating TIMESTAMP columns to DATE...')
