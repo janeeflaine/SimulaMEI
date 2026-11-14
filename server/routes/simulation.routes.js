@@ -1,5 +1,6 @@
 const express = require('express')
 const { db } = require('../db')
+const { getMeiLimits } = require('../utils/meiLimits')
 const { authMiddleware, optionalAuth } = require('../middleware/auth')
 
 const router = express.Router()
@@ -7,10 +8,11 @@ const router = express.Router()
 // Get calculation rules and limits
 const getRulesAndLimits = async () => {
     const rulesResult = await db.query('SELECT * FROM calculation_rules ORDER BY id DESC LIMIT 1')
-    const limitsResult = await db.query('SELECT * FROM mei_limits ORDER BY id DESC LIMIT 1')
+    // Limite do ano atual (Brasília): muda sozinho em 1º de janeiro
+    const limits = await getMeiLimits()
     return {
         rules: rulesResult.rows[0],
-        limits: limitsResult.rows[0]
+        limits
     }
 }
 
@@ -83,6 +85,7 @@ router.post('/', optionalAuth, async (req, res) => {
                 iss: breakdown.iss
             },
             limits: {
+                year: limits.year,
                 annualLimit: limits.annualLimit,
                 warningPercentage: limits.warningPercentage,
                 dangerPercentage: limits.dangerPercentage

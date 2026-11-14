@@ -314,11 +314,20 @@ router.put('/rules', async (req, res) => {
 })
 
 // ========== LIMITS ==========
+// Limite do MEI por ano (LC 238/2026). GET traz o do ano atual (campos de sempre)
+// e os anos ao redor; PUT grava o de um ano e as porcentagens de aviso.
+const { getMeiLimits, currentYearBR } = require('../utils/meiLimits')
+const limitYears = () => { const y = currentYearBR(); return [y - 1, y, y + 1, y + 2] }
+
 router.get('/limits', async (req, res) => {
     try {
-        const limitsResult = await db.query('SELECT * FROM mei_limits ORDER BY id DESC LIMIT 1')
-        const limits = limitsResult.rows[0]
-        res.json(limits || { annualLimit: 81000, warningPercentage: 70, dangerPercentage: 90 })
+        const current = await getMeiLimits()
+        const years = []
+        for (const year of limitYears()) {
+            const l = await getMeiLimits(year)
+            years.push({ year, annualLimit: l.annualLimit, source: l.source, lawLimit: l.lawLimit })
+        }
+        res.json({ ...current, years })
     } catch (error) {
         console.error('Get limits error:', error)
         res.status(500).json({ message: 'Erro ao carregar limites' })
@@ -327,30 +336,45 @@ router.get('/limits', async (req, res) => {
 
 router.put('/limits', async (req, res) => {
     try {
-        const { annualLimit, warningPercentage, dangerPercentage } = req.body
+        const body = req.body || {}
+        const year = body.year === undefined ? currentYearBR() : Number(body.year)
+        const annualLimit = Number(body.annualLimit)
+        const warningPercentage = Number(body.warningPercentage)
+        const dangerPercentage = Number(body.dangerPercentage)
+        if (!Number.isInteger(year) || year < 2020 || year > 2100) {
+            return res.status(400).json({ message: 'Ano inválido.' })
+        }
+        if (!Number.isFinite(annualLimit) || annualLimit < 1000 || annualLimit > 10000000) {
+            return res.status(400).json({ message: 'O limite anual deve ficar entre R$ 1 mil e R$ 10 milhões.' })
+        }
+        if (!Number.isFinite(warningPercentage) || !Number.isFinite(dangerPercentage) ||
+            warningPercentage < 1 || dangerPercentage > 100 || warningPercentage >= dangerPercentage) {
+            return res.status(400).json({ message: 'A atenção (amarelo) deve ser menor que o risco (vermelho), entre 1% e 100%.' })
+        }
 
-        const oldResult = await db.query('SELECT * FROM mei_limits ORDER BY id DESC LIMIT 1')
+        const old = await getMeiLimits(year)
 
         await db.query(`
-            INSERT INTO mei_limits ("annualLimit", "warningPercentage", "dangerPercentage", "updatedBy")
-            VALUES ($1, $2, $3, $4)
-        `, [annualLimit, warningPercentage, dangerPercentage, req.user.id])
+            INSERT INTO mei_limits (year, "annualLimit", "warningPercentage", "dangerPercentage", "updatedBy")
+            VALUES ($1, $2, $3, $4, $5)
+        `, [year, annualLimit, warningPercentage, dangerPercentage, req.user.id])
 
+        const value = { year, annualLimit, warningPercentage, dangerPercentage }
         await auditLogger.log({
             level: 'INFO',
             event_type: 'LIMITS_UPDATED',
             actor: { user_id: req.user.id, role: req.user.role },
             context: req.context || {},
             target: { resource_type: 'MEI_LIMITS' },
-            changes: { old_value: oldResult.rows[0] || {}, new_value: req.body }
+            changes: { old_value: old, new_value: value }
         })
 
         await db.query(`
             INSERT INTO admin_logs ("userId", action, details)
             VALUES ($1, 'UPDATE_LIMITS', $2)
-        `, [req.user.id, JSON.stringify(req.body)])
+        `, [req.user.id, JSON.stringify(value)])
 
-        res.json({ message: 'Limites atualizados com sucesso' })
+        res.json({ message: 'Limites atualizados com sucesso', ...value })
     } catch (error) {
         console.error('Update limits error:', error)
         res.status(500).json({ message: 'Erro ao atualizar limites' })

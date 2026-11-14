@@ -1,4 +1,5 @@
 const { db } = require('../db')
+const { getMeiLimits } = require('../utils/meiLimits')
 
 /**
  * Alertas do MEI: limite de faturamento, vencimento do DAS e declaração anual.
@@ -57,8 +58,8 @@ const docKey = (doc) => String(doc || '').toUpperCase().replace(/[^0-9A-Z]/g, ''
  * à parte ("sem carteira") e não dispara aviso, porque não dá para saber de qual é.
  */
 async function revenueStatus(userId, year) {
-    const { rows: [lim] } = await db.query('SELECT "annualLimit" FROM mei_limits ORDER BY "updatedAt" DESC NULLS LAST LIMIT 1')
-    const limit = Number(lim?.annualLimit) > 0 ? Number(lim.annualLimit) : 81000
+    // Limite do ano do faturamento (2026: 81 mil; 2027: 110 mil; 2028 em diante: 140 mil)
+    const { annualLimit: limit } = await getMeiLimits(year)
 
     const { rows: wallets } = await db.query(
         `SELECT id, name, cnpj FROM business_units

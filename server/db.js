@@ -556,6 +556,16 @@ const seedDefaults = async () => {
       await pool.query(`INSERT INTO mei_limits("annualLimit", "warningPercentage", "dangerPercentage") VALUES(81000, 70, 90)`)
     }
 
+    // Limite do MEI por ano (LC 238/2026: 81 mil até 2026, 110 mil em 2027, 140 mil
+    // a partir de 2028). Linhas antigas, sem ano, ficam com o ano em que foram
+    // gravadas; ano sem linha usa o valor da lei (utils/meiLimits.js).
+    try {
+      await pool.query('ALTER TABLE mei_limits ADD COLUMN IF NOT EXISTS year INTEGER')
+      await pool.query(`UPDATE mei_limits SET year = EXTRACT(YEAR FROM COALESCE("updatedAt", NOW()) AT TIME ZONE 'America/Sao_Paulo')::int WHERE year IS NULL`)
+    } catch (limitYearErr) {
+      console.log('Migration note (limite do MEI por ano):', limitYearErr.message)
+    }
+
     // Default System Settings for Trial
     const trialEnabled = await pool.query("SELECT * FROM system_settings WHERE key = 'trial_enabled'")
     if (trialEnabled.rows.length === 0) {

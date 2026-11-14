@@ -30,6 +30,7 @@ beforeEach(() => {
             { id: 12, userId: 1, type: 'DAS_EXPIRY', enabled: true, config: '{"days_before":5}' },
             { id: 13, userId: 1, type: 'ANNUAL_DECLARATION', enabled: true, config: '{}' }
         ],
+        limits: { 2026: 81000 },
         wallets: [{ id: 5, name: 'Loja', cnpj: '33.137.007/0001-09' }],
         sums: [{ walletId: 5, count: 2, total: 70000 }]
     }
@@ -44,7 +45,8 @@ beforeEach(() => {
         }
         if (q.startsWith('SELECT * FROM user_alerts WHERE id = $1')) return { rows: state.alerts.filter(a => a.id === params[0] && a.userId === params[1]) }
         if (q.startsWith('UPDATE user_alerts')) return { rows: [{ id: params[2], enabled: params[0], config: params[1] }] }
-        if (q.startsWith('SELECT "annualLimit" FROM mei_limits')) return { rows: [{ annualLimit: 81000 }] }
+        if (q.startsWith('SELECT "annualLimit", "updatedAt" FROM mei_limits WHERE year = $1')) return { rows: state.limits[params[0]] ? [{ annualLimit: state.limits[params[0]] }] : [] }
+        if (q.startsWith('SELECT "warningPercentage", "dangerPercentage" FROM mei_limits')) return { rows: [{ warningPercentage: 70, dangerPercentage: 90 }] }
         if (q.startsWith('SELECT id, name, cnpj FROM business_units')) return { rows: state.wallets }
         if (q.startsWith('SELECT t."business_unit_id" AS "walletId"')) return { rows: state.sums }
         if (q.startsWith('SELECT revenue, "revenueType" FROM simulations')) return { rows: state.simulation ? [state.simulation] : [] }
@@ -227,5 +229,29 @@ describe('Limite de faturamento é de cada MEI (dono, 14/11)', () => {
         const { revenue } = await revenueOf()
         expect(revenue).toMatchObject({ source: 'simulacao', total: 72000, monthly: 6000 })
         expect(revenue.meis).toHaveLength(1)
+    })
+})
+
+describe('Limite do MEI por ano (LC 238/2026)', () => {
+    const { lawLimit, getMeiLimits } = require('../utils/meiLimits')
+
+    test.each([[2025, 81000], [2026, 81000], [2027, 110000], [2028, 140000], [2031, 140000]])('lei: %i = R$ %i', (year, value) => {
+        expect(lawLimit(year)).toBe(value)
+    })
+
+    test('ano sem valor gravado no admin usa o da lei; com valor, o do admin', async () => {
+        state.limits = { 2026: 85000 }
+        expect(await getMeiLimits(2027)).toMatchObject({ annualLimit: 110000, source: 'lei' })
+        expect(await getMeiLimits(2026)).toMatchObject({ annualLimit: 85000, source: 'admin' })
+    })
+
+    test('faturamento de 2027 compara com R$ 110 mil (90 mil não avisa)', async () => {
+        state.limits = {}
+        state.sums = [{ walletId: 5, count: 3, total: 90000 }]
+        const revenue = await checker.revenueStatus(1, 2027)
+        expect(revenue).toMatchObject({ limit: 110000, total: 90000 })
+        expect(Math.round(revenue.percent)).toBe(82)
+        const rev2026 = await checker.revenueStatus(1, 2026)
+        expect(rev2026.limit).toBe(81000)
     })
 })
