@@ -17,6 +17,13 @@ const validateWalletOwnership = async (req, res, next) => {
         if (sourceWalletId) walletIdsToCheck.add(Number(sourceWalletId))
         if (targetWalletId) walletIdsToCheck.add(Number(targetWalletId))
 
+        // Id que não é número inteiro: recusa aqui (antes virava erro 500 no banco)
+        for (const id of walletIdsToCheck) {
+            if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+                return res.status(400).json({ message: 'Carteira inválida.' })
+            }
+        }
+
         if (walletIdsToCheck.size === 0) {
             // No wallet ID in body, proceed (might be a global operation or update without moving wallet)
             return next()

@@ -1,4 +1,5 @@
 const express = require('express')
+const crypto = require('crypto')
 const router = express.Router()
 const { db, pool } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
@@ -113,6 +114,14 @@ const isValidDateOnly = (v) => {
     const d = new Date(`${v}T00:00:00Z`)
     return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
 }
+
+// Transferência entre carteiras: os dois lados ficam ligados por "transferId".
+// Lado de transferência não se edita (só descrição e categoria): para mudar
+// carteira, valor ou data, exclui (sai o par) e transfere de novo.
+const TRANSFER_METHOD = 'Transferência'
+const MAX_TRANSFER_AMOUNT = 100000000
+const isTransferRow = (t) => Boolean(t && (t.transferId || t.paymentMethod === TRANSFER_METHOD))
+const TRANSFER_EDITABLE = ['description', 'categoryId']
 
 const freeHistoryStart = (user, now = new Date()) => {
     if (!user || user.role === 'ADMIN' || user.isInTrial === true) return null
@@ -537,6 +546,10 @@ router.post('/transactions', authMiddleware, checkTransactionLimit, validateWall
     if (!isValidAmount(amount)) {
         return res.status(400).json({ message: 'Informe um valor maior que zero.' })
     }
+    // "Transferência" só pela janela Transferir (fica fora do faturamento do MEI e tem os dois lados)
+    if (paymentMethod === TRANSFER_METHOD) {
+        return res.status(400).json({ message: 'Para mover dinheiro entre carteiras, use "Transferir entre carteiras" no Extrato.' })
+    }
 
     // Normalize empty strings to null for ID and date columns
     const finalCategoryId = categoryId === '' || categoryId === null ? null : categoryId
@@ -643,6 +656,24 @@ router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, valid
             return res.status(400).json({ message: 'Informe um valor maior que zero.' });
         }
 
+        if (!categoryIdOf(id)) return res.status(404).json({ message: 'Transação não encontrada' });
+        const { rows: [current] } = await db.query(
+            'SELECT id, "paymentMethod", "transferId" FROM finance_transactions WHERE id = $1 AND "userId" = $2',
+            [id, req.user.id]
+        );
+        if (!current) return res.status(404).json({ message: 'Transação não encontrada' });
+        if (isTransferRow(current)) {
+            const blocked = keys.filter(k => !TRANSFER_EDITABLE.includes(k) && updates[k] !== current[k]);
+            if (blocked.length) {
+                return res.status(409).json({
+                    message: 'Este lançamento é um lado de uma transferência. Para mudar carteira, valor ou data, exclua a transferência (os dois lados saem juntos) e faça de novo em "Transferir entre carteiras".',
+                    reason: 'transfer'
+                });
+            }
+        } else if (keys.includes('paymentMethod') && updates.paymentMethod === TRANSFER_METHOD) {
+            return res.status(400).json({ message: 'Para mover dinheiro entre carteiras, use "Transferir entre carteiras" no Extrato.' });
+        }
+
         // Build dynamic query
         const setClause = keys.map((key, index) => `"${key}" = $${index + 1}`).join(', ');
         const values = keys.map(key => {
@@ -699,14 +730,30 @@ router.patch('/transactions/:id', authMiddleware, validateWalletOwnership, valid
 });
 
 // Delete a transaction
+// Lado de transferência: sai o par inteiro (saída e entrada), na mesma instrução
+const DELETE_WITH_PAIR = `
+    DELETE FROM finance_transactions
+    WHERE "userId" = $2 AND (
+        id = ANY($1::int[])
+        OR "transferId" IN (
+            SELECT "transferId" FROM finance_transactions
+            WHERE id = ANY($1::int[]) AND "userId" = $2 AND "transferId" IS NOT NULL
+        )
+    )
+    RETURNING id, "transferId", type, amount, status`
+
 router.delete('/transactions/:id', authMiddleware, async (req, res) => {
     try {
-        const { rowCount } = await db.query(
-            'DELETE FROM finance_transactions WHERE id = $1 AND "userId" = $2',
-            [req.params.id, req.user.id]
-        )
-        if (rowCount === 0) return res.status(404).json({ message: 'Transação não encontrada' })
-        res.json({ message: 'Transação excluída com sucesso' })
+        const id = categoryIdOf(req.params.id)
+        if (!id) return res.status(404).json({ message: 'Transação não encontrada' })
+        const { rows } = await db.query(DELETE_WITH_PAIR, [[id], req.user.id])
+        if (rows.length === 0) return res.status(404).json({ message: 'Transação não encontrada' })
+        res.json({
+            message: rows.length > 1 ? 'Transferência excluída (saída e entrada).' : 'Transação excluída com sucesso',
+            deletedIds: rows.map(r => r.id),
+            deletedCount: rows.length,
+            deleted: rows
+        })
     } catch (err) {
         console.error(err)
         res.status(500).json({ message: 'Erro ao excluir transação' })
@@ -715,16 +762,18 @@ router.delete('/transactions/:id', authMiddleware, async (req, res) => {
 
 // Bulk delete transactions
 router.post('/transactions/bulk-delete', authMiddleware, async (req, res) => {
-    const { ids } = req.body
+    const { ids } = req.body || {}
     if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ message: 'Nenhuma transação selecionada.' })
     }
+    const cleanIds = [...new Set(ids.map(categoryIdOf))]
+    if (cleanIds.includes(null) || cleanIds.length > 500) {
+        return res.status(400).json({ message: 'Seleção inválida. Atualize a página e tente de novo.' })
+    }
     try {
-        const { rowCount } = await db.query(
-            'DELETE FROM finance_transactions WHERE id = ANY($1::int[]) AND "userId" = $2',
-            [ids, req.user.id]
-        )
-        res.json({ message: `${rowCount} transação(ões) excluída(s) com sucesso.`, deletedCount: rowCount })
+        const { rows } = await db.query(DELETE_WITH_PAIR, [cleanIds, req.user.id])
+        const rowCount = rows.length
+        res.json({ message: `${rowCount} transação(ões) excluída(s) com sucesso.`, deletedCount: rowCount, deletedIds: rows.map(r => r.id), deleted: rows })
     } catch (err) {
         console.error('Erro ao excluir transações em lote:', err)
         res.status(500).json({ message: 'Erro ao excluir transações.' })
@@ -778,6 +827,11 @@ router.post('/transfers', authMiddleware, transferenciasGuard, validateWalletOwn
     if (!isValidAmount(amount)) {
         return res.status(400).json({ message: 'Informe um valor maior que zero.' });
     }
+    // Centavos (o banco guarda REAL) e teto igual ao dos cartões
+    const value = Math.round(Number(amount) * 100) / 100;
+    if (value <= 0 || value > MAX_TRANSFER_AMOUNT) {
+        return res.status(400).json({ message: 'Informe um valor entre R$ 0,01 e R$ 100 milhões.' });
+    }
 
     if (Number(sourceWalletId) === Number(targetWalletId)) {
         return res.status(400).json({ message: 'Escolha carteiras diferentes para a transferência.' });
@@ -810,25 +864,26 @@ router.post('/transfers', authMiddleware, transferenciasGuard, validateWalletOwn
         // Cada ponta fica com o tipo da sua carteira (antes as duas eram gravadas como do MEI)
         const targetOf = (w) => (w.account_type === 'PJ' ? 'BUSINESS' : 'PERSONAL');
         const suffix = note ? ` - ${note}` : '';
+        const transferId = crypto.randomUUID();
 
         // 1. Saída da carteira de origem
         await client.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date") 
-            VALUES ($1, 'DESPESA', $6, $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
-            [req.user.id, amount, date, source.id, `Transferência para ${target.name}${suffix}`, targetOf(source)]
+            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date", "transferId") 
+            VALUES ($1, 'DESPESA', $6, $2, $3, $4, $5, 'Transferência', 'PAID', $3, $7)`,
+            [req.user.id, value, date, source.id, `Transferência para ${target.name}${suffix}`, targetOf(source), transferId]
         );
 
         // 2. Entrada na carteira de destino
         await client.query(
             `INSERT INTO finance_transactions 
-            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date") 
-            VALUES ($1, 'RECEITA', $6, $2, $3, $4, $5, 'Transferência', 'PAID', $3)`,
-            [req.user.id, amount, date, target.id, `Transferência de ${source.name}${suffix}`, targetOf(target)]
+            ("userId", type, target, amount, date, "business_unit_id", description, "paymentMethod", status, "billing_date", "transferId") 
+            VALUES ($1, 'RECEITA', $6, $2, $3, $4, $5, 'Transferência', 'PAID', $3, $7)`,
+            [req.user.id, value, date, target.id, `Transferência de ${source.name}${suffix}`, targetOf(target), transferId]
         );
 
         await client.query('COMMIT');
-        res.json({ message: 'Transferência realizada com sucesso!' });
+        res.json({ message: 'Transferência realizada com sucesso!', transferId });
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         console.error('Erro na transferência:', err);

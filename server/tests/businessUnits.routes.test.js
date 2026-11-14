@@ -346,8 +346,8 @@ describe('Transferência entre carteiras', () => {
         expect(res.status).toBe(200)
         const [out, inc] = ran('INSERT INTO finance_transactions')
         expect(out.q).toContain("'DESPESA', $6")
-        expect(out.params).toEqual([1, 150, '2026-11-10', 4, 'Transferência para Casa - pró-labore', 'BUSINESS'])
-        expect(inc.params).toEqual([1, 150, '2026-11-10', 5, 'Transferência de Oficina - pró-labore', 'PERSONAL'])
+        expect(out.params).toEqual([1, 150, '2026-11-10', 4, 'Transferência para Casa - pró-labore', 'BUSINESS', expect.any(String)])
+        expect(inc.params).toEqual([1, 150, '2026-11-10', 5, 'Transferência de Oficina - pró-labore', 'PERSONAL', out.params[6]])
     })
 
     test.each(['2026-02-30', '10/11/2026', 'amanhã', ''])('data "%s" é recusada', async (date) => {

@@ -452,6 +452,38 @@ const init = async () => {
       console.log('Migration note (alertas no WhatsApp):', alertMigErr.message)
     }
 
+    // Transferência entre carteiras: os dois lados (saída e entrada) ficam ligados
+    // por "transferId", para excluir os dois juntos. As antigas são ligadas pelo par
+    // gravado em seguida (saída id N, entrada id N+1, mesma pessoa, data e valor).
+    // Cada lado fica com o tipo da sua carteira (antes as duas pontas iam como do MEI).
+    // Tudo idempotente: roda a cada início sem mexer no que já está certo.
+    try {
+      await pool.query('ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "transferId" TEXT')
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_finance_transactions_transfer ON finance_transactions ("transferId") WHERE "transferId" IS NOT NULL')
+      await pool.query(`
+        WITH pairs AS (
+          SELECT d.id AS out_id, r.id AS in_id
+          FROM finance_transactions d
+          JOIN finance_transactions r
+            ON r.id = d.id + 1 AND r."userId" = d."userId" AND r.amount = d.amount AND r.date = d.date
+           AND r.type = 'RECEITA' AND r."paymentMethod" = 'Transferência' AND r."transferId" IS NULL
+          WHERE d.type = 'DESPESA' AND d."paymentMethod" = 'Transferência' AND d."transferId" IS NULL
+        )
+        UPDATE finance_transactions t SET "transferId" = 'old-' || p.out_id
+        FROM pairs p WHERE t.id IN (p.out_id, p.in_id)
+      `)
+      await pool.query(`
+        UPDATE finance_transactions t
+        SET target = CASE b."account_type" WHEN 'PJ' THEN 'BUSINESS' ELSE 'PERSONAL' END
+        FROM business_units b
+        WHERE b.id = t."business_unit_id" AND b."ownerId" = t."userId"
+          AND t."paymentMethod" = 'Transferência'
+          AND t.target IS DISTINCT FROM (CASE b."account_type" WHEN 'PJ' THEN 'BUSINESS' ELSE 'PERSONAL' END)
+      `)
+    } catch (transferMigErr) {
+      console.log('Migration note (transferências ligadas):', transferMigErr.message)
+    }
+
     // Fix Date Offset Bug (Phase 23) - Migrate TIMESTAMP to DATE
     try {
       console.log('🔄 Migrating TIMESTAMP columns to DATE...')
