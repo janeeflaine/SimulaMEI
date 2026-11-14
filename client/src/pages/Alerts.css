@@ -144,6 +144,36 @@
     font-weight: 700;
 }
 
+/* Vários MEIs: uma barra para cada um (o limite é de cada CNPJ) */
+.alr-meter {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.alr-meters {
+    display: grid;
+    gap: 18px;
+}
+
+.alr-meter--compact + .alr-meter--compact {
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.alertas .alr-meter__name {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: left;
+    color: #fff;
+    overflow-wrap: anywhere;
+}
+
+.alr-meter--compact .alr-revenue__value {
+    font-size: 1.75rem;
+}
+
 .alr-dates .csp-stats {
     grid-template-columns: 1fr;
     height: 100%;
@@ -418,6 +448,10 @@
 
     .alr-revenue__value {
         font-size: 1.875rem;
+    }
+
+    .alr-meter--compact .alr-revenue__value {
+        font-size: 1.5rem;
     }
 
     .alr-dates .csp-stats {

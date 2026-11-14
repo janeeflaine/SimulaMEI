@@ -34,6 +34,39 @@ const planWith = (plans, feature, fallback) => {
     return found?.name || fallback
 }
 
+// Faturamento de um MEI: valor, barra até o limite e quanto falta
+function RevenueMeter({ mei, limit, trigger, showMarker, compact }) {
+    const left = limit - mei.total
+    return (
+        <div className={`alr-meter ${compact ? 'alr-meter--compact' : ''}`}>
+            {compact && (
+                <h3 className="alr-meter__name">
+                    {mei.unassigned ? 'Receitas do MEI sem carteira' : mei.name}
+                </h3>
+            )}
+            <p className="alr-revenue__value">{brl(mei.total)}</p>
+            {mei.unassigned ? (
+                <p className="alr-revenue__note">
+                    Lançadas sem carteira do MEI, por isso não entram no limite de nenhum. Escolha a carteira certa no <Link to="/financas/extrato">Extrato</Link>.
+                </p>
+            ) : (
+                <>
+                    <div className="alr-bar" role="img" aria-label={`${pct(mei.percent)} do limite anual`}>
+                        <i style={{ width: `${Math.min(100, Number(mei.percent) || 0)}%` }} />
+                        {showMarker && <b style={{ left: `${trigger}%` }} title={`Aviso em ${trigger}%`} />}
+                    </div>
+                    <div className="alr-revenue__row">
+                        <span className="alr-revenue__tag">{pct(mei.percent)} do limite</span>
+                        <span>
+                            {left >= 0 ? `Faltam ${brl(left)} para o limite de ${brl(limit)}` : `Passou ${brl(-left)} do limite de ${brl(limit)}`}
+                        </span>
+                    </div>
+                </>
+            )}
+        </div>
+    )
+}
+
 export default function Alerts() {
     const { user } = useAuth()
     const { notify, dialog } = useConfirmDialog()
@@ -116,8 +149,8 @@ export default function Alerts() {
     const alerts = status ? ORDER.map(t => status.alerts.find(a => a.type === t)).filter(Boolean) : []
     const revenueAlert = alerts.find(a => a.type === 'REVENUE_LIMIT')
     const trigger = Number(parseConfig(revenueAlert?.config).trigger_at_percentage) || 80
-    const barWidth = Math.min(100, Number(revenue?.percent) || 0)
-    const left = revenue ? revenue.limit - revenue.total : 0
+    const meis = revenue?.meis || []
+    const several = meis.length > 1
 
     return (
         <div className="alertas">
@@ -148,23 +181,28 @@ export default function Alerts() {
                         <div className="alr-top">
                             {/* Faturamento do ano: o destaque da página */}
                             <section className="alr-revenue" aria-labelledby="alr-revenue-title">
-                                <h2 id="alr-revenue-title" className="alr-revenue__label">Faturamento do MEI em {revenue.year}</h2>
+                                <h2 id="alr-revenue-title" className="alr-revenue__label">
+                                    {several ? `Faturamento de cada MEI em ${revenue.year}` : `Faturamento do MEI em ${revenue.year}`}
+                                </h2>
                                 {revenue.source ? (
                                     <>
-                                        <p className="alr-revenue__value">{brl(revenue.total)}</p>
-                                        <div className="alr-bar" role="img" aria-label={`${pct(revenue.percent)} do limite anual`}>
-                                            <i style={{ width: `${barWidth}%` }} />
-                                            {revenueAlert?.enabled && <b style={{ left: `${trigger}%` }} title={`Aviso em ${trigger}%`} />}
-                                        </div>
-                                        <div className="alr-revenue__row">
-                                            <span className="alr-revenue__tag">{pct(revenue.percent)} do limite</span>
-                                            <span>
-                                                {left >= 0 ? `Faltam ${brl(left)} para o limite de ${brl(revenue.limit)}` : `Passou ${brl(-left)} do limite de ${brl(revenue.limit)}`}
-                                            </span>
+                                        <div className={several ? 'alr-meters' : undefined}>
+                                            {meis.map(mei => (
+                                                <RevenueMeter
+                                                    key={mei.key}
+                                                    mei={mei}
+                                                    limit={revenue.limit}
+                                                    trigger={trigger}
+                                                    showMarker={!!revenueAlert?.enabled}
+                                                    compact={several}
+                                                />
+                                            ))}
                                         </div>
                                         <p className="alr-revenue__note">
                                             {revenue.source === 'extrato'
-                                                ? 'Soma das receitas das carteiras do MEI já recebidas no ano, sem transferências entre carteiras.'
+                                                ? (several
+                                                    ? `Cada MEI tem o seu limite de ${brl(revenue.limit)} por ano. Carteiras com o mesmo CNPJ somam juntas; transferências entre carteiras não contam.`
+                                                    : 'Soma das receitas das carteiras do MEI já recebidas no ano, sem transferências entre carteiras.')
                                                 : `Ainda não há receitas do MEI recebidas em ${revenue.year}. A conta usa a sua última simulação${revenue.monthly ? ` (${brl(revenue.monthly)} por mês)` : ''}.`}
                                         </p>
                                     </>
@@ -172,7 +210,7 @@ export default function Alerts() {
                                     <>
                                         <p className="alr-revenue__value">{brl(0)}</p>
                                         <p className="alr-revenue__note">
-                                            Ainda não há receitas do MEI em {revenue.year}. Lance as vendas no <Link to="/financas/extrato">Extrato</Link> para acompanhar o limite de {brl(revenue.limit)} por ano.
+                                            Ainda não há receitas do MEI em {revenue.year}. Lance as vendas no <Link to="/financas/extrato">Extrato</Link> para acompanhar o limite de {brl(revenue.limit)} por ano{several ? ', de cada MEI' : ''}.
                                         </p>
                                     </>
                                 )}
@@ -203,7 +241,7 @@ export default function Alerts() {
                             ) : (
                                 <ul className="alr-notices">
                                     {status.triggered.map(t => (
-                                        <li key={`${t.type}-${t.id}`} className={`alr-notice ${t.severity === 'danger' ? 'is-danger' : ''}`}>
+                                        <li key={t.key || `${t.type}-${t.id}`} className={`alr-notice ${t.severity === 'danger' ? 'is-danger' : ''}`}>
                                             <AlertTriangle size={18} aria-hidden="true" />
                                             <div>
                                                 <strong>{t.title}</strong>

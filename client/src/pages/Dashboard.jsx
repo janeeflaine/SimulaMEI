@@ -882,7 +882,7 @@ export default function Dashboard() {
                 )}
 
                 {activeAlerts.map(alert => (
-                    <div key={`alerta-${alert.type}-${alert.id}`} className={`painel-notice ${alert.severity === 'danger' ? 'painel-notice--danger' : ''}`} role="status">
+                    <div key={`alerta-${alert.key || `${alert.type}-${alert.id}`}`} className={`painel-notice ${alert.severity === 'danger' ? 'painel-notice--danger' : ''}`} role="status">
                         <div className="painel-notice__text">
                             <strong>{alert.title || alert.message}</strong>
                             {alert.title && <span>{alert.message}</span>}

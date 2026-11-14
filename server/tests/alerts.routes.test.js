@@ -30,7 +30,8 @@ beforeEach(() => {
             { id: 12, userId: 1, type: 'DAS_EXPIRY', enabled: true, config: '{"days_before":5}' },
             { id: 13, userId: 1, type: 'ANNUAL_DECLARATION', enabled: true, config: '{}' }
         ],
-        revenue: { count: 2, total: 70000 }
+        wallets: [{ id: 5, name: 'Loja', cnpj: '33.137.007/0001-09' }],
+        sums: [{ walletId: 5, count: 2, total: 70000 }]
     }
     const handler = async (rawSql, params = []) => {
         const q = norm(rawSql)
@@ -44,7 +45,9 @@ beforeEach(() => {
         if (q.startsWith('SELECT * FROM user_alerts WHERE id = $1')) return { rows: state.alerts.filter(a => a.id === params[0] && a.userId === params[1]) }
         if (q.startsWith('UPDATE user_alerts')) return { rows: [{ id: params[2], enabled: params[0], config: params[1] }] }
         if (q.startsWith('SELECT "annualLimit" FROM mei_limits')) return { rows: [{ annualLimit: 81000 }] }
-        if (q.startsWith('SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::float AS total')) return { rows: [state.revenue] }
+        if (q.startsWith('SELECT id, name, cnpj FROM business_units')) return { rows: state.wallets }
+        if (q.startsWith('SELECT t."business_unit_id" AS "walletId"')) return { rows: state.sums }
+        if (q.startsWith('SELECT revenue, "revenueType" FROM simulations')) return { rows: state.simulation ? [state.simulation] : [] }
         return { rows: [], rowCount: 0 }
     }
     mockDb.query.mockImplementation(handler)
@@ -118,9 +121,13 @@ describe('Situação e datas', () => {
         const res = await request(app).get('/api/alerts/status')
         expect(res.status).toBe(200)
         expect(res.body.revenue).toMatchObject({ total: 70000, limit: 81000, source: 'extrato' })
-        const revenueSql = ran('SELECT COUNT(*)::int AS count')[0].q
-        expect(revenueSql).toContain("type = 'RECEITA' AND target = 'BUSINESS' AND status = 'PAID'")
+        const revenueSql = ran('SELECT t."business_unit_id"')[0].q
+        expect(revenueSql).toContain("t.type = 'RECEITA' AND t.status = 'PAID'")
+        expect(revenueSql).toContain("(t.target = 'BUSINESS' OR b.\"account_type\" = 'PJ')")
         expect(revenueSql).toContain("<> 'Transferência'")
+        // Carteira de outra pessoa nunca entra no grupo do MEI
+        expect(revenueSql).toContain('b."ownerId" = t."userId"')
+        expect(ran('SELECT id, name, cnpj FROM business_units')[0].params).toEqual([1])
         expect(res.body.triggered.some(t => t.type === 'REVENUE_LIMIT')).toBe(true)
     })
 
@@ -141,5 +148,84 @@ describe('Situação e datas', () => {
         expect(checker.dasnStatus({ year: 2027, month: 4, day: 1 })).toMatchObject({ deadline: '2027-05-31', season: true, daysLeft: 60, referenceYear: 2026 })
         expect(checker.dasnStatus({ year: 2026, month: 11, day: 14 })).toMatchObject({ deadline: '2027-05-31', season: false })
         expect(checker.dasnStatus({ year: 2027, month: 6, day: 1 })).toMatchObject({ deadline: '2028-05-31', season: false })
+    })
+})
+
+describe('Limite de faturamento é de cada MEI (dono, 14/11)', () => {
+    const revenueOf = async () => (await request(app).get('/api/alerts/status')).body
+
+    test('dois MEIs com CNPJ diferente: cada um com o seu limite, sem somar', async () => {
+        state.wallets = [
+            { id: 5, name: 'Espetinho', cnpj: '33.137.007/0001-09' },
+            { id: 6, name: 'Miriam Doces', cnpj: '11.222.333/0001-81' }
+        ]
+        state.sums = [{ walletId: 5, count: 3, total: 50000 }, { walletId: 6, count: 4, total: 40000 }]
+        const body = await revenueOf()
+        expect(body.revenue.meis.map(m => [m.name, m.total])).toEqual([['Espetinho', 50000], ['Miriam Doces', 40000]])
+        expect(body.revenue.total).toBe(50000) // o mais perto do limite, nunca a soma (90 mil)
+        expect(body.triggered.some(t => t.type === 'REVENUE_LIMIT')).toBe(false)
+    })
+
+    test('cada MEI que passou do aviso dispara o seu, com o nome dele', async () => {
+        state.wallets = [
+            { id: 5, name: 'Espetinho', cnpj: '33.137.007/0001-09' },
+            { id: 6, name: 'Miriam Doces', cnpj: '11.222.333/0001-81' }
+        ]
+        state.sums = [{ walletId: 5, count: 3, total: 70000 }, { walletId: 6, count: 4, total: 82000 }]
+        const { triggered } = await revenueOf()
+        const rev = triggered.filter(t => t.type === 'REVENUE_LIMIT')
+        expect(rev).toHaveLength(2)
+        expect(rev[0].title).toBe('Faturamento de Miriam Doces passou do limite de 2026')
+        expect(rev[1].title).toMatch(/^Faturamento de Espetinho em 86,4% do limite$/)
+        expect(new Set(rev.map(t => t.key)).size).toBe(2)
+    })
+
+    test('carteiras com o mesmo CNPJ (com ou sem máscara) somam juntas', async () => {
+        state.wallets = [
+            { id: 5, name: 'Loja (Nubank)', cnpj: '33.137.007/0001-09' },
+            { id: 6, name: 'Loja (Caixa)', cnpj: '33137007000109' }
+        ]
+        state.sums = [{ walletId: 5, count: 1, total: 40000 }, { walletId: 6, count: 1, total: 30000 }]
+        const { revenue, triggered } = await revenueOf()
+        expect(revenue.meis).toHaveLength(1)
+        expect(revenue.meis[0]).toMatchObject({ name: 'Loja (Nubank)', total: 70000, wallets: 2 })
+        expect(triggered.find(t => t.type === 'REVENUE_LIMIT').title).toBe('Faturamento do MEI em 86,4% do limite')
+    })
+
+    test('carteiras PJ sem CNPJ contam cada uma sozinha', async () => {
+        state.wallets = [{ id: 5, name: 'A', cnpj: null }, { id: 6, name: 'B', cnpj: '' }]
+        state.sums = [{ walletId: 5, count: 1, total: 50000 }, { walletId: 6, count: 1, total: 50000 }]
+        const { revenue, triggered } = await revenueOf()
+        expect(revenue.meis).toHaveLength(2)
+        expect(triggered.some(t => t.type === 'REVENUE_LIMIT')).toBe(false)
+    })
+
+    test('receita antiga sem carteira: com um MEI só, conta nele', async () => {
+        state.sums = [{ walletId: 5, count: 1, total: 40000 }, { walletId: null, count: 2, total: 30000 }]
+        const { revenue } = await revenueOf()
+        expect(revenue.meis).toEqual([expect.objectContaining({ name: 'Loja', total: 70000, unassigned: false })])
+    })
+
+    test('receita sem carteira com vários MEIs: aparece à parte e não dispara aviso', async () => {
+        state.wallets = [
+            { id: 5, name: 'Espetinho', cnpj: '33.137.007/0001-09' },
+            { id: 6, name: 'Miriam Doces', cnpj: '11.222.333/0001-81' }
+        ]
+        state.sums = [{ walletId: 5, count: 1, total: 10000 }, { walletId: null, count: 5, total: 90000 }, { walletId: 999, count: 1, total: 5000 }]
+        const { revenue, triggered } = await revenueOf()
+        expect(revenue.meis.map(m => [m.key, m.total, m.unassigned])).toEqual([
+            ['c33137007000109', 10000, false], ['c11222333000181', 0, false], ['sem', 95000, true]
+        ])
+        expect(revenue.total).toBe(10000)
+        expect(triggered.some(t => t.type === 'REVENUE_LIMIT')).toBe(false)
+    })
+
+    test('sem carteira PJ e sem receita: usa a última simulação (um MEI só)', async () => {
+        state.wallets = []
+        state.sums = []
+        state.simulation = { revenue: 6000, revenueType: 'mensal' }
+        const { revenue } = await revenueOf()
+        expect(revenue).toMatchObject({ source: 'simulacao', total: 72000, monthly: 6000 })
+        expect(revenue.meis).toHaveLength(1)
     })
 })

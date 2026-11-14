@@ -800,9 +800,11 @@ async function sendBillReminders(today, summary) {
 // Ocasião de cada aviso: o mesmo aviso só vai uma vez por ocasião
 function alertOccasion(trigger, status, alert) {
     if (trigger.type === 'REVENUE_LIMIT') {
-        // Um aviso ao chegar no limite escolhido e outro se passar dos 100%
-        const level = status.revenue.percent >= 100 ? 100 : (Number(require('../logic/alert-checker').configOf(alert).trigger_at_percentage) || 80)
-        return `R:${status.revenue.year}:${level}`
+        // Por MEI: um aviso ao chegar no limite escolhido e outro se passar dos 100%
+        const mei = status.revenue.meis.find(m => m.key === trigger.mei)
+        if (!mei) return null
+        const level = mei.percent >= 100 ? 100 : (Number(require('../logic/alert-checker').configOf(alert).trigger_at_percentage) || 80)
+        return `R:${status.revenue.year}:${mei.key}:${level}`
     }
     if (trigger.type === 'DAS_EXPIRY') return `D:${status.das.dueDate}`
     if (trigger.type === 'ANNUAL_DECLARATION') {
@@ -810,6 +812,15 @@ function alertOccasion(trigger, status, alert) {
         return `A:${status.dasn.deadline}:${status.dasn.daysLeft <= 7 ? 'fim' : 'inicio'}`
     }
     return null
+}
+
+// "lastSentKey" guarda as ocasiões já avisadas, separadas por "|". No limite de
+// faturamento cada MEI tem a sua (do mesmo ano); nos outros vale só a última.
+const sentKeysOf = (value) => (value ? String(value).split('|').filter(Boolean) : [])
+function nextSentKey(previous, key) {
+    if (!key.startsWith('R:')) return key
+    const year = key.split(':')[1]
+    return [...sentKeysOf(previous).filter(k => k.startsWith(`R:${year}:`)), key].join('|')
 }
 
 /**
@@ -847,14 +858,17 @@ async function sendAlertReminders(now, summary) {
             for (const trigger of status.triggered) {
                 const alert = alerts.find(a => a.id === trigger.id)
                 const key = alert && alertOccasion(trigger, status, alert)
-                if (!key || alert.lastSentKey === key) continue
+                if (!key || sentKeysOf(alert.lastSentKey).includes(key)) continue
                 out.candidates++
-                // Reserva a ocasião antes de mandar; se nada sair, devolve
+                // Reserva a ocasião antes de mandar (só se ninguém mexeu antes); se nada sair, devolve
+                const previous = alert.lastSentKey || null
+                const next = nextSentKey(previous, key)
                 const { rowCount } = await db.query(
-                    'UPDATE user_alerts SET "lastSentKey" = $2 WHERE id = $1 AND "lastSentKey" IS DISTINCT FROM $2',
-                    [alert.id, key]
+                    'UPDATE user_alerts SET "lastSentKey" = $2 WHERE id = $1 AND "lastSentKey" IS NOT DISTINCT FROM $3',
+                    [alert.id, next, previous]
                 )
                 if (!rowCount) { out.skipped++; continue }
+                alert.lastSentKey = next
                 let delivered = 0
                 for (const link of links) {
                     try {
@@ -873,8 +887,9 @@ async function sendAlertReminders(now, summary) {
                     out.sent += delivered
                 } else {
                     out.failed++
-                    await db.query('UPDATE user_alerts SET "lastSentKey" = $3 WHERE id = $1 AND "lastSentKey" = $2',
-                        [alert.id, key, alert.lastSentKey || null]).catch(() => {})
+                    const back = await db.query('UPDATE user_alerts SET "lastSentKey" = $3 WHERE id = $1 AND "lastSentKey" = $2',
+                        [alert.id, next, previous]).catch(() => null)
+                    if (back?.rowCount) alert.lastSentKey = previous
                 }
             }
         } catch (err) {
