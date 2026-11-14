@@ -734,11 +734,29 @@ function explainWhatsAppError(message) {
  * antes, a marca vinha antes do envio e, se a Meta recusasse (modelo não aprovado,
  * por exemplo), o lembrete do dia se perdia sem aviso.
  */
-async function sendBillReminders(today, summary) {
+async function sendBillReminders(today, summary, { resend = false } = {}) {
     const templateName = process.env.WHATSAPP_REMINDER_TEMPLATE || 'contas_vencendo_hoje'
     const templateLang = process.env.WHATSAPP_REMINDER_TEMPLATE_LANG || 'pt_BR'
 
-    // Cada número da conta recebe o lembrete com todas as contas da conta
+    // Para o admin entender um "0 enviados": números com contas vencendo, com o
+    // lembrete desligado e já marcados hoje (esses ficam fora da rodada)
+    const { rows: [diag] } = await db.query(
+        `SELECT COUNT(*)::int AS links,
+                COUNT(*) FILTER (WHERE due)::int AS "withBills",
+                COUNT(*) FILTER (WHERE due AND NOT "reminderEnabled")::int AS "reminderOff",
+                COUNT(*) FILTER (WHERE due AND "reminderEnabled" AND "lastReminderOn" >= $1::date)::int AS "alreadyToday"
+         FROM (
+             SELECT l."reminderEnabled", l."lastReminderOn",
+                    EXISTS (SELECT 1 FROM finance_transactions t
+                            WHERE t."userId" = l."userId" AND t.status = 'PENDING'
+                              AND t."dueDate" IS NOT NULL AND t."dueDate" <= $1::date) AS due
+             FROM whatsapp_links l
+         ) x`,
+        [today]
+    ).catch(() => ({ rows: [{}] }))
+
+    // Cada número da conta recebe o lembrete com todas as contas da conta.
+    // resend (botão do admin): manda também para quem já foi marcado hoje.
     const { rows } = await db.query(
         `SELECT l.id AS "linkId", l.phone, l."userId", l."lastReminderOn" AS "previousOn",
                 pw.name AS "personalWalletName",
@@ -749,12 +767,17 @@ async function sendBillReminders(today, summary) {
           AND t."dueDate" IS NOT NULL AND t."dueDate" <= $1
          LEFT JOIN business_units pw ON pw.id = l."personalWalletId" AND pw."ownerId" = l."userId"
          WHERE l."reminderEnabled" = TRUE
-           AND (l."lastReminderOn" IS NULL OR l."lastReminderOn" < $1)
+           AND (l."lastReminderOn" IS NULL OR l."lastReminderOn" < $1 OR $2::boolean)
          GROUP BY l.id, l.phone, l."userId", l."lastReminderOn", pw.name`,
-        [today]
+        [today, resend]
     )
 
-    const out = summary.contas = { candidates: rows.length, sent: 0, skipped: 0, failed: 0 }
+    const out = summary.contas = {
+        candidates: rows.length, sent: 0, skipped: 0, failed: 0,
+        links: diag?.links ?? null, withBills: diag?.withBills ?? null,
+        reminderOff: diag?.reminderOff ?? null, alreadyToday: diag?.alreadyToday ?? null,
+        resend
+    }
     const queue = [...rows]
     const worker = async () => {
         while (queue.length) {
@@ -767,11 +790,18 @@ async function sendBillReminders(today, summary) {
                     continue
                 }
                 // Reserva o dia (se o cron repetir junto, só um manda)
-                const { rowCount } = await db.query(
-                    `UPDATE whatsapp_links SET "lastReminderOn" = $2
-                     WHERE id = $1 AND ("lastReminderOn" IS NULL OR "lastReminderOn" < $2)`,
-                    [row.linkId, today]
-                )
+                // No reenvio, só se ninguém mexeu na marca desde a leitura
+                const { rowCount } = resend
+                    ? await db.query(
+                        `UPDATE whatsapp_links SET "lastReminderOn" = $2
+                         WHERE id = $1 AND "lastReminderOn" IS NOT DISTINCT FROM $3::date`,
+                        [row.linkId, today, row.previousOn || null]
+                    )
+                    : await db.query(
+                        `UPDATE whatsapp_links SET "lastReminderOn" = $2
+                         WHERE id = $1 AND ("lastReminderOn" IS NULL OR "lastReminderOn" < $2)`,
+                        [row.linkId, today]
+                    )
                 if (!rowCount) { out.skipped++; continue }
                 claimed = true
                 await wa.sendTemplate(row.phone, templateName, templateLang, [
@@ -904,11 +934,24 @@ async function sendAlertReminders(now, summary) {
  * Rodada diária (cron das 8h e botão "Enviar agora" do admin): contas vencendo e
  * alertas do MEI. O resultado fica em system_settings "whatsapp_last_run" para o admin ver.
  */
-async function sendDailyReminders(now = new Date(), { trigger = 'cron' } = {}) {
+// Reenvio do admin: um por minuto (dois cliques ou duas abas juntas não mandam em dobro)
+async function claimResend(now) {
+    const { rowCount } = await db.query(
+        `INSERT INTO system_settings (key, value) VALUES ('whatsapp_resend_at', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+         WHERE system_settings.value IS NULL OR system_settings.value < $2`,
+        [now.toISOString(), new Date(now.getTime() - 60000).toISOString()]
+    )
+    return rowCount > 0
+}
+
+async function sendDailyReminders(now = new Date(), { trigger = 'cron', resend = false } = {}) {
     const today = fa.todayISO(now)
     const summary = { ranAt: now.toISOString(), trigger, today, errors: [] }
 
-    await sendBillReminders(today, summary)
+    const resending = resend === true && await claimResend(now)
+    if (resend === true && !resending) summary.resendBusy = true
+    await sendBillReminders(today, summary, { resend: resending })
     await sendAlertReminders(now, summary)
 
     // Motivos repetidos aparecem uma vez só, com a contagem
@@ -930,7 +973,7 @@ async function sendDailyReminders(now = new Date(), { trigger = 'cron' } = {}) {
     await db.query('DELETE FROM whatsapp_link_codes WHERE "expiresAt" < NOW()')
 
     // Compatível com o formato antigo (candidates/sent/skipped/failed = contas)
-    return { ...summary.contas, alertas: summary.alertas, errors: summary.errors, ranAt: summary.ranAt }
+    return { ...summary.contas, alertas: summary.alertas, errors: summary.errors, ranAt: summary.ranAt, resendBusy: summary.resendBusy || false }
 }
 
 module.exports = {

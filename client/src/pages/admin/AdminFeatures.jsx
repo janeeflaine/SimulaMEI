@@ -449,7 +449,7 @@ function AdminInvoiceUploadLimits({ plans }) {
 function AdminWhatsAppReminders() {
     const [data, setData] = useState(null)
     const [running, setRunning] = useState(false)
-    const [confirming, setConfirming] = useState(false)
+    const [confirming, setConfirming] = useState(null) // null | 'run' | 'resend'
     const [status, setStatus] = useState(null) // { ok, text }
 
     const token = localStorage.getItem('token')
@@ -463,24 +463,28 @@ function AdminWhatsAppReminders() {
     }
     useEffect(() => { fetchData() }, [])
 
-    const runNow = async () => {
+    const runNow = async (resend) => {
         setRunning(true)
         setStatus(null)
         try {
-            const res = await fetch('/api/admin/whatsapp/reminders/run', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } })
+            const res = await fetch('/api/admin/whatsapp/reminders/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ resend })
+            })
             const body = await res.json().catch(() => ({}))
             if (!res.ok) {
                 setStatus({ ok: false, text: body.message || 'Não deu para rodar agora. Tente de novo.' })
             } else {
                 const fails = (body.failed || 0) + (body.alertas?.failed || 0)
-                setStatus({ ok: fails === 0, text: `Rodada feita: ${body.sent || 0} lembrete(s) de contas e ${body.alertas?.sent || 0} alerta(s) enviados${fails ? `, ${fails} falha(s) (motivo abaixo)` : ''}.` })
+                setStatus({ ok: fails === 0 && !body.resendBusy, text: `${body.resendBusy ? 'Um reenvio já rodou há menos de 1 minuto; esta rodada não reenviou. ' : ''}Rodada feita: ${body.sent || 0} lembrete(s) de contas e ${body.alertas?.sent || 0} alerta(s) enviados${fails ? `, ${fails} falha(s) (motivo abaixo)` : ''}.` })
             }
             fetchData()
         } catch {
             setStatus({ ok: false, text: 'Sem conexão. Tente de novo.' })
         } finally {
             setRunning(false)
-            setConfirming(false)
+            setConfirming(null)
         }
     }
 
@@ -488,6 +492,16 @@ function AdminWhatsAppReminders() {
     const run = data.lastRun
     const when = run ? new Date(run.ranAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : null
     const line = (label, part) => part ? `${label}: ${part.sent} enviado(s), ${part.failed} falha(s), ${part.skipped} sem o recurso ou já enviado(s)` : null
+    // Por que um número ficou de fora do lembrete de contas
+    const billsWhy = (c) => {
+        if (!c || c.withBills == null) return null
+        if (!c.links) return 'Nenhum número de WhatsApp vinculado.'
+        const parts = [`${c.withBills} de ${c.links} número(s) vinculados têm contas a pagar vencendo até hoje`]
+        if (c.reminderOff) parts.push(`${c.reminderOff} com o lembrete desligado (PARAR)`)
+        if (c.alreadyToday && !c.resend) parts.push(`${c.alreadyToday} já marcado(s) como enviado(s) hoje`)
+        return parts.join('; ') + '.'
+    }
+    const why = billsWhy(run?.contas)
     const box = { padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }
 
     return (
@@ -517,7 +531,8 @@ function AdminWhatsAppReminders() {
                     </h4>
                     {run ? (
                         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.82rem', margin: '6px 0 0', lineHeight: 1.6 }}>
-                            {line('Contas vencendo', run.contas)}<br />
+                            {line('Contas vencendo', run.contas)}{run.contas?.resend ? ' (reenvio)' : ''}<br />
+                            {why && <>{why}<br /></>}
                             {line('Alertas do MEI', run.alertas)}
                         </p>
                     ) : (
@@ -540,12 +555,21 @@ function AdminWhatsAppReminders() {
                     )}
                     {confirming ? (
                         <>
-                            <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>Manda agora para quem ainda não recebeu hoje.</span>
-                            <button className="btn btn-secondary btn-sm" onClick={() => setConfirming(false)} disabled={running}>Voltar</button>
-                            <button className="btn btn-primary btn-sm" onClick={runNow} disabled={running}>{running ? 'Enviando...' : 'Confirmar envio'}</button>
+                            <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>
+                                {confirming === 'resend'
+                                    ? 'Manda o lembrete de contas de hoje de novo, também para quem já foi marcado hoje.'
+                                    : 'Manda agora para quem ainda não recebeu hoje.'}
+                            </span>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setConfirming(null)} disabled={running}>Voltar</button>
+                            <button className="btn btn-primary btn-sm" onClick={() => runNow(confirming === 'resend')} disabled={running}>{running ? 'Enviando...' : 'Confirmar envio'}</button>
                         </>
                     ) : (
-                        <button className="btn btn-primary btn-sm" onClick={() => setConfirming(true)}>Enviar agora</button>
+                        <>
+                            {run?.contas?.alreadyToday > 0 && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => setConfirming('resend')}>Reenviar contas de hoje</button>
+                            )}
+                            <button className="btn btn-primary btn-sm" onClick={() => setConfirming('run')}>Enviar agora</button>
+                        </>
                     )}
                 </div>
             </div>

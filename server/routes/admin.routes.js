@@ -648,12 +648,15 @@ router.get('/whatsapp/reminders', async (req, res) => {
 router.post('/whatsapp/reminders/run', async (req, res) => {
     try {
         const bot = require('../utils/whatsappBot')
-        const result = await bot.sendDailyReminders(new Date(), { trigger: 'admin' })
+        // resend: reenvia as contas de hoje também para quem já foi marcado (o código
+        // antigo marcava o dia antes de mandar; se a Meta recusou, o lembrete se perdeu)
+        const resend = req.body?.resend === true
+        const result = await bot.sendDailyReminders(new Date(), { trigger: 'admin', resend })
         await auditLogger.log({
             event_type: 'WHATSAPP_REMINDERS_RUN',
             actor: { user_id: req.user.id, role: req.user.role },
             context: req.context || {},
-            metadata: { contas: result.sent, alertas: result.alertas?.sent, falhas: (result.failed || 0) + (result.alertas?.failed || 0) }
+            metadata: { reenvio: resend, contas: result.sent, alertas: result.alertas?.sent, falhas: (result.failed || 0) + (result.alertas?.failed || 0) }
         }).catch(() => {})
         res.json(result)
     } catch (err) {
