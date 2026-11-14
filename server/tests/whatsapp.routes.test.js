@@ -178,7 +178,7 @@ describe('Área do usuário', () => {
             id: 7, phone: '•••• 8193', reminderEnabled: true, linkedAt: '2026-11-12',
             personalWallet: { id: 21, name: 'Miriam Cristina (PF)' }, businessWallet: null
         }])
-        expect(res.body.wallets).toEqual([{ id: 21, name: 'Miriam Cristina (PF)', accountType: 'PF' }])
+        expect(res.body.wallets).toEqual([{ id: 21, name: 'Miriam Cristina (PF)', accountType: 'PF', logo_url: null }])
         expect(JSON.stringify(res.body)).not.toContain('553399998193')
     })
 

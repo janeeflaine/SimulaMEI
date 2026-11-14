@@ -79,28 +79,6 @@
     min-width: 0;
 }
 
-/* Bolinha da carteira (foto ou ícone do tipo), nas listas e no caminho */
-.tr-dot {
-    flex: none;
-    display: grid;
-    place-items: center;
-    border-radius: 999px;
-    background: rgba(18, 40, 74, 0.08);
-    color: #12284a;
-    overflow: hidden;
-}
-
-.tr-dot.has-photo {
-    background: #fff;
-    box-shadow: 0 0 0 1px #e3e8ef;
-}
-
-.tr-dot img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
 .tr-select.sel-trigger {
     padding-left: 10px;
 }

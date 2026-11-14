@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { X, ArrowUpDown, ArrowDown, Building2, User } from 'lucide-react'
+import { X, ArrowUpDown, ArrowDown } from 'lucide-react'
 import Select from './ui/Select'
+import { walletOptionGroups } from './ui/WalletDot'
 import './TransferModal.css'
 
 // Valor digitado como "1.234,56" (também aceita "1234.56")
@@ -17,16 +18,6 @@ const todayBR = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Americ
 const MAX_AMOUNT = 100_000_000
 const MAX_NOTE = 120
 const kindOf = (w) => (w?.account_type === 'PJ' ? 'MEI' : 'Pessoal')
-
-// Bolinha da carteira: a foto, ou o ícone do tipo (MEI / Pessoal)
-function WalletDot({ wallet, size = 28 }) {
-    const Icon = wallet?.account_type === 'PJ' ? Building2 : User
-    return (
-        <span className={`tr-dot ${wallet?.logo_url ? 'has-photo' : ''}`} style={{ width: size, height: size }}>
-            {wallet?.logo_url ? <img src={wallet.logo_url} alt="" /> : <Icon size={Math.round(size * 0.5)} />}
-        </span>
-    )
-}
 
 /**
  * Transferir entre carteiras: registra a saída numa carteira e a entrada na outra.
@@ -46,15 +37,7 @@ export default function TransferModal({ onClose, onSuccess, wallets }) {
     const errorRef = useRef(null)
 
     const byId = useMemo(() => new Map(list.map(w => [String(w.id), w])), [list])
-    const groups = (exclude) => {
-        const opts = (type) => list
-            .filter(w => w.account_type === type && String(w.id) !== exclude)
-            .map(w => ({ value: String(w.id), label: w.name, icon: <WalletDot wallet={w} /> }))
-        return [
-            ...(opts('PJ').length ? [{ group: 'MEI', options: opts('PJ') }] : []),
-            ...(opts('PF').length ? [{ group: 'Pessoal', options: opts('PF') }] : [])
-        ]
-    }
+    const groups = (exclude) => walletOptionGroups(list, { exclude })
 
     // Carteiras chegaram depois de abrir: escolhe a principal como origem
     useEffect(() => {

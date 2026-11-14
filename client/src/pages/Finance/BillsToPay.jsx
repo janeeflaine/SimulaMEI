@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable'
 import { Check, CircleCheck, Download, Plus } from 'lucide-react'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import Select from '../../components/ui/Select'
+import { walletOptionGroups } from '../../components/ui/WalletDot'
 import './FinanceCategories.css'
 import './BillsToPay.css'
 
@@ -448,8 +449,7 @@ export default function BillsToPay() {
                                 value={selectedWallet}
                                 onChange={(v) => setSelectedWallet(String(v))}
                                 options={[
-                                    { group: 'MEI (PJ)', options: wallets.filter(w => w.account_type === 'PJ').map(w => ({ value: String(w.id), label: w.name })) },
-                                    { group: 'Pessoal (PF)', options: wallets.filter(w => w.account_type === 'PF').map(w => ({ value: String(w.id), label: w.name })) }
+                                    ...walletOptionGroups(wallets, { mei: 'MEI (PJ)', pessoal: 'Pessoal (PF)' })
                                 ].filter(g => g.options.length > 0)}
                             />
                         </div>

@@ -21,6 +21,7 @@ import FinanceQuickActionModal from '../../components/FinanceQuickActionModal'
 import TransferModal from '../../components/TransferModal'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import Select from '../../components/ui/Select'
+import WalletDot, { walletOptionGroups } from '../../components/ui/WalletDot'
 import { showToast } from '../../utils/toast'
 import './FinancialStatement.css'
 
@@ -442,10 +443,7 @@ export default function FinancialStatement() {
     const pfWallets = safeWallets.filter(w => w.account_type === 'PF')
 
     // Carteiras agrupadas (MEI / Pessoal) para as listas de escolha
-    const walletGroups = [
-        ...(pjWallets.length > 0 ? [{ group: 'MEI', options: pjWallets.map(w => ({ value: String(w.id), label: w.name })) }] : []),
-        ...(pfWallets.length > 0 ? [{ group: 'Pessoal', options: pfWallets.map(w => ({ value: String(w.id), label: w.name })) }] : [])
-    ]
+    const walletGroups = walletOptionGroups(safeWallets)
 
     const uniqueCategories = useMemo(() => Object.values(
         categories.reduce((acc, c) => {
@@ -806,7 +804,7 @@ export default function FinancialStatement() {
                                                 <div className="ext-row__wallet">
                                                     {transfer ? (
                                                         <span className="ext-wallet is-static" title="Lado de uma transferência: para mudar, exclua e transfira de novo">
-                                                            {isPJ ? <Building2 size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />}
+                                                            {wallet ? <WalletDot wallet={wallet} size={20} /> : <User size={14} aria-hidden="true" />}
                                                             <span>{wallet ? wallet.name : 'Sem carteira'}</span>
                                                         </span>
                                                     ) : editingWalletTransactionId === t.id ? (
@@ -827,7 +825,7 @@ export default function FinancialStatement() {
                                                             onClick={() => setEditingWalletTransactionId(t.id)}
                                                             title="Trocar a carteira deste lançamento"
                                                         >
-                                                            {isPJ ? <Building2 size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />}
+                                                            {wallet ? <WalletDot wallet={wallet} size={20} /> : (isPJ ? <Building2 size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />)}
                                                             <span>{wallet ? wallet.name : 'Sem carteira'}</span>
                                                             <ChevronDown className="ext-wallet__chev" size={14} aria-hidden="true" />
                                                         </button>

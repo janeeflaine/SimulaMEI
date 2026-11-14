@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import FeatureLock from '../../components/FeatureLock'
 import CardsSummaryPanel from '../../components/cards/CardsSummaryPanel'
 import Select from '../../components/ui/Select'
+import { walletOptionGroups } from '../../components/ui/WalletDot'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import './CreditCards.css'
 
@@ -213,8 +214,7 @@ export default function CreditCards() {
     const walletOptions = [
         { value: '', label: 'Sem carteira' },
         ...[
-            { group: 'MEI', options: wallets.filter(w => w.account_type === 'PJ').map(w => ({ value: String(w.id), label: w.name })) },
-            { group: 'Pessoal', options: wallets.filter(w => w.account_type === 'PF').map(w => ({ value: String(w.id), label: w.name })) }
+            ...walletOptionGroups(wallets)
         ].filter(g => g.options.length > 0)
     ]
 

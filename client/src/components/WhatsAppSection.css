@@ -136,22 +136,16 @@
     margin-bottom: var(--spacing-3);
 }
 
-.whatsapp-wallet-fields label {
+.whatsapp-wallet-fields > div {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-1);
-    font-weight: var(--font-weight-semibold, 600);
-    font-size: var(--font-size-sm);
+    min-width: 0;
 }
 
-.whatsapp-wallet-fields select {
-    width: 100%;
-    padding: var(--spacing-2) var(--spacing-3);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md, 8px);
-    background: var(--color-surface);
-    font: inherit;
-    font-weight: normal;
+.whatsapp-wallet-fields label {
+    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-sm);
 }
 
 /* Interruptor do lembrete */

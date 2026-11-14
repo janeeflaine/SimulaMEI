@@ -93,7 +93,7 @@ router.get('/status', authMiddleware, async (req, res) => {
             [req.user.id]
         )
         const { rows: wallets } = await db.query(
-            `SELECT id, name, "account_type" AS "accountType" FROM business_units
+            `SELECT id, name, "account_type" AS "accountType", "logo_url" FROM business_units
              WHERE "ownerId" = $1 ORDER BY "createdAt" ASC NULLS LAST, id ASC`,
             [req.user.id]
         )
@@ -112,7 +112,7 @@ router.get('/status', authMiddleware, async (req, res) => {
             mediaAvailable: hasFeature(req.user, 'whatsapp_midia'),
             maxNumbers: Number.isFinite(max) ? max : null, // null = ilimitado
             links: items,
-            wallets: wallets.map(w => ({ id: w.id, name: w.name, accountType: w.accountType })),
+            wallets: wallets.map(w => ({ id: w.id, name: w.name, accountType: w.accountType, logo_url: w.logo_url || null })),
             // Campos do primeiro número, mantidos para telas antigas
             linked: items.length > 0,
             phone: items[0] ? items[0].phone : null,

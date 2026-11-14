@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { MessageCircle, Copy, Check, Plus } from 'lucide-react'
+import Select from './ui/Select'
+import WalletDot from './ui/WalletDot'
 import './WhatsAppSection.css'
 
 const authHeaders = () => ({
@@ -267,20 +269,32 @@ export default function WhatsAppSection() {
                 <div className="whatsapp-code-box">
                     <p>Escolha para quais carteiras vão os lançamentos feitos por este número:</p>
                     <div className="whatsapp-wallet-fields">
-                        <label>
-                            <span>Carteira pessoal</span>
-                            <select value={personalWalletId} onChange={(e) => setPersonalWalletId(e.target.value)}>
-                                <option value="">Automática</option>
-                                {personalWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                            </select>
-                        </label>
-                        <label>
-                            <span>Carteira MEI</span>
-                            <select value={businessWalletId} onChange={(e) => setBusinessWalletId(e.target.value)}>
-                                <option value="">Automática</option>
-                                {businessWallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                            </select>
-                        </label>
+                        <div>
+                            <label htmlFor="wa-personal-wallet">Carteira pessoal</label>
+                            <Select
+                                id="wa-personal-wallet"
+                                variant="field"
+                                value={String(personalWalletId || '')}
+                                onChange={(v) => setPersonalWalletId(v)}
+                                options={[
+                                    { value: '', label: 'Automática' },
+                                    ...personalWallets.map(w => ({ value: String(w.id), label: w.name, icon: <WalletDot wallet={w} /> }))
+                                ]}
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="wa-business-wallet">Carteira MEI</label>
+                            <Select
+                                id="wa-business-wallet"
+                                variant="field"
+                                value={String(businessWalletId || '')}
+                                onChange={(v) => setBusinessWalletId(v)}
+                                options={[
+                                    { value: '', label: 'Automática' },
+                                    ...businessWallets.map(w => ({ value: String(w.id), label: w.name, icon: <WalletDot wallet={w} /> }))
+                                ]}
+                            />
+                        </div>
                     </div>
                     <p className="whatsapp-muted">
                         "Automática" usa a carteira principal (ou a mais antiga) daquele tipo.

@@ -5,6 +5,7 @@ import FeatureLock from '../components/FeatureLock'
 import FinanceQuickActionModal from '../components/FinanceQuickActionModal'
 import { useConfirmDialog } from '../components/ui/ConfirmDialog'
 import Select from '../components/ui/Select'
+import { walletOptionGroups } from '../components/ui/WalletDot'
 import { tierOf } from '../components/plans/planFeatures'
 import { maskDocument, documentError } from '../utils/brDocument'
 import './Dashboard.css'
@@ -737,10 +738,7 @@ export default function Dashboard() {
     const pfWallets = wallets.filter(w => w.account_type === 'PF')
 
     // Carteiras agrupadas (MEI / Pessoal) para as listas de escolha
-    const walletGroups = [
-        ...(pjWallets.length > 0 ? [{ group: 'MEI', options: pjWallets.map(w => ({ value: String(w.id), label: w.name })) }] : []),
-        ...(pfWallets.length > 0 ? [{ group: 'Pessoal', options: pfWallets.map(w => ({ value: String(w.id), label: w.name })) }] : [])
-    ]
+    const walletGroups = walletOptionGroups([...pjWallets, ...pfWallets])
 
     const { totalRevenue, totalExpense, balance, profitPJ, revenuePJ, expensePF, expensePJ } = financialSummary
     const flowMax = Math.max(totalRevenue, totalExpense, 1)
