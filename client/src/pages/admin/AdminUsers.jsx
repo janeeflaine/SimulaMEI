@@ -1,564 +1,510 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+    Search, Pencil, Lock, LockOpen, Trash2, X, Mail, RotateCw, AlertTriangle, ShieldCheck, Users
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import Select from '../../components/ui/Select'
+import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { showToast } from '../../utils/toast'
+// AdminPages.css segue importado: as outras páginas do admin ainda usam as classes dele
 import './AdminPages.css'
+import './AdminUsers.css'
 
-const inputStyle = {
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.12)',
-    borderRadius: 8,
-    color: '#f1f5f9',
-    padding: '9px 13px',
-    fontSize: 14,
-    outline: 'none',
-    width: '100%',
-    boxSizing: 'border-box',
-    transition: 'border-color 0.2s',
+const TZ = 'America/Sao_Paulo'
+const PAGE = 50
+
+const fmtDate = (v) => {
+    if (!v) return ''
+    const d = new Date(v)
+    return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
+}
+const brl = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v) || 0)
+// Busca sem diferença de acento e maiúsculas
+const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+const authHeaders = (json = false) => {
+    const h = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    if (json) h['Content-Type'] = 'application/json'
+    return h
+}
+async function api(url, options = {}) {
+    const res = await fetch(url, options)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+        const err = new Error(data.message || 'Não deu para concluir agora. Tente de novo.')
+        err.status = res.status
+        err.reason = data.reason
+        err.field = data.field
+        throw err
+    }
+    return data
 }
 
-const selectStyle = {
-    ...inputStyle,
-    appearance: 'none',
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2393c5fd' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'right 12px center',
-    paddingRight: 34,
-    cursor: 'pointer',
+// Quebra a linha depois do @ (e não no meio do domínio)
+function MailText({ email }) {
+    const [user, domain] = String(email || '').split('@')
+    return domain ? <>{user}@<wbr />{domain}</> : <>{email}</>
 }
 
-function Field({ label, children, hint }) {
+const hasLiveSub = (u) => u.hasSubscription && ['active', 'canceling'].includes(u.subscriptionStatus)
+
+// Como está a cobrança desta conta, em uma linha
+function billingNote(u) {
+    if (u.subscriptionStatus === 'pending_payment') return { text: 'Esperando pagamento', tone: 'warn' }
+    if (hasLiveSub(u) && u.subscriptionStatus === 'canceling') return { text: `Cancela em ${fmtDate(u.planExpiresAt)}`, tone: 'warn' }
+    if (hasLiveSub(u)) return { text: 'Pagando no Stripe', tone: 'ok' }
+    if (Number(u.planPrice) > 0) return { text: 'Liberado pelo admin', tone: '' }
+    return { text: 'Grátis', tone: '' }
+}
+
+const FILTERS = [
+    { key: 'all', label: 'Todas', test: () => true },
+    { key: 'paying', label: 'Pagando', test: (u) => hasLiveSub(u) },
+    { key: 'pending', label: 'Esperando pagamento', test: (u) => u.subscriptionStatus === 'pending_payment' },
+    { key: 'blocked', label: 'Bloqueadas', test: (u) => u.isBlocked },
+    { key: 'admins', label: 'Administradores', test: (u) => u.role === 'ADMIN' },
+]
+
+function Avatar({ name }) {
+    return <span className="aus-avatar" aria-hidden="true">{String(name || '?').trim().charAt(0).toUpperCase()}</span>
+}
+
+function StatusTags({ u }) {
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: 12, color: '#94a3b8', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                {label}
-            </label>
-            {children}
-            {hint && <span style={{ fontSize: 11, color: '#475569' }}>{hint}</span>}
-        </div>
+        <span className="aus-tags">
+            {u.role === 'ADMIN' && <span className="aus-tag aus-tag--admin"><ShieldCheck size={13} aria-hidden="true" />Administrador</span>}
+            {u.isBlocked
+                ? <span className="aus-tag aus-tag--blocked">Bloqueada</span>
+                : <span className="aus-tag aus-tag--ok">Ativa</span>}
+        </span>
     )
 }
 
-function EditUserModal({ user, plans, onClose, onSaved }) {
-    const [form, setForm] = useState({
-        name:        user.name        || '',
-        email:       user.email       || '',
-        planId:      user.planId      || '',
-        role:        user.role        || 'USER',
-        isBlocked:   user.isBlocked   ? '1' : '0',
-        newPassword: '',
-        confirmPassword: '',
-    })
-    const [showPassword, setShowPassword] = useState(false)
-    const [saving, setSaving] = useState(false)
-    const [error, setError] = useState('')
-    const [success, setSuccess] = useState('')
-
-    const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
-
-    const handleSubmit = async (e) => {
-        e.preventDefault()
-        setError('')
-        setSuccess('')
-
-        if (form.newPassword && form.newPassword !== form.confirmPassword) {
-            setError('As senhas não coincidem.')
-            return
+// Janela própria com foco preso e Esc (ignora o Esc que a janela de confirmação já tratou)
+function useDialogBehavior(onClose, boxRef, busy) {
+    useEffect(() => {
+        const prev = document.activeElement
+        const { overflow } = document.body.style
+        document.body.style.overflow = 'hidden'
+        const first = boxRef.current?.querySelector('input:not([disabled])') || boxRef.current?.querySelector('button:not([disabled])')
+        first?.focus()
+        const onKey = (e) => {
+            // A janela de confirmação aberta por cima cuida das próprias teclas
+            const other = document.activeElement?.closest?.('.cd-box')
+            if (other && other !== boxRef.current) return
+            if (e.key === 'Escape' && !e.defaultPrevented && !busy) onClose()
+            if (e.key === 'Tab' && boxRef.current) {
+                const items = [...boxRef.current.querySelectorAll('input:not([disabled]), button:not([disabled]), [tabindex="0"]')]
+                if (!items.length) return
+                const a = items[0]; const z = items[items.length - 1]
+                if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus() }
+                else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus() }
+            }
         }
-        if (form.newPassword && form.newPassword.length < 8) {
-            setError('A nova senha deve ter pelo menos 8 caracteres.')
-            return
+        document.addEventListener('keydown', onKey)
+        return () => {
+            document.removeEventListener('keydown', onKey)
+            document.body.style.overflow = overflow
+            prev?.focus?.()
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [busy])
+}
+
+function EditUserDialog({ user, plans, isSelf, onClose, onSaved, confirm }) {
+    const [form, setForm] = useState({
+        name: user.name || '',
+        email: user.email || '',
+        planId: user.planId ? String(user.planId) : '',
+        role: user.role || 'USER',
+        blocked: !!user.isBlocked,
+    })
+    const [saving, setSaving] = useState(false)
+    const [error, setError] = useState(null)
+    const [link, setLink] = useState({ state: 'idle', message: '' })
+    const boxRef = useRef(null)
+    useDialogBehavior(onClose, boxRef, saving)
+
+    const planLocked = hasLiveSub(user)
+    const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e && e.target ? e.target.value : e }))
+
+    const planOptions = [
+        { value: '', label: 'Sem plano (usa o Gratuito)' },
+        ...plans.map((p) => ({ value: String(p.id), label: Number(p.price) > 0 ? `${p.name} (${brl(p.price)}/mês)` : p.name })),
+    ]
+
+    const save = async (e) => {
+        e.preventDefault()
+        setError(null)
+        const body = {}
+        if (form.name.trim() !== user.name) body.name = form.name
+        if (form.email.trim().toLowerCase() !== String(user.email).toLowerCase()) body.email = form.email
+        if (!planLocked && form.planId !== (user.planId ? String(user.planId) : '')) body.planId = form.planId ? Number(form.planId) : null
+        if (!isSelf && form.role !== user.role) body.role = form.role
+        if (!isSelf && form.blocked !== !!user.isBlocked) body.isBlocked = form.blocked
+        if (Object.keys(body).length === 0) { onClose(); return }
+
+        if (body.role === 'ADMIN') {
+            const ok = await confirm({
+                title: `Dar acesso de administrador a ${user.name}?`,
+                message: 'Com esse acesso, a pessoa vê e muda contas, planos, regras de cálculo e configurações do site.',
+                confirmLabel: 'Dar acesso',
+            })
+            if (!ok) return
+        }
+        if (body.isBlocked === true) {
+            const ok = await confirm({
+                title: `Bloquear a conta de ${user.name}?`,
+                message: 'A pessoa sai na hora de todos os aparelhos e não consegue entrar até ser desbloqueada. Os dados continuam guardados.',
+                confirmLabel: 'Bloquear conta',
+                tone: 'danger',
+            })
+            if (!ok) return
         }
 
         setSaving(true)
         try {
-            const token = localStorage.getItem('token')
-            const body = {
-                name:      form.name.trim(),
-                email:     form.email.trim(),
-                planId:    form.planId || null,
-                role:      form.role,
-                isBlocked: form.isBlocked === '1',
-            }
-            if (form.newPassword) body.newPassword = form.newPassword
-
-            const res = await fetch(`/api/admin/users/${user.id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify(body),
-            })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.message || 'Erro ao salvar.')
-
-            setSuccess('Usuário atualizado com sucesso!')
-            setForm(f => ({ ...f, newPassword: '', confirmPassword: '' }))
+            await api(`/api/admin/users/${user.id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(body) })
+            showToast('Conta atualizada.', 'success')
             onSaved()
         } catch (err) {
-            setError(err.message)
-        } finally {
+            setError({ message: err.message, field: err.field || (err.reason === 'email_taken' ? 'email' : null) })
             setSaving(false)
         }
     }
 
-    return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={e => e.stopPropagation()}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-                    <div>
-                        <h2 style={{ margin: 0, fontSize: 18, color: '#e2e8f0' }}>Editar Usuário</h2>
-                        <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 13 }}>ID #{user.id}</p>
-                    </div>
-                    <div style={{
-                        width: 40, height: 40, borderRadius: '50%', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700,
-                        background: 'linear-gradient(135deg, #2563eb, #3b82f6)', color: '#fff', flexShrink: 0,
-                    }}>
-                        {user.name.charAt(0).toUpperCase()}
-                    </div>
-                </div>
-
-                {error && (
-                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 14px', color: '#fca5a5', fontSize: 13, marginBottom: 16 }}>
-                        ⚠️ {error}
-                    </div>
-                )}
-                {success && (
-                    <div style={{ background: 'rgba(5,150,105,0.1)', border: '1px solid rgba(5,150,105,0.25)', borderRadius: 8, padding: '10px 14px', color: '#6ee7b7', fontSize: 13, marginBottom: 16 }}>
-                        ✅ {success}
-                    </div>
-                )}
-
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-                    {/* Dados pessoais */}
-                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: 16 }}>
-                        <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Dados Pessoais</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                            <Field label="Nome">
-                                <input type="text" style={inputStyle} value={form.name} onChange={set('name')} required />
-                            </Field>
-                            <Field label="E-mail">
-                                <input type="email" style={inputStyle} value={form.email} onChange={set('email')} required />
-                            </Field>
-                        </div>
-                    </div>
-
-                    {/* Conta e plano */}
-                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: 16 }}>
-                        <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>Conta e Plano</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                            <Field label="Plano">
-                                <select style={selectStyle} value={form.planId} onChange={set('planId')}>
-                                    <option value="">Sem plano</option>
-                                    {plans.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                </select>
-                            </Field>
-                            <Field label="Papel">
-                                <select style={selectStyle} value={form.role} onChange={set('role')}>
-                                    <option value="USER">Usuário</option>
-                                    <option value="ADMIN">Administrador</option>
-                                </select>
-                            </Field>
-                            <Field label="Status">
-                                <select
-                                    style={{
-                                        ...selectStyle,
-                                        color: form.isBlocked === '1' ? '#fca5a5' : '#6ee7b7',
-                                    }}
-                                    value={form.isBlocked}
-                                    onChange={set('isBlocked')}
-                                >
-                                    <option value="0">Ativo</option>
-                                    <option value="1">Bloqueado</option>
-                                </select>
-                            </Field>
-                        </div>
-                    </div>
-
-                    {/* Reset de senha */}
-                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                            <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Redefinir Senha</div>
-                            <span style={{ fontSize: 11, color: '#475569' }}>Deixe em branco para não alterar</span>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                            <Field label="Nova Senha">
-                                <div style={{ position: 'relative' }}>
-                                    <input
-                                        type={showPassword ? 'text' : 'password'}
-                                        style={{ ...inputStyle, paddingRight: 40 }}
-                                        value={form.newPassword}
-                                        onChange={set('newPassword')}
-                                        placeholder="Mínimo 8 caracteres"
-                                        autoComplete="new-password"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(v => !v)}
-                                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: '#64748b', padding: 0 }}
-                                    >
-                                        {showPassword ? '🙈' : '👁️'}
-                                    </button>
-                                </div>
-                            </Field>
-                            <Field label="Confirmar Senha">
-                                <input
-                                    type={showPassword ? 'text' : 'password'}
-                                    style={{
-                                        ...inputStyle,
-                                        borderColor: form.confirmPassword && form.confirmPassword !== form.newPassword
-                                            ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)',
-                                    }}
-                                    value={form.confirmPassword}
-                                    onChange={set('confirmPassword')}
-                                    placeholder="Repita a senha"
-                                    autoComplete="new-password"
-                                />
-                            </Field>
-                        </div>
-                        {form.newPassword && (
-                            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                                <div style={{ height: 4, flex: 1, borderRadius: 4, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                                    <div style={{
-                                        height: '100%', borderRadius: 4, transition: 'width 0.3s, background 0.3s',
-                                        width: form.newPassword.length >= 12 ? '100%' : form.newPassword.length >= 8 ? '60%' : '30%',
-                                        background: form.newPassword.length >= 12 ? '#10b981' : form.newPassword.length >= 8 ? '#f59e0b' : '#ef4444',
-                                    }} />
-                                </div>
-                                <span style={{ color: form.newPassword.length >= 12 ? '#6ee7b7' : form.newPassword.length >= 8 ? '#fcd34d' : '#fca5a5', whiteSpace: 'nowrap' }}>
-                                    {form.newPassword.length >= 12 ? 'Forte' : form.newPassword.length >= 8 ? 'Média' : 'Fraca'}
-                                </span>
-                            </div>
-                        )}
-                        {form.newPassword && (
-                            <p style={{ marginTop: 8, fontSize: 11, color: '#f59e0b' }}>
-                                ⚠️ Ao redefinir a senha, todas as sessões ativas deste usuário serão encerradas.
-                            </p>
-                        )}
-                    </div>
-
-                    <div className="modal-actions">
-                        <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>
-                            Cancelar
-                        </button>
-                        <button type="submit" className="btn btn-primary" disabled={saving}>
-                            {saving ? 'Salvando...' : '💾 Salvar Alterações'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    )
-}
-
-function DeleteUserModal({ user, onClose, onDeleted }) {
-    const [confirmText, setConfirmText] = useState('')
-    const [deleting, setDeleting] = useState(false)
-    const [error, setError] = useState('')
-
-    const isConfirmed = confirmText.trim().toUpperCase() === 'EXCLUIR'
-
-    const handleDelete = async () => {
-        if (!isConfirmed) return
-        setError('')
-        setDeleting(true)
+    const sendLink = async () => {
+        setLink({ state: 'sending', message: '' })
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/admin/users/${user.id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.message || 'Erro ao excluir usuário.')
-
-            onDeleted()
+            const data = await api(`/api/admin/users/${user.id}/reset-link`, { method: 'POST', headers: authHeaders() })
+            setLink({ state: 'sent', message: data.message })
         } catch (err) {
-            setError(err.message)
-            setDeleting(false)
+            setLink({ state: 'error', message: err.message })
         }
     }
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={e => e.stopPropagation()}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                    <div style={{
-                        width: 44, height: 44, borderRadius: '50%', background: 'rgba(239, 68, 68, 0.15)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0
-                    }}>
-                        🗑️
-                    </div>
+        <div className="cd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose() }}>
+            <form ref={boxRef} className="cd-box aus-box" role="dialog" aria-modal="true" aria-labelledby="aus-edit-title" onSubmit={save} noValidate>
+                <button type="button" className="aus-box__close" onClick={onClose} aria-label="Fechar" disabled={saving}><X size={20} aria-hidden="true" /></button>
+                <div className="aus-box__who">
+                    <Avatar name={user.name} />
                     <div>
-                        <h2 style={{ margin: 0, fontSize: 18, color: '#f87171' }}>Excluir Usuário Definitivamente</h2>
-                        <p style={{ margin: '2px 0 0', color: '#94a3b8', fontSize: 13 }}>ID #{user.id} — {user.name} ({user.email})</p>
+                        <h2 id="aus-edit-title" className="cd-title">Editar conta</h2>
+                        <p>Criada em {fmtDate(user.createdAt)}</p>
                     </div>
                 </div>
 
-                {error && (
-                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 14px', color: '#fca5a5', fontSize: 13, marginBottom: 16 }}>
-                        ⚠️ {error}
-                    </div>
-                )}
+                <label className="aus-field">
+                    <span>Nome</span>
+                    <input type="text" value={form.name} onChange={set('name')} maxLength={80} autoComplete="off"
+                        aria-invalid={error?.field === 'name' || undefined} disabled={saving} />
+                </label>
+                <label className="aus-field">
+                    <span>E-mail</span>
+                    <input type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="off" inputMode="email"
+                        aria-invalid={error?.field === 'email' || undefined} disabled={saving} />
+                    <small>Mudar o e-mail cancela um link de senha nova que tenha ido para o endereço antigo.</small>
+                </label>
 
-                <div style={{
-                    background: 'rgba(239, 68, 68, 0.08)',
-                    border: '1px solid rgba(239, 68, 68, 0.25)',
-                    borderRadius: 10,
-                    padding: 16,
-                    marginBottom: 20
-                }}>
-                    <div style={{ color: '#fca5a5', fontWeight: 600, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        ⚠️ ATENÇÃO: Ação Irreversível!
-                    </div>
-                    <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
-                        Ao confirmar, o usuário <strong>{user.name}</strong> e <strong>TODOS os dados associados a ele serão permanentemente apagados do banco de dados</strong>.
-                    </p>
-                    <ul style={{ color: '#94a3b8', fontSize: 12, margin: '10px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
-                        <li>Todas as transações financeiras (receitas e despesas)</li>
-                        <li>Todos os cartões de crédito, faturas e lançamentos</li>
-                        <li>Todas as contas e carteiras (PF/PJ)</li>
-                        <li>Todas as simulações registradas</li>
-                        <li>Alertas, sessões e históricos da conta</li>
-                    </ul>
+                <div className="aus-field">
+                    <span id="aus-plan-label">Plano</span>
+                    <Select id="aus-plan" ariaLabel="Plano" value={form.planId} onChange={set('planId')} options={planOptions} disabled={saving || planLocked} />
+                    <small>
+                        {planLocked
+                            ? 'Esta conta paga uma assinatura no Stripe: a troca de plano é feita pela própria pessoa em Planos.'
+                            : 'Um plano pago dado aqui fica liberado sem cobrança.'}
+                    </small>
                 </div>
 
-                <div style={{ marginBottom: 20 }}>
-                    <label style={{ display: 'block', fontSize: 13, color: '#e2e8f0', marginBottom: 8, fontWeight: 500 }}>
-                        Para confirmar a exclusão de todos os dados, digite <strong>EXCLUIR</strong> abaixo:
-                    </label>
-                    <input
-                        type="text"
-                        style={inputStyle}
-                        value={confirmText}
-                        onChange={e => setConfirmText(e.target.value)}
-                        placeholder="Digite EXCLUIR"
-                        autoFocus
-                    />
-                </div>
+                <fieldset className="aus-field" disabled={saving || isSelf}>
+                    <legend>Acesso</legend>
+                    <div className="aus-seg" role="radiogroup" aria-label="Papel da conta">
+                        {[['USER', 'Usuário'], ['ADMIN', 'Administrador']].map(([v, l]) => (
+                            <label key={v} className={`aus-seg__opt ${form.role === v ? 'is-on' : ''}`}>
+                                <input type="radio" name="aus-role" value={v} checked={form.role === v} onChange={() => setForm((f) => ({ ...f, role: v }))} />
+                                {l}
+                            </label>
+                        ))}
+                    </div>
+                    <div className="aus-seg" role="radiogroup" aria-label="Situação da conta">
+                        {[[false, 'Ativa'], [true, 'Bloqueada']].map(([v, l]) => (
+                            <label key={l} className={`aus-seg__opt ${form.blocked === v ? 'is-on' : ''} ${v ? 'is-danger' : ''}`}>
+                                <input type="radio" name="aus-blocked" checked={form.blocked === v} onChange={() => setForm((f) => ({ ...f, blocked: v }))} />
+                                {l}
+                            </label>
+                        ))}
+                    </div>
+                    {isSelf && <small>Esta é a sua conta: você não pode tirar o seu acesso nem se bloquear.</small>}
+                </fieldset>
 
-                <div className="modal-actions">
-                    <button type="button" className="btn btn-secondary" onClick={onClose} disabled={deleting}>
-                        Cancelar
+                <div className="aus-field aus-password">
+                    <span>Senha</span>
+                    <p>Por segurança, o administrador não vê nem define senhas. Mande um link para a pessoa criar uma senha nova (vale por 1 hora).</p>
+                    <button type="button" className="aus-btn" onClick={sendLink} disabled={saving || link.state === 'sending'}>
+                        <Mail size={16} aria-hidden="true" />
+                        {link.state === 'sending' ? 'Mandando…' : 'Mandar link de senha nova'}
                     </button>
-                    <button
-                        type="button"
-                        className="btn"
-                        style={{
-                            background: isConfirmed ? '#dc2626' : 'rgba(220, 38, 38, 0.4)',
-                            color: '#fff',
-                            border: 'none',
-                            cursor: isConfirmed && !deleting ? 'pointer' : 'not-allowed',
-                            opacity: isConfirmed && !deleting ? 1 : 0.6
-                        }}
-                        disabled={!isConfirmed || deleting}
-                        onClick={handleDelete}
-                    >
-                        {deleting ? 'Excluindo...' : '🗑️ Confirmar Exclusão Definitiva'}
-                    </button>
+                    {link.state === 'sent' && <p className="aus-note aus-note--ok" role="status">{link.message}</p>}
+                    {link.state === 'error' && <p className="aus-note aus-note--error" role="alert">{link.message}</p>}
                 </div>
-            </div>
+
+                {error && <p className="aus-note aus-note--error" role="alert">{error.message}</p>}
+
+                <div className="cd-actions">
+                    <button type="button" className="cd-btn" onClick={onClose} disabled={saving}>Cancelar</button>
+                    <button type="submit" className="cd-btn cd-btn--primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar alterações'}</button>
+                </div>
+            </form>
+        </div>
+    )
+}
+
+function DeleteUserDialog({ user, onClose, onDeleted }) {
+    const [text, setText] = useState('')
+    const [busy, setBusy] = useState(false)
+    const [error, setError] = useState('')
+    const boxRef = useRef(null)
+    useDialogBehavior(onClose, boxRef, busy)
+    const ok = text.trim().toUpperCase() === 'EXCLUIR'
+
+    const run = async (e) => {
+        e.preventDefault()
+        if (!ok) return
+        setBusy(true)
+        setError('')
+        try {
+            await api(`/api/admin/users/${user.id}`, { method: 'DELETE', headers: authHeaders() })
+            showToast('Conta excluída.', 'success')
+            onDeleted()
+        } catch (err) {
+            setError(err.message)
+            setBusy(false)
+        }
+    }
+
+    return (
+        <div className="cd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}>
+            <form ref={boxRef} className="cd-box cd-box--danger aus-box" role="alertdialog" aria-modal="true" aria-labelledby="aus-del-title" onSubmit={run} noValidate>
+                <h2 id="aus-del-title" className="cd-title">Excluir a conta de {user.name} para sempre?</h2>
+                <p className="cd-message">Isto não pode ser desfeito. Saem a conta ({user.email}) e tudo o que está nela:</p>
+                <ul className="aus-list">
+                    <li>carteiras, lançamentos, contas a pagar e categorias;</li>
+                    <li>cartões, faturas e compras;</li>
+                    <li>alertas, simulações, aparelhos conectados e o WhatsApp.</li>
+                </ul>
+                {hasLiveSub(user) && <p className="aus-note aus-note--warn">A assinatura no Stripe é cancelada antes. Se não der para cancelar, a conta não é excluída.</p>}
+                <label className="aus-field">
+                    <span>Para confirmar, digite EXCLUIR</span>
+                    <input type="text" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" autoCapitalize="characters" disabled={busy} />
+                </label>
+                {error && <p className="aus-note aus-note--error" role="alert">{error}</p>}
+                <div className="cd-actions">
+                    <button type="button" className="cd-btn" onClick={onClose} disabled={busy}>Voltar</button>
+                    <button type="submit" className="cd-btn cd-btn--primary cd-btn--danger" disabled={!ok || busy}>{busy ? 'Excluindo…' : 'Excluir conta'}</button>
+                </div>
+            </form>
+        </div>
+    )
+}
+
+function RowActions({ u, isSelf, onEdit, onBlock, onDelete }) {
+    const canDelete = u.role !== 'ADMIN' && !isSelf
+    return (
+        <div className="aus-actions">
+            <button type="button" className="aus-btn aus-btn--sm aus-edit" onClick={() => onEdit(u)} aria-label={`Editar ${u.name}`} title="Editar">
+                <Pencil size={15} aria-hidden="true" /><span className="aus-edit__label">Editar</span>
+            </button>
+            {!isSelf && (
+                <button type="button" className="aus-icon-btn" onClick={() => onBlock(u)}
+                    aria-label={u.isBlocked ? `Desbloquear ${u.name}` : `Bloquear ${u.name}`} title={u.isBlocked ? 'Desbloquear' : 'Bloquear'}>
+                    {u.isBlocked ? <LockOpen size={17} aria-hidden="true" /> : <Lock size={17} aria-hidden="true" />}
+                </button>
+            )}
+            {canDelete && (
+                <button type="button" className="aus-icon-btn aus-icon-btn--danger" onClick={() => onDelete(u)} aria-label={`Excluir ${u.name}`} title="Excluir">
+                    <Trash2 size={17} aria-hidden="true" />
+                </button>
+            )}
         </div>
     )
 }
 
 export default function AdminUsers() {
-    const { user: currentUser } = useAuth()
+    const { user: me } = useAuth()
+    const { confirm, dialog } = useConfirmDialog()
     const [users, setUsers] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [selectedUser, setSelectedUser] = useState(null)
-    const [userToDelete, setUserToDelete] = useState(null)
     const [plans, setPlans] = useState([])
+    const [status, setStatus] = useState('loading')
     const [search, setSearch] = useState('')
+    const [filter, setFilter] = useState('all')
+    const [shown, setShown] = useState(PAGE)
+    const [editing, setEditing] = useState(null)
+    const [deleting, setDeleting] = useState(null)
 
-    useEffect(() => {
-        fetchUsers()
-        fetchPlans()
+    const load = useCallback(async () => {
+        try {
+            const [list, planList] = await Promise.all([
+                api('/api/admin/users', { headers: authHeaders() }),
+                fetch('/api/plans').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+            ])
+            if (!Array.isArray(list)) throw new Error('resposta inesperada')
+            setUsers(list)
+            setPlans(Array.isArray(planList) ? planList.slice().sort((a, b) => Number(a.price) - Number(b.price)) : [])
+            setStatus('ready')
+        } catch (err) {
+            console.error('Usuários:', err)
+            setStatus('error')
+        }
     }, [])
 
-    const fetchUsers = async () => {
+    useEffect(() => { load() }, [load])
+    useEffect(() => { setShown(PAGE) }, [search, filter])
+
+    const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, users.filter(f.test).length])), [users])
+    const list = useMemo(() => {
+        const f = FILTERS.find((x) => x.key === filter) || FILTERS[0]
+        const term = fold(search.trim())
+        return users.filter((u) => f.test(u) && (!term || fold(u.name).includes(term) || fold(u.email).includes(term)))
+    }, [users, filter, search])
+    const visible = list.slice(0, shown)
+
+    const toggleBlock = async (u) => {
+        const blocking = !u.isBlocked
+        const ok = await confirm(blocking
+            ? { title: `Bloquear a conta de ${u.name}?`, message: 'A pessoa sai na hora de todos os aparelhos e não consegue entrar até ser desbloqueada. Os dados continuam guardados.', confirmLabel: 'Bloquear conta', tone: 'danger' }
+            : { title: `Desbloquear a conta de ${u.name}?`, message: 'A pessoa volta a entrar normalmente.', confirmLabel: 'Desbloquear' })
+        if (!ok) return
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/admin/users', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            const data = await res.json()
-            setUsers(data)
-        } catch (error) {
-            console.error('Erro ao carregar usuários:', error)
-        } finally {
-            setLoading(false)
+            await api(`/api/admin/users/${u.id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify({ isBlocked: blocking }) })
+            showToast(blocking ? 'Conta bloqueada.' : 'Conta desbloqueada.', 'success')
+            load()
+        } catch (err) {
+            showToast(err.message, 'error')
         }
     }
 
-    const fetchPlans = async () => {
-        try {
-            const res = await fetch('/api/plans')
-            const data = await res.json()
-            setPlans(data)
-        } catch (error) {
-            console.error('Erro ao carregar planos:', error)
-        }
-    }
-
-    const handleBlockUser = async (userId, blocked) => {
-        try {
-            const token = localStorage.getItem('token')
-            await fetch(`/api/admin/users/${userId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ isBlocked: blocked })
-            })
-            fetchUsers()
-        } catch (error) {
-            console.error('Erro ao atualizar usuário:', error)
-        }
-    }
-
-    const formatDate = (dateString) => new Date(dateString).toLocaleDateString('pt-BR')
-
-    const filtered = users.filter(u =>
-        !search ||
-        u.name.toLowerCase().includes(search.toLowerCase()) ||
-        u.email.toLowerCase().includes(search.toLowerCase())
-    )
+    const isSelf = (u) => Number(me?.id) === Number(u.id)
 
     return (
-        <div className="admin-page">
-            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div className="aus adm-light">
+            <header className="aus-head">
                 <div>
-                    <h1>Gestão de Usuários</h1>
-                    <p className="text-secondary">Gerencie os usuários do sistema</p>
+                    <h1>Usuários</h1>
+                    <p>Contas do site: plano, situação e acesso.</p>
                 </div>
-                <input
-                    type="text"
-                    placeholder="🔍  Buscar por nome ou e-mail..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    style={{
-                        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: 8, color: '#f1f5f9', padding: '8px 14px', fontSize: 13,
-                        outline: 'none', minWidth: 260,
-                    }}
-                />
-            </div>
+                {status === 'ready' && <span className="aus-count"><Users size={16} aria-hidden="true" />{users.length} {users.length === 1 ? 'conta' : 'contas'}</span>}
+            </header>
 
-            {loading ? (
-                <div className="flex items-center justify-center" style={{ padding: 'var(--spacing-8)' }}>
-                    <div className="loader" />
+            {status === 'loading' && (
+                <div className="aus-state" role="status"><span className="aus-spinner" aria-hidden="true" />Carregando as contas…</div>
+            )}
+
+            {status === 'error' && (
+                <div className="aus-state aus-state--error" role="alert">
+                    <span className="aus-state__icon" aria-hidden="true"><AlertTriangle size={22} /></span>
+                    <h2>Não deu para carregar as contas</h2>
+                    <p>O servidor não respondeu direito. Tente de novo em alguns segundos.</p>
+                    <button type="button" className="aus-btn aus-btn--primary" onClick={() => { setStatus('loading'); load() }}>
+                        <RotateCw size={16} aria-hidden="true" />Tentar de novo
+                    </button>
                 </div>
-            ) : (
-                <div className="admin-card">
-                    <div className="table-container">
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>Usuário</th>
-                                    <th>E-mail</th>
-                                    <th>Plano</th>
-                                    <th>Papel</th>
-                                    <th>Status</th>
-                                    <th>Criado em</th>
-                                    <th>Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filtered.map((user) => (
-                                    <tr key={user.id}>
-                                        <td>
-                                            <div className="user-cell">
-                                                <div className="user-avatar-sm">{user.name.charAt(0).toUpperCase()}</div>
-                                                <span>{user.name}</span>
-                                            </div>
-                                        </td>
-                                        <td style={{ color: '#94a3b8', fontSize: 13 }}>{user.email}</td>
-                                        <td>
-                                            <span className="badge badge-info">{user.plan?.name || 'Gratuito'}</span>
-                                        </td>
-                                        <td>
-                                            <span style={{
-                                                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
-                                                background: user.role === 'ADMIN' ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.06)',
-                                                color: user.role === 'ADMIN' ? '#c4b5fd' : '#94a3b8',
-                                            }}>
-                                                {user.role === 'ADMIN' ? '🛡️ Admin' : 'Usuário'}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span className={`badge ${user.isBlocked ? 'badge-danger' : 'badge-success'}`}>
-                                                {user.isBlocked ? 'Bloqueado' : 'Ativo'}
-                                            </span>
-                                        </td>
-                                        <td style={{ color: '#64748b', fontSize: 13 }}>{formatDate(user.createdAt)}</td>
-                                        <td>
-                                            <div className="action-buttons">
-                                                <button
-                                                    className="btn btn-sm btn-secondary"
-                                                    onClick={() => setSelectedUser(user)}
-                                                >
-                                                    ✏️ Editar
-                                                </button>
-                                                <button
-                                                    className={`btn btn-sm ${user.isBlocked ? 'btn-primary' : 'btn-secondary'}`}
-                                                    onClick={() => handleBlockUser(user.id, !user.isBlocked)}
-                                                >
-                                                    {user.isBlocked ? '🔓 Desbloquear' : '🔒 Bloquear'}
-                                                </button>
-                                                {user.role !== 'ADMIN' && currentUser?.id !== user.id && (
-                                                    <button
-                                                        className="btn btn-sm"
-                                                        style={{
-                                                            background: 'rgba(239, 68, 68, 0.15)',
-                                                            color: '#fca5a5',
-                                                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                                                        }}
-                                                        onClick={() => setUserToDelete(user)}
-                                                        title="Excluir usuário e todas as suas movimentações do banco"
-                                                    >
-                                                        🗑️ Excluir
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {filtered.length === 0 && (
-                                    <tr>
-                                        <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#475569' }}>
-                                            Nenhum usuário encontrado
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+            )}
+
+            {status === 'ready' && (
+                <>
+                    <div className="aus-tools">
+                        <label className="aus-search">
+                            <Search size={18} aria-hidden="true" />
+                            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou e-mail" aria-label="Buscar por nome ou e-mail" />
+                        </label>
+                        <div className="aus-filters" role="group" aria-label="Mostrar">
+                            {FILTERS.map((f) => (
+                                <button key={f.key} type="button" className={`aus-chip ${filter === f.key ? 'is-on' : ''}`} aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>
+                                    {f.label} <span>{counts[f.key]}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                </div>
+
+                    {list.length === 0 ? (
+                        <div className="aus-empty">
+                            <p>{users.length === 0 ? 'Nenhuma conta ainda.' : 'Nenhuma conta com esse filtro ou busca.'}</p>
+                            {(search || filter !== 'all') && (
+                                <button type="button" className="aus-btn" onClick={() => { setSearch(''); setFilter('all') }}>Limpar busca e filtro</button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="aus-card">
+                            <table className="aus-table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Conta</th>
+                                        <th scope="col">Plano</th>
+                                        <th scope="col">Datas</th>
+                                        <th scope="col"><span className="aus-sr">Ações</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {visible.map((u) => {
+                                        const note = billingNote(u)
+                                        return (
+                                            <tr key={u.id}>
+                                                <td data-label="Conta">
+                                                    <div className="aus-who">
+                                                        <Avatar name={u.name} />
+                                                        <span className="aus-who__text">
+                                                            <strong>{u.name}{isSelf(u) && <em> (você)</em>}</strong>
+                                                            <span className="aus-who__mail"><MailText email={u.email} /></span>
+                                                            <StatusTags u={u} />
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td data-label="Plano">
+                                                    <span className="aus-plan">{u.plan?.name || 'Gratuito'}</span>
+                                                    <span className={`aus-bill ${note.tone ? `aus-bill--${note.tone}` : ''}`}>{note.text}</span>
+                                                </td>
+                                                <td data-label="Datas" className="aus-dates">
+                                                    <span>Criada em <b>{fmtDate(u.createdAt)}</b></span>
+                                                    <span>Última entrada <b>{fmtDate(u.lastLoginAt) || 'nunca'}</b></span>
+                                                </td>
+                                                <td className="aus-cell-actions">
+                                                    <RowActions u={u} isSelf={isSelf(u)} onEdit={setEditing} onBlock={toggleBlock} onDelete={setDeleting} />
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                            <div className="aus-foot">
+                                <span>Mostrando {visible.length} de {list.length}</span>
+                                {visible.length < list.length && (
+                                    <button type="button" className="aus-btn" onClick={() => setShown((n) => n + PAGE)}>Mostrar mais {Math.min(PAGE, list.length - visible.length)}</button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </>
             )}
 
-            {selectedUser && (
-                <EditUserModal
-                    user={selectedUser}
+            {editing && (
+                <EditUserDialog
+                    user={editing}
                     plans={plans}
-                    onClose={() => setSelectedUser(null)}
-                    onSaved={() => { fetchUsers(); }}
+                    isSelf={isSelf(editing)}
+                    confirm={confirm}
+                    onClose={() => setEditing(null)}
+                    onSaved={() => { setEditing(null); load() }}
                 />
             )}
-
-            {userToDelete && (
-                <DeleteUserModal
-                    user={userToDelete}
-                    onClose={() => setUserToDelete(null)}
-                    onDeleted={() => {
-                        setUserToDelete(null)
-                        fetchUsers()
-                    }}
+            {deleting && (
+                <DeleteUserDialog
+                    user={deleting}
+                    onClose={() => setDeleting(null)}
+                    onDeleted={() => { setDeleting(null); load() }}
                 />
             )}
+            {dialog}
         </div>
     )
 }
