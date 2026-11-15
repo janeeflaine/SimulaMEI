@@ -574,16 +574,19 @@ const seedDefaults = async () => {
     if (parseInt(adminCount.rows[0].count) === 0) {
       const bcrypt = require('bcryptjs')
       const crypto = require('crypto')
-      const adminPass = process.env.ADMIN_DEFAULT_PASSWORD || crypto.randomBytes(12).toString('base64url')
+      // Banco novo: cria o admin. Sem ADMIN_DEFAULT_PASSWORD, a senha é aleatória e
+      // ninguém a vê (antes ia para o log da Vercel): o dono cria a dele em
+      // /admin/login > "Esqueci a senha", com o e-mail de ADMIN_EMAIL.
+      const adminEmail = (process.env.ADMIN_EMAIL || 'admin@eusempremei.com.br').trim().toLowerCase()
+      const adminPass = process.env.ADMIN_DEFAULT_PASSWORD || crypto.randomBytes(32).toString('base64url')
       const hashedPassword = await bcrypt.hash(adminPass, 12)
       await pool.query(`
                 INSERT INTO users(name, email, password, role)
-VALUES('Administrador', 'admin@eusempremei.com.br', $1, 'ADMIN')
-  `, [hashedPassword])
+VALUES('Administrador', $2, $1, 'ADMIN')
+  `, [hashedPassword, adminEmail])
       console.log('✅ Admin user seeded')
       if (!process.env.ADMIN_DEFAULT_PASSWORD) {
-        console.log('⚠️ SENHA ADMIN GERADA AUTOMATICAMENTE:', adminPass)
-        console.log('⚠️ ANOTE ESTA SENHA! Ela não será exibida novamente.')
+        console.log(`Administrador criado com o e-mail ${adminEmail}. Para criar a senha, use "Esqueci a senha" em /admin/login.`)
       }
     }
 

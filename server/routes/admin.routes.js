@@ -105,19 +105,30 @@ router.get('/stats', async (req, res) => {
 })
 
 // ========== USERS ==========
+const crypto = require('crypto')
+const { cleanEmail, cleanName, toUserId } = require('../utils/userFields')
+const { sendPasswordResetEmail } = require('../utils/email')
+
+// Assinatura do Stripe valendo: a troca de plano tem de passar pelo Stripe
+const hasLiveSubscription = (u) => !!u.stripeSubscriptionId && ['active', 'canceling'].includes(u.subscriptionStatus)
+
 router.get('/users', async (req, res) => {
     try {
         const usersResult = await db.query(`
             SELECT u.id, u.name, u.email, u.role, u."isBlocked", u."createdAt", u."planId",
-                   p.name as "planName"
+                   u."subscriptionStatus", u."planExpiresAt",
+                   (u."stripeSubscriptionId" IS NOT NULL) AS "hasSubscription",
+                   p.name AS "planName", ROUND(COALESCE(p.price, 0)::numeric, 2)::float AS "planPrice",
+                   (SELECT MAX(s.created_at) FROM user_sessions s WHERE s.user_id = u.id) AS "lastLoginAt"
             FROM users u
             LEFT JOIN plans p ON u."planId" = p.id
             WHERE u."deletedAt" IS NULL
-            ORDER BY u."createdAt" DESC
+            ORDER BY u."createdAt" DESC, u.id DESC
         `)
 
         res.json(usersResult.rows.map(u => ({
             ...u,
+            isBlocked: Number(u.isBlocked) === 1 || u.isBlocked === true,
             plan: { name: u.planName || 'Gratuito' }
         })))
     } catch (error) {
@@ -126,121 +137,222 @@ router.get('/users', async (req, res) => {
     }
 })
 
+class UserEditError extends Error {
+    constructor(status, message, reason) { super(message); this.status = status; this.reason = reason }
+}
+
 router.put('/users/:id', async (req, res) => {
+    const id = toUserId(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Usuário não encontrado' })
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {}
+    const { isBlocked, planId, role, name, email } = body
+
+    // A senha não é mais definida pelo administrador: ele manda um link para a pessoa
+    // criar a própria (o admin nunca fica sabendo a senha de ninguém)
+    if (body.newPassword !== undefined) {
+        return res.status(400).json({ message: 'O administrador não define senhas. Use "Mandar link de senha nova".', reason: 'password_by_link' })
+    }
+
+    // Dados conferidos antes de abrir a transação
+    const changes = {}
+    if (name !== undefined) {
+        const n = cleanName(name)
+        if (!n) return res.status(400).json({ message: 'O nome precisa ter de 2 a 80 letras.', field: 'name' })
+        changes.name = n
+    }
+    if (email !== undefined) {
+        const e = cleanEmail(email)
+        if (!e) return res.status(400).json({ message: 'Digite um e-mail válido.', field: 'email' })
+        changes.email = e
+    }
+    if (isBlocked !== undefined) {
+        if (typeof isBlocked !== 'boolean') return res.status(400).json({ message: 'Situação inválida.', field: 'isBlocked' })
+        changes.isBlocked = isBlocked
+    }
+    if (role !== undefined) {
+        if (!['USER', 'ADMIN'].includes(role)) return res.status(400).json({ message: 'Papel inválido.', field: 'role' })
+        changes.role = role
+    }
+    if (planId !== undefined) {
+        if (planId === null || planId === '') changes.planId = null
+        else {
+            const pid = toUserId(planId)
+            if (!pid) return res.status(400).json({ message: 'Plano inválido.', field: 'planId' })
+            changes.planId = pid
+        }
+    }
+
+    let client
     try {
-        const { id } = req.params
-        const { isBlocked, planId, role, name, email, newPassword } = req.body
+        client = await pool.connect()
+        await client.query('BEGIN')
+        // Uma edição de conta por vez: dois admins tirando o acesso um do outro ao mesmo
+        // tempo não podem deixar o site sem nenhum administrador
+        await client.query('SELECT pg_advisory_xact_lock(7303)')
 
-        // Fetch old values for audit
-        const oldUserResult = await db.query('SELECT "isBlocked", "planId", role, name, email FROM users WHERE id = $1', [id])
-        const oldUser = oldUserResult.rows[0]
-        if (!oldUser) return res.status(404).json({ message: 'Usuário não encontrado' })
+        const { rows } = await client.query(
+            `SELECT id, name, email, role, "isBlocked", "planId", "stripeSubscriptionId", "subscriptionStatus"
+             FROM users WHERE id = $1 AND "deletedAt" IS NULL FOR UPDATE`, [id])
+        const old = rows[0]
+        if (!old) throw new UserEditError(404, 'Usuário não encontrado')
+        const oldBlocked = Number(old.isBlocked) === 1 || old.isBlocked === true
 
-        // Validate email uniqueness if changing
-        if (email && email !== oldUser.email) {
-            const emailCheck = await db.query('SELECT id FROM users WHERE email = $1 AND id != $2', [email, id])
-            if (emailCheck.rows.length > 0) {
-                return res.status(400).json({ message: 'Este e-mail já está em uso por outro usuário.' })
+        // Só o que mudou de verdade
+        if (changes.name === old.name) delete changes.name
+        if (changes.email === String(old.email).toLowerCase() && old.email === changes.email) delete changes.email
+        if (changes.isBlocked === oldBlocked) delete changes.isBlocked
+        if (changes.role === old.role) delete changes.role
+        if ('planId' in changes && (changes.planId ?? null) === (old.planId ?? null)) delete changes.planId
+
+        const losesAdmin = old.role === 'ADMIN' && !oldBlocked && (changes.role === 'USER' || changes.isBlocked === true)
+        if (id === req.user.id && (changes.role === 'USER' || changes.isBlocked === true)) {
+            throw new UserEditError(409, 'Você não pode tirar o seu próprio acesso de administrador nem bloquear a sua conta.', 'self')
+        }
+        if (losesAdmin) {
+            const others = await client.query(
+                `SELECT COUNT(*)::int AS n FROM users
+                 WHERE role = 'ADMIN' AND "isBlocked" = 0 AND "deletedAt" IS NULL AND id <> $1`, [id])
+            if (others.rows[0].n === 0) {
+                throw new UserEditError(409, 'Este é o último administrador ativo. Torne outra conta administradora antes.', 'last_admin')
             }
         }
 
-        const updates = []
+        if ('planId' in changes) {
+            if (hasLiveSubscription(old)) {
+                throw new UserEditError(409, 'Esta conta paga uma assinatura no Stripe. A troca de plano é feita pela própria pessoa em Planos (ou cancele a assinatura antes).', 'stripe')
+            }
+            if (changes.planId !== null) {
+                const plan = await client.query('SELECT id FROM plans WHERE id = $1', [changes.planId])
+                if (!plan.rows[0]) throw new UserEditError(400, 'Plano não encontrado.')
+            }
+        }
+
+        if (changes.email) {
+            const dup = await client.query('SELECT 1 FROM users WHERE LOWER(email) = $1 AND id <> $2 LIMIT 1', [changes.email, id])
+            if (dup.rows[0]) throw new UserEditError(409, 'Este e-mail já é de outra conta.', 'email_taken')
+        }
+
+        const keys = Object.keys(changes)
+        if (keys.length === 0) {
+            await client.query('ROLLBACK')
+            return res.json({ message: 'Nada mudou.', changed: [] })
+        }
+
+        const sets = []
         const params = []
-        let paramIndex = 1
-
-        if (name !== undefined && name.trim()) {
-            updates.push(`name = $${paramIndex++}`)
-            params.push(name.trim())
+        const add = (sql, value) => { params.push(value); sets.push(`${sql} = $${params.length}`) }
+        if ('name' in changes) add('name', changes.name)
+        if ('email' in changes) {
+            add('email', changes.email)
+            // E-mail novo: o link de senha nova que foi para o endereço antigo deixa de valer
+            sets.push('"resetPasswordToken" = NULL', '"resetPasswordExpires" = NULL')
         }
-
-        if (email !== undefined && email.trim()) {
-            updates.push(`email = $${paramIndex++}`)
-            params.push(email.trim().toLowerCase())
+        if ('isBlocked' in changes) add('"isBlocked"', changes.isBlocked ? 1 : 0)
+        if ('role' in changes) add('role', changes.role)
+        if ('planId' in changes) {
+            add('"planId"', changes.planId)
+            // Plano dado pelo admin não espera pagamento nem expira por conta de cobrança
+            sets.push(`"subscriptionStatus" = CASE WHEN "subscriptionStatus" = 'pending_payment' THEN 'active' ELSE "subscriptionStatus" END`)
         }
+        sets.push('"updatedAt" = CURRENT_TIMESTAMP')
+        params.push(id)
+        await client.query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${params.length}`, params)
 
-        if (isBlocked !== undefined) {
-            updates.push(`"isBlocked" = $${paramIndex++}`)
-            params.push(isBlocked ? 1 : 0)
+        let eventType = 'USER_UPDATED'
+        if ('isBlocked' in changes) eventType = changes.isBlocked ? 'USER_BLOCKED' : 'USER_UNBLOCKED'
+        else if ('role' in changes) eventType = 'USER_ROLE_CHANGED'
+        else if ('planId' in changes) eventType = 'USER_PLAN_CHANGED'
+
+        // Registro do que mudou. Nome e e-mail entram só como "mudou" (sem o valor): os
+        // registros ficam depois da exclusão da conta e não devem guardar dados pessoais
+        const PERSONAL = ['name', 'email']
+        const oldValues = {}
+        const newValues = {}
+        for (const k of keys) {
+            oldValues[k] = PERSONAL.includes(k) ? '(alterado)' : (k === 'isBlocked' ? oldBlocked : old[k])
+            newValues[k] = PERSONAL.includes(k) ? '(alterado)' : changes[k]
         }
+        await client.query(
+            `INSERT INTO admin_logs ("userId", action, details) VALUES ($1, 'UPDATE_USER', $2)`,
+            [req.user.id, JSON.stringify({ targetUserId: id, changes: newValues })])
+        await client.query('COMMIT')
 
-        if (planId !== undefined) {
-            updates.push(`"planId" = $${paramIndex++}`)
-            params.push(planId || null)
-        }
+        await auditLogger.log({
+            level: 'role' in changes || changes.isBlocked ? 'WARN' : 'INFO',
+            event_type: eventType,
+            actor: { user_id: req.user.id, role: req.user.role },
+            context: req.context || {},
+            target: { resource_type: 'USER', resource_id: id },
+            changes: { old_value: oldValues, new_value: newValues }
+        })
 
-        if (role !== undefined) {
-            const allowedRoles = ['USER', 'ADMIN']
-            if (!allowedRoles.includes(role)) {
-                return res.status(400).json({ message: 'Role inválida. Valores permitidos: USER, ADMIN' })
-            }
-            updates.push(`role = $${paramIndex++}`)
-            params.push(role)
-        }
-
-        // Admin password reset — no old password required
-        if (newPassword) {
-            if (newPassword.length < 8) {
-                return res.status(400).json({ message: 'A nova senha deve ter pelo menos 8 caracteres.' })
-            }
-            const hashed = await bcrypt.hash(newPassword, 10)
-            updates.push(`password = $${paramIndex++}`)
-            params.push(hashed)
-            // Invalidate all existing sessions/tokens for this user
-            updates.push(`"sessionVersion" = COALESCE("sessionVersion", 1) + 1`)
-            await pool.query(
-                `UPDATE user_sessions SET is_active = 0, invalidated_at = NOW() WHERE user_id = $1`,
-                [id]
-            )
-        }
-
-        if (updates.length > 0) {
-            updates.push(`"updatedAt" = CURRENT_TIMESTAMP`)
-            params.push(id)
-
-            await db.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex}`, params)
-
-            // Determine primary event type for audit
-            let eventType = 'USER_UPDATED'
-            if (newPassword)              eventType = 'ADMIN_PASSWORD_RESET'
-            else if (isBlocked !== undefined) eventType = isBlocked ? 'USER_BLOCKED' : 'USER_UNBLOCKED'
-            else if (planId !== undefined) eventType = 'USER_PLAN_CHANGED'
-            else if (role !== undefined)   eventType = 'USER_ROLE_CHANGED'
-
-            const safeBody = { ...req.body }
-            delete safeBody.newPassword // never log passwords
-
-            await auditLogger.log({
-                level: newPassword ? 'WARN' : 'INFO',
-                event_type: eventType,
-                actor: { user_id: req.user.id, role: req.user.role },
-                context: req.context || {},
-                target: { resource_type: 'USER', resource_id: id },
-                changes: {
-                    old_value: { isBlocked: oldUser.isBlocked, planId: oldUser.planId, role: oldUser.role, name: oldUser.name, email: oldUser.email },
-                    new_value: safeBody
-                }
-            })
-
-            await db.query(`
-                INSERT INTO admin_logs ("userId", action, details)
-                VALUES ($1, 'UPDATE_USER', $2)
-            `, [req.user.id, JSON.stringify({ targetUserId: id, changes: safeBody })])
-        }
-
-        res.json({ message: 'Usuário atualizado com sucesso' })
+        res.json({ message: 'Conta atualizada.', changed: keys })
     } catch (error) {
+        if (client) await client.query('ROLLBACK').catch(() => {})
+        if (error instanceof UserEditError) {
+            return res.status(error.status).json({ message: error.message, ...(error.reason ? { reason: error.reason } : {}) })
+        }
+        if (error && error.code === '23505') {
+            return res.status(409).json({ message: 'Este e-mail já é de outra conta.', reason: 'email_taken' })
+        }
         console.error('Update user error:', error)
         res.status(500).json({ message: 'Erro ao atualizar usuário' })
+    } finally {
+        if (client) client.release()
+    }
+})
+
+// ========== LINK DE SENHA NOVA (no lugar de o admin definir a senha) ==========
+router.post('/users/:id/reset-link', async (req, res) => {
+    const id = toUserId(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Usuário não encontrado' })
+    try {
+        const { rows } = await db.query(
+            `SELECT id, email, "resetPasswordExpires" FROM users WHERE id = $1 AND "deletedAt" IS NULL`, [id])
+        const user = rows[0]
+        if (!user) return res.status(404).json({ message: 'Usuário não encontrado' })
+
+        // Um link a cada 2 minutos para a mesma conta (o link vale 1 hora)
+        const expires = user.resetPasswordExpires ? new Date(user.resetPasswordExpires).getTime() : 0
+        if (expires - Date.now() > 58 * 60 * 1000) {
+            return res.status(429).json({ message: 'Um link acabou de ser mandado para esta conta. Espere 2 minutos para mandar outro.' })
+        }
+
+        const resetToken = crypto.randomBytes(32).toString('hex')
+        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex')
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+        await db.query(
+            `UPDATE users SET "resetPasswordToken" = $1, "resetPasswordExpires" = $2 WHERE id = $3`,
+            [hashedToken, expiresAt, id])
+
+        const sent = await sendPasswordResetEmail(user.email, resetToken)
+
+        await auditLogger.log({
+            level: 'INFO',
+            event_type: 'ADMIN_PASSWORD_RESET_LINK',
+            actor: { user_id: req.user.id, role: req.user.role },
+            context: req.context || {},
+            target: { resource_type: 'USER', resource_id: id },
+            metadata: { sent: !!(sent && sent.sent) }
+        })
+
+        if (!sent || !sent.sent) {
+            // O link não saiu: não deixa um link válido que ninguém recebeu
+            await db.query(`UPDATE users SET "resetPasswordToken" = NULL, "resetPasswordExpires" = NULL WHERE id = $1 AND "resetPasswordToken" = $2`, [id, hashedToken])
+            return res.status(502).json({ message: `O e-mail não foi enviado. ${sent && sent.message ? sent.message : 'Confira o e-mail do site em Funcionalidades.'}` })
+        }
+        res.json({ message: `Link mandado para ${user.email}. Vale por 1 hora.` })
+    } catch (error) {
+        console.error('Admin reset link error:', error)
+        res.status(500).json({ message: 'Erro ao mandar o link' })
     }
 })
 
 // ========== DELETE USER ==========
 router.delete('/users/:id', async (req, res) => {
-    const targetUserId = parseInt(req.params.id, 10)
-
-    if (isNaN(targetUserId)) {
-        return res.status(400).json({ message: 'ID de usuário inválido.' })
-    }
+    const targetUserId = toUserId(req.params.id)
+    if (!targetUserId) return res.status(404).json({ message: 'Usuário não encontrado.' })
 
     // Prevent self-deletion
     if (targetUserId === req.user.id) {
@@ -249,9 +361,8 @@ router.delete('/users/:id', async (req, res) => {
 
     let client
     try {
-        // Fetch user to check existence & role & stripe info
         const userResult = await db.query(
-            'SELECT id, name, email, role, "stripeSubscriptionId" FROM users WHERE id = $1',
+            'SELECT id, name, email, role, "stripeSubscriptionId" FROM users WHERE id = $1 AND "deletedAt" IS NULL',
             [targetUserId]
         )
         const user = userResult.rows[0]
@@ -259,19 +370,22 @@ router.delete('/users/:id', async (req, res) => {
             return res.status(404).json({ message: 'Usuário não encontrado.' })
         }
 
-        // Prevent deleting another ADMIN
         if (user.role === 'ADMIN') {
-            return res.status(403).json({ message: 'Não é permitido excluir contas com privilégio de Administrador.' })
+            return res.status(403).json({ message: 'Não é permitido excluir contas de administrador. Tire o acesso de administrador antes.' })
         }
 
-        // Cancel Stripe subscription if active (admin: segue mesmo se falhar, com aviso no log)
+        // Assinatura no Stripe: cancela antes de apagar. Se não der, não apaga — senão a
+        // pessoa continuaria sendo cobrada sem ter mais conta
         try {
             await cancelStripeSubscriptionIfActive(user.stripeSubscriptionId)
         } catch (stripeErr) {
             console.warn('Falha ao cancelar assinatura Stripe do usuário:', stripeErr.message)
+            return res.status(409).json({
+                message: 'Não deu para cancelar a assinatura no Stripe, então a conta não foi excluída. Tente de novo ou cancele a assinatura no painel do Stripe antes.',
+                reason: 'stripe'
+            })
         }
 
-        // Execute DB Transaction
         client = await pool.connect()
         try {
             await client.query('BEGIN')
@@ -282,14 +396,14 @@ router.delete('/users/:id', async (req, res) => {
             throw txError
         }
 
-        // Audit log for security tracking
+        // Registro sem nome nem e-mail de quem foi excluído (LGPD): fica o id e um código do e-mail
         await auditLogger.log({
             level: 'WARN',
             event_type: 'USER_DELETED_PERMANENTLY',
             actor: { user_id: req.user.id, role: req.user.role },
             context: req.context || {},
             target: { resource_type: 'USER', resource_id: targetUserId },
-            changes: { old_value: { id: user.id, name: user.name, email: user.email } }
+            metadata: { email_sha256: crypto.createHash('sha256').update(String(user.email).toLowerCase()).digest('hex') }
         })
 
         res.json({ message: 'Usuário e todos os seus dados foram excluídos permanentemente.' })
