@@ -13,59 +13,90 @@ router.use(authMiddleware)
 router.use(adminMiddleware)
 
 // ========== STATS ==========
+// Assinante pagando: plano pago, assinatura no Stripe e situação que ainda cobra.
+// Fica de fora quem só escolheu o plano e não pagou ('pending_payment') e quem
+// recebeu o plano pelo admin (sem assinatura no Stripe).
+const PAYING_SQL = `p.price > 0 AND u."stripeSubscriptionId" IS NOT NULL AND u."subscriptionStatus" IN ('active', 'canceling')`
+
 router.get('/stats', async (req, res) => {
     try {
-        const totalUsersResult  = await db.query("SELECT COUNT(*) as count FROM users WHERE role = 'USER' AND \"deletedAt\" IS NULL")
-        const activeUsersResult = await db.query("SELECT COUNT(*) as count FROM users WHERE role = 'USER' AND \"isBlocked\" = 0 AND \"deletedAt\" IS NULL")
-        const totalSimulationsResult = await db.query('SELECT COUNT(*) as count FROM simulations')
+        const [usersResult, plansResult, simulationsResult, activityResult, suspiciousResult] = await Promise.all([
+            db.query(`
+                SELECT COUNT(*)::int AS total,
+                       COUNT(*) FILTER (WHERE "createdAt" >= NOW() - INTERVAL '30 days')::int AS "new30",
+                       COUNT(*) FILTER (WHERE "isBlocked" = 1)::int AS blocked,
+                       COUNT(*) FILTER (WHERE "subscriptionStatus" = 'pending_payment')::int AS "pendingPayment"
+                FROM users
+                WHERE role = 'USER' AND "deletedAt" IS NULL
+            `),
+            db.query(`
+                SELECT p.id, p.name, ROUND(COALESCE(p.price, 0)::numeric, 2)::float AS price,
+                       COUNT(u.id)::int AS count,
+                       COUNT(u.id) FILTER (WHERE ${PAYING_SQL})::int AS paying,
+                       COUNT(u.id) FILTER (WHERE ${PAYING_SQL} AND u."subscriptionStatus" = 'canceling')::int AS canceling
+                FROM users u
+                LEFT JOIN plans p ON p.id = u."planId"
+                WHERE u.role = 'USER' AND u."deletedAt" IS NULL
+                GROUP BY p.id, p.name, p.price
+            `),
+            db.query(`
+                SELECT COUNT(*)::int AS total,
+                       COUNT(*) FILTER (WHERE "createdAt" >= NOW() - INTERVAL '30 days')::int AS "last30"
+                FROM simulations
+            `),
+            // Últimos eventos importantes. Só o necessário para a lista (sem IP, e-mail
+            // nem metadata, que ficam em Logs de auditoria).
+            db.query(`
+                SELECT al.id, al.timestamp, al.level, al.event_type, u.name AS user_name
+                FROM audit_logs al
+                LEFT JOIN users u ON al.user_id = u.id
+                WHERE al.event_type <> 'USER_LOGIN_SUCCESS'
+                   OR al.level IN ('WARN', 'ERROR', 'CRITICAL')
+                ORDER BY al.timestamp DESC, al.id DESC
+                LIMIT 10
+            `),
+            db.query(`
+                SELECT COUNT(*)::int AS count FROM audit_logs
+                WHERE level IN ('WARN', 'ERROR', 'CRITICAL')
+                  AND timestamp >= NOW() - INTERVAL '24 hours'
+            `),
+        ])
 
-        // Revenue calculation (sum of paid plan users)
-        const paidUsersResult = await db.query(`
-            SELECT COUNT(*) as count, p.price
-            FROM users u
-            JOIN plans p ON u."planId" = p.id
-            WHERE p.price > 0 AND u."deletedAt" IS NULL
-            GROUP BY p.id, p.price
-        `)
-        const paidUsers = paidUsersResult.rows
-        const monthlyRevenue = paidUsers.reduce((sum, p) => sum + (parseInt(p.count) * p.price), 0)
+        // Conta sem plano (planId vazio ou de um plano apagado) usa o Gratuito: soma no
+        // plano de preço zero, em vez de aparecer como um segundo "Gratuito"
+        const rows = plansResult.rows.map((r) => ({ ...r, price: Number(r.price) || 0 }))
+        const free = rows.find((r) => r.id !== null && r.price === 0)
+        const plans = []
+        for (const r of rows) {
+            if (r.id === null && free) {
+                free.count += r.count
+                continue
+            }
+            plans.push(r)
+        }
+        const byPlan = plans
+            .map((r) => ({
+                id: r.id,
+                name: r.id === null ? 'Gratuito' : r.name,
+                price: r.price,
+                count: r.count,
+                paying: r.paying,
+                canceling: r.canceling,
+            }))
+            .sort((a, b) => a.price - b.price || String(a.name).localeCompare(String(b.name), 'pt-BR'))
 
-        // Users by plan
-        const usersByPlanResult = await db.query(`
-            SELECT COALESCE(p.name, 'Gratuito') as name, COUNT(*) as count
-            FROM users u
-            LEFT JOIN plans p ON u."planId" = p.id
-            WHERE u.role = 'USER' AND u."deletedAt" IS NULL
-            GROUP BY p.name
-        `)
-
-        // Recent activity from audit_logs (last 10 significant events)
-        const recentActivityResult = await db.query(`
-            SELECT al.id, al.timestamp, al.level, al.event_type, al.user_id,
-                   al.ip_address, al.metadata, u.name as user_name, u.email as user_email
-            FROM audit_logs al
-            LEFT JOIN users u ON al.user_id = u.id
-            WHERE al.event_type NOT IN ('USER_LOGIN_SUCCESS')
-               OR al.level IN ('WARN', 'ERROR', 'CRITICAL')
-            ORDER BY al.timestamp DESC
-            LIMIT 10
-        `)
-
-        // Count suspicious events in last 24h
-        const suspiciousResult = await db.query(`
-            SELECT COUNT(*) as count FROM audit_logs
-            WHERE level IN ('WARN', 'ERROR', 'CRITICAL')
-              AND timestamp >= NOW() - INTERVAL '24 hours'
-        `)
+        const paying = byPlan.reduce((n, p) => n + p.paying, 0)
+        const canceling = byPlan.reduce((n, p) => n + p.canceling, 0)
+        const monthlyRevenue = Math.round(byPlan.reduce((sum, p) => sum + p.paying * p.price, 0) * 100) / 100
 
         res.json({
-            totalUsers: totalUsersResult.rows[0].count,
-            activeUsers: activeUsersResult.rows[0].count,
-            monthlyRevenue,
-            totalSimulations: totalSimulationsResult.rows[0].count,
-            usersByPlan: usersByPlanResult.rows,
-            recentActivity: recentActivityResult.rows,
-            suspiciousCount: parseInt(suspiciousResult.rows[0].count) || 0,
+            users: usersResult.rows[0],
+            subscriptions: { paying, canceling, monthlyRevenue },
+            usersByPlan: byPlan,
+            simulations: simulationsResult.rows[0],
+            recentActivity: activityResult.rows,
+            suspiciousCount: suspiciousResult.rows[0]?.count || 0,
+            generatedAt: new Date().toISOString(),
         })
     } catch (error) {
         console.error('Stats error:', error)
