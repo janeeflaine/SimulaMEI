@@ -1,222 +1,329 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Plus, Pencil, Power, Check, X, AlertTriangle, RotateCw, CircleCheck, CircleAlert, Users } from 'lucide-react'
+import { FEATURE_LABELS, formatBRL } from '../../components/plans/planFeatures'
+import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { showToast } from '../../utils/toast'
+// AdminPages.css segue importado: as outras páginas do admin ainda usam as classes dele
 import './AdminPages.css'
+import './AdminPlans.css'
 
-// Lista mestra de funcionalidades — adicione aqui sempre que surgir uma nova feature
-const ALL_FEATURES = [
-    { key: 'comparativo',    name: 'Comparativo MEI x ME',          group: 'Padrão Grátis' },
-    { key: 'alertas',        name: 'Alertas de Limite',              group: 'Padrão Grátis' },
-    { key: 'categorias',     name: 'Categorias Personalizadas',      group: 'Padrão Grátis' },
-    { key: 'cartoes',        name: 'Cartões (Cadastro Manual)',      group: 'Padrão Grátis' },
-    { key: 'historico',      name: 'Histórico de Simulações',        group: 'Prata' },
-    { key: 'pdf',            name: 'Exportar PDF',                   group: 'Prata' },
-    { key: 'contas_pagar',   name: 'Contas a Pagar (Boletos)',        group: 'Prata' },
-    { key: 'transferencias', name: 'Transferências entre Carteiras', group: 'Prata' },
-    { key: 'multi_carteiras',name: 'Multi-Carteiras',                group: 'Prata' },
-    { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     group: 'Prata' },
-    { key: 'whatsapp',       name: 'Assistente no WhatsApp',        group: 'Prata' },
-    { key: 'whatsapp_midia', name: 'WhatsApp: Áudio e Foto',        group: 'Ouro' },
-]
+const authHeaders = (json = false) => {
+    const h = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    if (json) h['Content-Type'] = 'application/json'
+    return h
+}
+async function api(url, options = {}) {
+    const res = await fetch(url, options)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+        const err = new Error(data.message || 'Não deu para concluir agora. Tente de novo.')
+        err.field = data.field
+        throw err
+    }
+    return data
+}
 
-export default function AdminPlans() {
-    const [plans, setPlans] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [editingPlan, setEditingPlan] = useState(null)
-    const [newPlan, setNewPlan] = useState({
-        name: '',
-        price: 0,
-        features: {},
-        isActive: true
+// "19,90" -> 19.9 ; aceita "1.234,56"
+const parseMoney = (txt) => {
+    const clean = String(txt || '').replace(/[^\d,]/g, '')
+    if (!clean) return null
+    const [int, dec = ''] = clean.split(',')
+    const n = Number(`${int || '0'}.${dec.slice(0, 2).padEnd(2, '0')}`)
+    return Number.isFinite(n) ? n : null
+}
+const moneyText = (v) => (v === null || v === undefined ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+
+// Como está o preço no Stripe, em uma linha (o que o cliente paga de verdade)
+function stripeLine(plan) {
+    const s = plan.stripe || {}
+    if (plan.price === 0) return { tone: 'muted', text: 'Plano gratuito: sem cobrança' }
+    if (s.status === 'missing') return { tone: 'warn', text: 'Sem o código do preço no Stripe: ninguém consegue assinar' }
+    if (s.status === 'not_found') return { tone: 'danger', text: 'O código do preço não existe no Stripe' }
+    if (s.status === 'unconfigured') return { tone: 'muted', text: 'Stripe não configurado neste servidor' }
+    if (s.status === 'error') return { tone: 'muted', text: 'Não deu para consultar o Stripe agora' }
+    if (s.status === 'ok') {
+        const same = Math.round(s.amount * 100) === Math.round(plan.price * 100) && s.interval === 'month' && s.currency === 'brl' && s.active
+        if (same) return { tone: 'ok', text: `No Stripe: ${formatBRL(s.amount)} por mês, igual ao site` }
+        if (!s.active) return { tone: 'danger', text: 'O preço está arquivado no Stripe' }
+        return { tone: 'danger', text: `No Stripe: ${formatBRL(s.amount)}${s.interval === 'month' ? ' por mês' : ` por ${s.interval === 'year' ? 'ano' : s.interval}`}. Diferente do site` }
+    }
+    return { tone: 'muted', text: '' }
+}
+
+function Switch({ checked, onChange, label, disabled, id }) {
+    return (
+        <button
+            type="button"
+            id={id}
+            role="switch"
+            aria-checked={checked}
+            aria-label={label}
+            className={`apl-switch ${checked ? 'is-on' : ''}`}
+            onClick={() => onChange(!checked)}
+            disabled={disabled}
+        >
+            <span aria-hidden="true" />
+        </button>
+    )
+}
+
+function PlanDialog({ plan, onClose, onSaved }) {
+    const isNew = !plan.id
+    const isFree = !isNew && plan.price === 0
+    const [form, setForm] = useState({
+        name: plan.name || '',
+        price: isNew ? '' : moneyText(plan.price),
+        stripePriceId: plan.stripePriceId || '',
+        isActive: isNew ? true : plan.isActive,
+        features: { ...(plan.features || {}) },
     })
+    const [saving, setSaving] = useState(false)
+    const [error, setError] = useState(null)
+    const boxRef = useRef(null)
 
     useEffect(() => {
-        fetchPlans()
-    }, [])
-
-    const fetchPlans = async () => {
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/admin/plans', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            const data = await res.json()
-            setPlans(data)
-        } catch (error) {
-            console.error('Erro ao carregar planos:', error)
-        } finally {
-            setLoading(false)
+        const prev = document.activeElement
+        const { overflow } = document.body.style
+        document.body.style.overflow = 'hidden'
+        boxRef.current?.querySelector('input:not([disabled])')?.focus()
+        const onKey = (e) => {
+            if (e.key === 'Escape' && !e.defaultPrevented && !saving) onClose()
         }
-    }
-
-    const handleSavePlan = async (plan) => {
-        try {
-            const token = localStorage.getItem('token')
-            const method = plan.id ? 'PUT' : 'POST'
-            const url = plan.id ? `/api/admin/plans/${plan.id}` : '/api/admin/plans'
-
-            await fetch(url, {
-                method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(plan)
-            })
-
-            fetchPlans()
-            setEditingPlan(null)
-            setNewPlan({ name: '', price: 0, features: {}, isActive: true })
-        } catch (error) {
-            console.error('Erro ao salvar plano:', error)
-            alert('Erro ao salvar plano')
+        document.addEventListener('keydown', onKey)
+        return () => {
+            document.removeEventListener('keydown', onKey)
+            document.body.style.overflow = overflow
+            prev?.focus?.()
         }
-    }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [saving])
 
-    const togglePlanActive = async (plan) => {
-        await handleSavePlan({ ...plan, isActive: !plan.isActive })
-    }
+    const price = parseMoney(form.price)
+    const priceChanged = !isNew && (price !== plan.price || (form.stripePriceId.trim() || null) !== (plan.stripePriceId || null))
 
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('pt-BR', {
-            style: 'currency',
-            currency: 'BRL'
-        }).format(value)
-    }
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center" style={{ minHeight: '50vh' }}>
-                <div className="loader"></div>
-            </div>
-        )
+    const save = async (e) => {
+        e.preventDefault()
+        setError(null)
+        if (!form.name.trim()) return setError({ field: 'name', message: 'Dê um nome ao plano.' })
+        if (price === null) return setError({ field: 'price', message: 'Digite o preço por mês (0 para gratuito).' })
+        const body = {
+            name: form.name,
+            price,
+            isActive: form.isActive,
+            features: form.features,
+            stripePriceId: form.stripePriceId.trim() || null,
+        }
+        if (isFree) delete body.stripePriceId
+        setSaving(true)
+        try {
+            await api(isNew ? '/api/admin/plans' : `/api/admin/plans/${plan.id}`, {
+                method: isNew ? 'POST' : 'PUT', headers: authHeaders(true), body: JSON.stringify(body),
+            })
+            showToast(isNew ? 'Plano criado.' : 'Plano salvo.', 'success')
+            onSaved()
+        } catch (err) {
+            setError({ field: err.field, message: err.message })
+            setSaving(false)
+        }
     }
 
     return (
-        <div className="admin-page">
-            <div className="page-header">
-                <h1>Gestão de Planos</h1>
-                <p className="text-secondary">Crie e gerencie os planos de assinatura</p>
-            </div>
+        <div className="cd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose() }}>
+            <form ref={boxRef} className="cd-box apl-box" role="dialog" aria-modal="true" aria-labelledby="apl-title" onSubmit={save} noValidate>
+                <button type="button" className="apl-box__close" onClick={onClose} aria-label="Fechar" disabled={saving}><X size={20} aria-hidden="true" /></button>
+                <h2 id="apl-title" className="cd-title">{isNew ? 'Novo plano' : `Editar plano ${plan.name}`}</h2>
 
-            <div className="plans-admin-grid">
-                {plans.map((plan) => (
-                    <div key={plan.id} className={`plan-admin-card ${!plan.isActive ? 'inactive' : ''}`}>
-                        <div className="plan-admin-header">
-                            <div>
-                                <h3 className="plan-admin-title">{plan.name}</h3>
-                                <span className={`badge ${plan.isActive ? 'badge-success' : 'badge-danger'}`}>
-                                    {plan.isActive ? 'Ativo' : 'Inativo'}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="plan-admin-price">
-                            {plan.price === 0 ? 'Grátis' : `${formatCurrency(plan.price)}/mês`}
-                        </div>
-
-                        <ul className="plan-features" style={{ marginBottom: 'var(--spacing-4)' }}>
-                            {plan.features && Object.entries(plan.features).map(([key, value]) => (
-                                <li key={key} className={value ? 'included' : 'excluded'}>
-                                    {value ? '✅' : '❌'} {key}
-                                </li>
-                            ))}
-                        </ul>
-
-                        <div className="action-buttons">
-                            <button
-                                className="btn btn-sm btn-secondary"
-                                onClick={() => setEditingPlan(plan)}
-                            >
-                                ✏️ Editar
-                            </button>
-                            <button
-                                className={`btn btn-sm ${plan.isActive ? 'btn-secondary' : 'btn-primary'}`}
-                                onClick={() => togglePlanActive(plan)}
-                            >
-                                {plan.isActive ? '🔒 Desativar' : '✅ Ativar'}
-                            </button>
-                        </div>
-                    </div>
-                ))}
-
-                {/* Add New Plan Card */}
-                <div className="plan-admin-card" style={{ border: '2px dashed rgba(255,255,255,0.12)', background: 'transparent' }}>
-                    <div className="text-center" style={{ padding: 'var(--spacing-4)' }}>
-                        <span style={{ fontSize: '2rem' }}>➕</span>
-                        <h3 style={{ marginTop: 'var(--spacing-2)' }}>Novo Plano</h3>
-                        <button
-                            className="btn btn-primary btn-sm"
-                            style={{ marginTop: 'var(--spacing-4)' }}
-                            onClick={() => setEditingPlan(newPlan)}
-                        >
-                            Criar Plano
-                        </button>
-                    </div>
+                <div className="apl-row">
+                    <label className="apl-field">
+                        <span>Nome</span>
+                        <input type="text" value={form.name} maxLength={30} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                            aria-invalid={error?.field === 'name' || undefined} disabled={saving} />
+                    </label>
+                    <label className="apl-field">
+                        <span>Preço por mês</span>
+                        <span className="apl-money">
+                            <b aria-hidden="true">R$</b>
+                            <input type="text" inputMode="decimal" value={form.price} placeholder="0,00"
+                                onChange={(e) => setForm({ ...form, price: e.target.value.replace(/[^\d.,]/g, '') })}
+                                onBlur={() => { const v = parseMoney(form.price); if (v !== null) setForm((f) => ({ ...f, price: moneyText(v) })) }}
+                                aria-invalid={error?.field === 'price' || undefined} disabled={saving || isFree} />
+                        </span>
+                        {isFree && <small>O gratuito fica sempre em R$ 0,00: é para ele que volta quem para de pagar.</small>}
+                    </label>
                 </div>
-            </div>
 
-            {/* Edit Modal */}
-            {editingPlan && (
-                <div className="modal-overlay" onClick={() => setEditingPlan(null)}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <h2>{editingPlan.id ? 'Editar Plano' : 'Novo Plano'}</h2>
+                {!isFree && (
+                    <label className="apl-field">
+                        <span>Código do preço no Stripe</span>
+                        <input type="text" value={form.stripePriceId} placeholder="price_..." autoComplete="off" spellCheck={false}
+                            onChange={(e) => setForm({ ...form, stripePriceId: e.target.value.trim() })}
+                            aria-invalid={error?.field === 'stripePriceId' || undefined} disabled={saving || price === 0} />
+                        <small>
+                            No Stripe: Catálogo de produtos &gt; o plano &gt; o preço &gt; copie o ID (começa com price_). Tem de ser mensal, em reais e com o mesmo valor daqui.
+                            {plan.priceSource === 'variavel' && !form.stripePriceId && ' Hoje este plano usa o código que está na configuração do servidor.'}
+                        </small>
+                    </label>
+                )}
 
-                        <div className="form-group">
-                            <label className="form-label">Nome do Plano</label>
-                            <input
-                                type="text"
-                                value={editingPlan.name}
-                                onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })}
-                                className="form-input"
-                                placeholder="Ex: Premium"
-                            />
-                        </div>
+                {priceChanged && plan.paying > 0 && (
+                    <p className="apl-note apl-note--warn">
+                        Quem já assina ({plan.paying}) continua pagando o preço antigo do Stripe. O preço novo vale para quem assinar daqui para frente.
+                    </p>
+                )}
 
-                        <div className="form-group">
-                            <label className="form-label">Preço Mensal (R$)</label>
-                            <input
-                                type="number"
-                                value={editingPlan.price}
-                                onChange={(e) => setEditingPlan({ ...editingPlan, price: parseFloat(e.target.value) || 0 })}
-                                className="form-input"
-                                step="0.01"
-                                min="0"
-                            />
-                        </div>
+                <fieldset className="apl-field apl-features" disabled={saving}>
+                    <legend>O que o plano libera</legend>
+                    <ul>
+                        {FEATURE_LABELS.map(([key, label]) => (
+                            <li key={key}>
+                                <label htmlFor={`apl-f-${key}`}>{label}</label>
+                                <Switch id={`apl-f-${key}`} label={label} checked={!!form.features[key]}
+                                    onChange={(v) => setForm((f) => ({ ...f, features: { ...f.features, [key]: v } }))} />
+                            </li>
+                        ))}
+                    </ul>
+                    <small>Limites de uso (carteiras, lançamentos, leituras de fatura, números de WhatsApp) ficam em <Link to="/admin/funcionalidades" className="apl-link">Funcionalidades</Link>.</small>
+                </fieldset>
 
-                        <div className="form-group">
-                            <label className="form-label">Funcionalidades</label>
-                            {['Padrão Grátis', 'Prata', 'Ouro'].map(group => (
-                                <div key={group}>
-                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#93c5fd', padding: '10px 0 4px', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '8px' }}>
-                                        {group === 'Padrão Grátis' ? '🆓 Padrão Grátis' : group === 'Prata' ? '🥈 Prata' : '🥇 Ouro'}
-                                    </div>
-                                    {ALL_FEATURES.filter(f => f.group === group).map((feature) => (
-                                        <div key={feature.key} className="feature-row" style={{ padding: '8px 0' }}>
-                                            <span>{feature.name}</span>
-                                            <div
-                                                className={`admin-toggle ${editingPlan.features?.[feature.key] ? 'active' : ''}`}
-                                                onClick={() => setEditingPlan({
-                                                    ...editingPlan,
-                                                    features: { ...editingPlan.features, [feature.key]: !editingPlan.features?.[feature.key] }
-                                                })}
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                            ))}
-                        </div>
+                <div className="apl-field apl-active">
+                    <label htmlFor="apl-active">Aparece em Planos para quem vai assinar</label>
+                    <Switch id="apl-active" label="Plano ativo" checked={form.isActive} disabled={saving || isFree}
+                        onChange={(v) => setForm({ ...form, isActive: v })} />
+                </div>
 
-                        <div className="modal-actions">
-                            <button className="btn btn-secondary" onClick={() => setEditingPlan(null)}>
-                                Cancelar
-                            </button>
-                            <button className="btn btn-primary" onClick={() => handleSavePlan(editingPlan)}>
-                                💾 Salvar
-                            </button>
-                        </div>
-                    </div>
+                {error && <p className="apl-note apl-note--error" role="alert">{error.message}</p>}
+
+                <div className="cd-actions">
+                    <button type="button" className="cd-btn" onClick={onClose} disabled={saving}>Cancelar</button>
+                    <button type="submit" className="cd-btn cd-btn--primary" disabled={saving}>{saving ? 'Salvando…' : (isNew ? 'Criar plano' : 'Salvar plano')}</button>
+                </div>
+            </form>
+        </div>
+    )
+}
+
+export default function AdminPlans() {
+    const { confirm, dialog } = useConfirmDialog()
+    const [plans, setPlans] = useState([])
+    const [status, setStatus] = useState('loading')
+    const [editing, setEditing] = useState(null)
+
+    const load = useCallback(async () => {
+        try {
+            const data = await api('/api/admin/plans', { headers: authHeaders() })
+            if (!Array.isArray(data)) throw new Error('resposta inesperada')
+            setPlans(data)
+            setStatus('ready')
+        } catch (err) {
+            console.error('Planos:', err)
+            setStatus('error')
+        }
+    }, [])
+    useEffect(() => { load() }, [load])
+
+    const toggleActive = async (plan) => {
+        const turningOff = plan.isActive
+        const ok = await confirm(turningOff
+            ? {
+                title: `Desativar o plano ${plan.name}?`,
+                message: `Ele some da página Planos para quem vai assinar. ${plan.accounts > 0 ? `As ${plan.accounts} contas que estão nele continuam com os recursos e a cobrança de hoje.` : ''}`,
+                confirmLabel: 'Desativar plano',
+                tone: 'danger',
+            }
+            : { title: `Ativar o plano ${plan.name}?`, message: 'Ele volta a aparecer na página Planos para quem vai assinar.', confirmLabel: 'Ativar plano' })
+        if (!ok) return
+        try {
+            await api(`/api/admin/plans/${plan.id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify({ isActive: !plan.isActive }) })
+            showToast(turningOff ? 'Plano desativado.' : 'Plano ativado.', 'success')
+            load()
+        } catch (err) {
+            showToast(err.message, 'error')
+        }
+    }
+
+    return (
+        <div className="apl adm-light">
+            <header className="apl-head">
+                <div>
+                    <h1>Planos</h1>
+                    <p>Quanto cada plano custa e o que ele libera. O preço do site tem de ser o mesmo do Stripe.</p>
+                </div>
+                {status === 'ready' && (
+                    <button type="button" className="apl-btn apl-btn--primary" onClick={() => setEditing({ features: {} })}>
+                        <Plus size={18} aria-hidden="true" />Novo plano
+                    </button>
+                )}
+            </header>
+
+            {status === 'loading' && <div className="apl-state" role="status"><span className="apl-spinner" aria-hidden="true" />Carregando os planos…</div>}
+
+            {status === 'error' && (
+                <div className="apl-state apl-state--error" role="alert">
+                    <span className="apl-state__icon" aria-hidden="true"><AlertTriangle size={22} /></span>
+                    <h2>Não deu para carregar os planos</h2>
+                    <p>O servidor não respondeu direito. Tente de novo em alguns segundos.</p>
+                    <button type="button" className="apl-btn apl-btn--primary" onClick={() => { setStatus('loading'); load() }}>
+                        <RotateCw size={16} aria-hidden="true" />Tentar de novo
+                    </button>
                 </div>
             )}
+
+            {status === 'ready' && (
+                <ul className="apl-grid">
+                    {plans.map((plan) => {
+                        const line = stripeLine(plan)
+                        const LineIcon = line.tone === 'ok' ? CircleCheck : CircleAlert
+                        return (
+                            <li key={plan.id} className={`apl-card ${plan.isActive ? '' : 'is-off'}`}>
+                                <div className="apl-card__head">
+                                    <h2>{plan.name}</h2>
+                                    <span className={`apl-tag ${plan.isActive ? 'apl-tag--on' : 'apl-tag--off'}`}>{plan.isActive ? 'Ativo' : 'Inativo'}</span>
+                                </div>
+                                <p className="apl-price">
+                                    {plan.price > 0 ? <>{formatBRL(plan.price)}<small>/mês</small></> : 'Grátis'}
+                                </p>
+                                {line.text && (
+                                    <p className={`apl-stripe apl-stripe--${line.tone}`}>
+                                        {line.tone !== 'muted' && <LineIcon size={16} aria-hidden="true" />}
+                                        {line.text}
+                                    </p>
+                                )}
+                                <p className="apl-people">
+                                    <Users size={16} aria-hidden="true" />
+                                    {plan.accounts} {plan.accounts === 1 ? 'conta' : 'contas'}
+                                    {plan.price > 0 && `, ${plan.paying} pagando`}
+                                </p>
+                                <ul className="apl-features-list" aria-label={`Recursos do plano ${plan.name}`}>
+                                    {FEATURE_LABELS.map(([key, label]) => {
+                                        const on = !!plan.features?.[key]
+                                        return (
+                                            <li key={key} className={on ? 'is-on' : ''}>
+                                                {on ? <Check size={16} aria-hidden="true" /> : <X size={16} aria-hidden="true" />}
+                                                <span>{label}</span>
+                                                <span className="apl-sr">{on ? '(incluído)' : '(não incluído)'}</span>
+                                            </li>
+                                        )
+                                    })}
+                                </ul>
+                                <div className="apl-card__actions">
+                                    <button type="button" className="apl-btn" onClick={() => setEditing(plan)}>
+                                        <Pencil size={16} aria-hidden="true" />Editar
+                                    </button>
+                                    {plan.price > 0 && (
+                                        <button type="button" className="apl-btn" onClick={() => toggleActive(plan)}>
+                                            <Power size={16} aria-hidden="true" />{plan.isActive ? 'Desativar' : 'Ativar'}
+                                        </button>
+                                    )}
+                                </div>
+                            </li>
+                        )
+                    })}
+                </ul>
+            )}
+
+            {editing && <PlanDialog plan={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+            {dialog}
         </div>
     )
 }
