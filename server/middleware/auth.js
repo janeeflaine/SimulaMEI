@@ -46,7 +46,7 @@ const authMiddleware = async (req, res, next) => {
             const dbSv = user.sessionVersion || 1
             if (Number(decoded.sv) !== Number(dbSv)) {
                 return res.status(401).json({
-                    message: 'Sessão encerrada. Por favor, faça login novamente.',
+                    message: 'Sua sessão terminou porque a conta foi aberta em outro aparelho ou a senha foi trocada. Entre de novo.',
                     code: 'SESSION_INVALIDATED'
                 })
             }

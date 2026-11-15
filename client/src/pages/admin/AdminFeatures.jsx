@@ -136,6 +136,7 @@ export default function AdminFeatures() {
                 <AdminWhatsappLimits plans={plans} />
 
                 <AdminInvoiceUploadLimits plans={plans} />
+                <AdminSingleDevice plans={plans} />
                 <AdminWhatsAppReminders />
 
                 <AdminTrialSettings />
@@ -437,6 +438,118 @@ function AdminInvoiceUploadLimits({ plans }) {
                     )}
                     <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
                         {saving ? 'Salvando...' : 'Salvar Limites'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// Aparelhos por conta, em cada plano: vários ao mesmo tempo (padrão) ou um por vez.
+// Um por vez: entrar num aparelho (navegador) novo encerra a sessão dos outros.
+// O servidor lê system_settings "single_device_<id do plano>" a cada entrada.
+function AdminSingleDevice({ plans }) {
+    const [modes, setModes] = useState({}) // { [planId]: 'multi' | 'single' }
+    const [saving, setSaving] = useState(false)
+    const [loaded, setLoaded] = useState(false)
+    const [status, setStatus] = useState(null) // { ok, text }
+
+    useEffect(() => { fetchModes() }, [])
+
+    const fetchModes = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+            const data = await res.json()
+            const parsed = {}
+            plans.forEach(p => {
+                const setting = Array.isArray(data) ? data.find(s => s.key === `single_device_${p.id}`) : null
+                parsed[p.id] = setting && String(setting.value) === 'true' ? 'single' : 'multi'
+            })
+            setModes(parsed)
+        } catch (err) {
+            console.error('Erro ao buscar aparelhos por conta:', err)
+        } finally {
+            setLoaded(true)
+        }
+    }
+
+    const handleSave = async () => {
+        setSaving(true)
+        setStatus(null)
+        try {
+            const token = localStorage.getItem('token')
+            const results = await Promise.all(
+                plans.map(p =>
+                    fetch('/api/settings', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ key: `single_device_${p.id}`, value: modes[p.id] === 'single' ? 'true' : 'false' })
+                    })
+                )
+            )
+            setStatus(results.every(r => r.ok)
+                ? { ok: true, text: 'Salvo. Vale a partir da próxima vez que cada pessoa entrar.' }
+                : { ok: false, text: 'Alguns planos não foram salvos. Tente de novo.' })
+        } catch (err) {
+            console.error(err)
+            setStatus({ ok: false, text: 'Erro ao salvar. Tente de novo.' })
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    if (!loaded) return null
+
+    const option = (planId, value, label) => {
+        const active = modes[planId] === value
+        return (
+            <button
+                type="button"
+                onClick={() => setModes(prev => ({ ...prev, [planId]: value }))}
+                aria-pressed={active}
+                style={{ minHeight: '40px', padding: '0 14px', borderRadius: '8px', border: `1px solid ${active ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`, background: active ? 'rgba(59,130,246,0.18)' : '#111827', color: active ? '#dbeafe' : 'rgba(255,255,255,0.6)', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
+            >
+                {label}
+            </button>
+        )
+    }
+
+    return (
+        <div className="admin-card" style={{ marginTop: '2rem' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+                    Aparelhos por conta
+                </h2>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
+                    <strong style={{ color: '#93c5fd' }}>Vários aparelhos</strong>: a pessoa fica conectada no celular e no computador ao mesmo tempo.{' '}
+                    <strong style={{ color: '#93c5fd' }}>Um por vez</strong>: ao entrar num aparelho ou navegador novo, os outros saem da conta
+                    (evita que uma assinatura seja dividida entre várias pessoas). Vale a partir da próxima entrada de cada pessoa.
+                </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {plans.map(plan => (
+                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div>
+                            <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
+                            <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
+                                {modes[plan.id] === 'single' ? 'Um aparelho por vez' : 'Vários aparelhos ao mesmo tempo'}
+                            </p>
+                        </div>
+                        <div role="group" aria-label={`Aparelhos no plano ${plan.name}`} style={{ display: 'flex', gap: '6px' }}>
+                            {option(plan.id, 'multi', 'Vários aparelhos')}
+                            {option(plan.id, 'single', 'Um por vez')}
+                        </div>
+                    </div>
+                ))}
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
+                    {status && (
+                        <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>
+                    )}
+                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                        {saving ? 'Salvando...' : 'Salvar aparelhos'}
                     </button>
                 </div>
             </div>

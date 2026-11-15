@@ -484,7 +484,7 @@ const init = async () => {
         'business_units', 'invoice_uploads', 'credit_cards',
         'finance_categories', 'card_invoices', 'invoice_items',
         'finance_transactions', 'bills_to_pay',
-        'whatsapp_links', 'whatsapp_link_codes', 'whatsapp_events'
+        'whatsapp_links', 'whatsapp_link_codes', 'whatsapp_events', 'auth_attempts'
       ]
 
       for (const table of tablesToLock) {
@@ -550,6 +550,13 @@ const seedDefaults = async () => {
       await upgrades.rulesMinimumWage((sql, params) => pool.query(sql, params))
     } catch (wageErr) {
       console.log('Migration note (salário mínimo):', wageErr.message)
+    }
+
+    // Acesso: tentativas de senha no banco, colunas do link de nova senha, e-mail sem maiúsculas
+    try {
+      await upgrades.authAttempts((sql, params) => pool.query(sql, params))
+    } catch (authErr) {
+      console.log('Migration note (acesso):', authErr.message)
     }
 
     // Default System Settings for Trial

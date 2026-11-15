@@ -5,25 +5,28 @@
  */
 
 /**
- * Safely extract the real client IP from request headers.
- * Handles X-Forwarded-For for reverse-proxy / Vercel / Render deployments.
+ * IP de quem fez o pedido.
+ * - Na Vercel (process.env.VERCEL): os cabeçalhos x-vercel-forwarded-for / x-real-ip /
+ *   x-forwarded-for são escritos pela própria Vercel, que apaga o que o visitante mandar
+ *   (não dá para fingir outro IP).
+ * - Fora da Vercel (servidor local): o cabeçalho pode ser inventado por quem chama, então
+ *   vale o endereço da conexão.
  */
+function firstIp(value) {
+  if (!value || typeof value !== 'string') return null
+  const first = value.split(',')[0].trim()
+  return first && first.length < 50 ? first : null
+}
+
 function getClientIp(req) {
-  const forwarded = req.headers['x-forwarded-for']
-  if (forwarded) {
-    // X-Forwarded-For may be a comma-separated chain: "client, proxy1, proxy2"
-    // Take only the first entry (the original client).
-    const first = forwarded.split(',')[0].trim()
-    // Basic sanity check: reject obviously invalid strings
-    if (first && first.length < 50) return first
+  if (process.env.VERCEL) {
+    const fromEdge =
+      firstIp(req.headers['x-vercel-forwarded-for']) ||
+      firstIp(req.headers['x-real-ip']) ||
+      firstIp(req.headers['x-forwarded-for'])
+    if (fromEdge) return fromEdge
   }
-  return (
-    req.headers['x-real-ip'] ||
-    req.connection?.remoteAddress ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    'unknown'
-  )
+  return req.socket?.remoteAddress || req.ip || 'unknown'
 }
 
 function requestContext(req, res, next) {
@@ -37,3 +40,4 @@ function requestContext(req, res, next) {
 }
 
 module.exports = requestContext
+module.exports.getClientIp = getClientIp

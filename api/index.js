@@ -3,6 +3,7 @@ const cors = require('cors')
 require('dotenv').config()
 
 const { init, ensureSchema } = require('../server/db')
+const requestContext = require('../server/middleware/requestContext')
 
 // Initialize DB
 init()
@@ -41,6 +42,10 @@ app.post('/api/whatsapp/webhook', express.raw({ type: '*/*', limit: '1mb' }), wh
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))
 
+// IP, navegador e aparelho de cada pedido (auditoria e limites de tentativas).
+// Antes só o server.js local usava: na produção o req.context ficava vazio.
+app.use(requestContext)
+
 // Antes do primeiro pedido de cada servidor: colunas novas criadas (o init acima
 // roda solto e, na Vercel, pode não terminar). Depois disso não custa nada.
 // No máximo 8 s de espera: se o banco travar, o pedido segue e a conferência tenta de novo.
@@ -69,9 +74,17 @@ app.get('/api/health', (req, res) => {
 })
 
 // Error handler
+// Nada de detalhe interno na resposta (antes ia o err.message, ex.: trecho do JSON
+// recebido ou mensagem do banco). JSON quebrado e corpo grande demais não são erro do servidor.
 app.use((err, req, res, next) => {
-    console.error('Express Error:', err.stack)
-    res.status(500).json({ message: 'Erro interno do servidor na Vercel', error: err.message })
+    if (err && err.type === 'entity.parse.failed') {
+        return res.status(400).json({ message: 'Pedido com dados inválidos.' })
+    }
+    if (err && err.type === 'entity.too.large') {
+        return res.status(413).json({ message: 'O arquivo ou os dados enviados são grandes demais.' })
+    }
+    console.error('Express Error:', err && err.stack)
+    res.status(500).json({ message: 'Erro interno. Tente novamente.' })
 })
 
 // Startup diagnostic log

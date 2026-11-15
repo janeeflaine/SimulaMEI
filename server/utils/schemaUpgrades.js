@@ -51,11 +51,30 @@ const rulesMinimumWage = async (q) => {
     await q('ALTER TABLE calculation_rules ADD COLUMN IF NOT EXISTS "minimumWage" REAL')
 }
 
+// Acesso: tentativas de senha e de "Esqueci a senha" contadas no banco (valem para
+// todos os servidores da Vercel), colunas do link de nova senha (antes criadas a cada
+// pedido de "Esqueci a senha") e busca do e-mail sem diferença de maiúsculas
+const authAttempts = async (q) => {
+    await q(`CREATE TABLE IF NOT EXISTS auth_attempts (
+        id BIGSERIAL PRIMARY KEY,
+        kind TEXT NOT NULL,
+        key TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`)
+    await q('CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON auth_attempts (kind, key, created_at)')
+    await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordToken" TEXT')
+    await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetPasswordExpires" TIMESTAMP')
+    await q('CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email))')
+    // Supabase: tabela só para o servidor, como as outras (sem efeito fora do Supabase)
+    try { await q('ALTER TABLE auth_attempts ENABLE ROW LEVEL SECURITY') } catch (_) { /* sem permissão: segue */ }
+}
+
 const UPGRADES = [
     { table: 'user_alerts', column: 'lastSentKey', run: alertSentKey },
     { table: 'finance_transactions', column: 'transferId', run: transferLinks },
     { table: 'mei_limits', column: 'year', run: meiLimitYear },
-    { table: 'calculation_rules', column: 'minimumWage', run: rulesMinimumWage }
+    { table: 'calculation_rules', column: 'minimumWage', run: rulesMinimumWage },
+    { table: 'auth_attempts', column: 'key', run: authAttempts }
 ]
 
 // Roda só as que faltam (uma consulta rápida quando já está tudo certo)
@@ -75,4 +94,4 @@ async function applyMissing(q) {
     return ran
 }
 
-module.exports = { alertSentKey, transferLinks, meiLimitYear, rulesMinimumWage, applyMissing, UPGRADES }
+module.exports = { alertSentKey, transferLinks, meiLimitYear, rulesMinimumWage, authAttempts, applyMissing, UPGRADES }

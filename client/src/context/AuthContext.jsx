@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
         if (!res.ok) {
             const isJson = res.headers.get('content-type')?.includes('application/json')
             const error = isJson ? await res.json().catch(() => ({})) : {}
-            throw new Error(error.message || `Erro do servidor (Status ${res.status})`)
+            throw new Error(error.message || 'Não deu para entrar agora. Tente de novo em alguns minutos.')
         }
 
         const data = await res.json()
@@ -51,8 +51,8 @@ export function AuthProvider({ children }) {
         })
 
         if (!res.ok) {
-            const error = await res.json()
-            throw new Error(error.message || 'Erro ao criar conta')
+            const error = await res.json().catch(() => ({}))
+            throw new Error(error.message || 'Não deu para criar a conta agora. Tente de novo.')
         }
 
         const data = await res.json()
@@ -87,7 +87,10 @@ export function AuthProvider({ children }) {
                 localStorage.setItem('user', JSON.stringify(user))
                 setUser(user)
             } else if (res.status === 401 || res.status === 403) {
-                // Sessão encerrada, conta bloqueada ou excluída: sai e volta para o login
+                // Sessão encerrada, conta bloqueada ou excluída: sai e volta para o login,
+                // que mostra o motivo (outro aparelho, senha trocada, bloqueio)
+                const body = await res.json().catch(() => ({}))
+                if (body.message) sessionStorage.setItem('logoutReason', body.message)
                 logout()
             }
         } catch (error) {
