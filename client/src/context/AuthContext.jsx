@@ -17,14 +17,15 @@ export function AuthProvider({ children }) {
         setLoading(false)
     }, [])
 
-    const login = async (email, password) => {
+    const login = async (email, password, options = {}) => {
         const res = await fetch('/api/auth/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Device-Fingerprint': getDeviceFingerprint(),
             },
-            body: JSON.stringify({ email, password })
+            // scope 'admin': o servidor só devolve a sessão para conta de administrador
+            body: JSON.stringify(options.scope ? { email, password, scope: options.scope } : { email, password })
         })
 
         if (!res.ok) {

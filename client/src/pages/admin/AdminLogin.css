@@ -1,0 +1,103 @@
+/* Entrada do painel do administrador (/admin/login).
+   Prefixo .adl- dentro de .acesso.adl; campos, avisos e botão vêm do Login.css (.acs-) */
+
+.acesso.adl {
+    display: flex;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 48px 0;
+}
+
+.adl-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0 24px;
+}
+
+.adl-card {
+    width: 100%;
+    max-width: 460px;
+    overflow: hidden;
+    border: 1px solid var(--acs-line);
+    border-radius: 24px;
+    background: #fff;
+    box-shadow: 0 24px 48px -32px rgba(18, 40, 74, 0.35);
+}
+
+/* Faixa azul-marinho (elemento marcante): só branco por cima */
+.adl-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 22px 32px;
+    background: var(--acs-ink);
+}
+
+.adl-head .acs-brand { font-size: 1.125rem; }
+
+/* Área de toque de 44px nos links, sem mudar o desenho */
+.adl-head .acs-brand,
+.adl-foot .acs-link { display: inline-flex; align-items: center; min-height: 44px; }
+.adl .acs-label-row .acs-link { display: inline-flex; align-items: center; min-height: 44px; margin: -6px 0; }
+
+.adl-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--acs-ink);
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+
+.adl-body { padding: 32px 32px 28px; }
+
+.adl .acs-title {
+    font-size: 1.625rem;
+    line-height: 1.2;
+    text-wrap: balance;
+}
+
+.adl-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 16px 32px 20px;
+    border-top: 1px solid var(--acs-line);
+    color: var(--acs-muted);
+    font-size: 0.9375rem;
+}
+
+.adl-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    color: var(--acs-ink);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.adl-back:focus-visible { outline: 3px solid rgba(16, 185, 129, 0.45); outline-offset: 2px; border-radius: 8px; }
+
+@media (hover: hover) {
+    .adl-back:hover { text-decoration: underline; }
+}
+
+@media (max-width: 520px) {
+    .acesso.adl { padding: 16px 0; }
+    .adl-wrap { padding: 0 12px; }
+    .adl-card { border-radius: 20px; }
+    .adl-head { padding: 18px 20px; }
+    .adl-body { padding: 24px 20px 20px; }
+    .adl-foot { padding: 12px 20px 16px; }
+    .adl .acs-title { font-size: 1.375rem; }
+}
