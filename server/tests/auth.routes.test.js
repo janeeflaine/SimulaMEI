@@ -281,6 +281,32 @@ describe('Entrar', () => {
         expect(sql.some(s => s.q.includes('SET "sessionVersion" = COALESCE("sessionVersion", 1) + 1'))).toBe(false)
     })
 
+    test('entrada do admin com conta de cliente: 403 sem token, sem mexer na sessão e sem contar erro', async () => {
+        state.settings.single_device_1 = 'true'
+        state.lastSession = { ip_address: '1.1.1.1', device_fingerprint: 'celular' }
+        const res = await request(makeAppWithContext()).post('/api/auth/login').set('X-Device-Fingerprint', 'computador')
+            .send({ email: 'joana@teste.com', password: 'senha-certa-1', scope: 'admin' })
+        expect(res.statusCode).toBe(403)
+        expect(res.body.reason).toBe('not_admin')
+        expect(res.body.token).toBeUndefined()
+        expect(sql.some(s => s.q.includes('SET "sessionVersion" = COALESCE("sessionVersion", 1) + 1'))).toBe(false)
+        expect(sql.some(s => s.q.startsWith('INSERT INTO user_sessions'))).toBe(false)
+        expect(sql.some(s => s.q.startsWith('DELETE FROM auth_attempts WHERE id = ANY'))).toBe(true)
+    })
+
+    test('entrada do admin com senha errada: mesma resposta do Entrar (não diz se é admin)', async () => {
+        const res = await login({ email: 'joana@teste.com', password: 'errada', scope: 'admin' })
+        expect(res.statusCode).toBe(401)
+    })
+
+    test('entrada do admin com conta de administrador: entra', async () => {
+        state.users[0].role = 'ADMIN'
+        const res = await login({ email: 'joana@teste.com', password: 'senha-certa-1', scope: 'admin' })
+        expect(res.statusCode).toBe(200)
+        expect(res.body.token).toBeDefined()
+        expect(res.body.user.role).toBe('ADMIN')
+    })
+
     test.each([[{ email: 'joana@teste.com', password: { a: 1 } }], [{ email: { $ne: '' }, password: 'x' }], [{}]])('dado ruim %j: 400', async (body) => {
         expect((await login(body)).statusCode).toBe(400)
     })

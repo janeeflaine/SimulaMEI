@@ -466,6 +466,22 @@ router.post('/login', authLimiter, async (req, res) => {
             return res.status(403).json({ message: 'Sua conta está bloqueada. Entre em contato com o suporte.' })
         }
 
+        // Entrada do painel do administrador (scope 'admin'): conta que não é de
+        // administrador não recebe sessão (antes recebia o token e ficava logada, e com
+        // "um aparelho por vez" ainda saía dos outros aparelhos). Senha certa: este
+        // pedido não conta como erro.
+        if (body.scope === 'admin' && user.role !== 'ADMIN') {
+            await forgetAttempts(attemptIds)
+            await auditLogger.log({
+                level: 'WARN',
+                event_type: 'ADMIN_LOGIN_DENIED',
+                actor: { user_id: user.id, role: user.role },
+                context: req.context || {},
+                metadata: { email }
+            })
+            return res.status(403).json({ message: 'Esta conta não tem acesso ao painel do administrador.', reason: 'not_admin' })
+        }
+
         // Entrou: zera as tentativas deste e-mail e não conta este pedido no IP
         await Promise.all([
             forgetAttempts(attemptIds),
