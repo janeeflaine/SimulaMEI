@@ -61,7 +61,7 @@ function explainSmtpError(error) {
     return `O serviço de e-mail recusou o envio${code ? ` (código ${code})` : ''}.`
 }
 
-async function sendMail({ to, subject, html, text, kind }) {
+async function sendMail({ to, subject, html, text, kind, replyTo }) {
     const transporter = createTransporter()
     if (!transporter) {
         await recordStatus({ ok: false, kind, to: maskEmail(to), reason: 'SMTP não configurado na Vercel (SMTP_HOST, SMTP_USER, SMTP_PASS).' })
@@ -76,7 +76,9 @@ async function sendMail({ to, subject, html, text, kind }) {
         return { sent: false, reason: 'not_configured' }
     }
     try {
-        await transporter.sendMail({ from: `"EuSempreMEI" <${fromAddress()}>`, to, subject, html, text })
+        const mailOptions = { from: `"EuSempreMEI" <${fromAddress()}>`, to, subject, html, text }
+        if (replyTo) mailOptions.replyTo = replyTo
+        await transporter.sendMail(mailOptions)
         await recordStatus({ ok: true, kind, to: maskEmail(to) })
         return { sent: true }
     } catch (error) {
@@ -120,4 +122,4 @@ const sendTestEmail = async (to) => {
     return sendMail({ to, subject: 'E-mail de teste - EuSempreMEI', html, text, kind: 'teste' })
 }
 
-module.exports = { sendPasswordResetEmail, sendTestEmail, smtpConfigured, fromAddress, maskEmail, explainSmtpError }
+module.exports = { sendMail, sendPasswordResetEmail, sendTestEmail, smtpConfigured, fromAddress, maskEmail, explainSmtpError }

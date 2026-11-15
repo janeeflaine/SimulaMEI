@@ -19,6 +19,7 @@ const financeRoutes = require('./routes/finance.routes')
 const invoiceRoutes = require('./routes/invoice.routes')
 const stripeRoutes = require('./routes/stripe.routes')
 const whatsappRoutes = require('./routes/whatsapp.routes')
+const emailRoutes = require('./routes/email.routes')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -27,6 +28,8 @@ const PORT = process.env.PORT || 3001
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeRoutes.webhookHandler)
 // WhatsApp Webhook: também precisa do corpo bruto para validar a assinatura da Meta
 app.post('/api/whatsapp/webhook', express.raw({ type: '*/*', limit: '1mb' }), whatsappRoutes.webhookHandler)
+// Resend Receiving Webhook: corpo bruto obrigatório para verificação svix
+app.post('/api/email/receive', express.raw({ type: 'application/json' }), emailRoutes.webhookHandler)
 
 // Middleware
 app.use(cors())
@@ -47,6 +50,7 @@ app.use('/api/finance', financeRoutes)
 app.use('/api/finance/invoices', invoiceRoutes)
 app.use('/api/stripe', stripeRoutes.router)
 app.use('/api/whatsapp', whatsappRoutes.router)
+app.use('/api/email', emailRoutes.router)
 
 
 
