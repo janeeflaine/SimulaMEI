@@ -137,6 +137,7 @@ export default function AdminFeatures() {
 
                 <AdminInvoiceUploadLimits plans={plans} />
                 <AdminSingleDevice plans={plans} />
+                <AdminEmailStatus />
                 <AdminWhatsAppReminders />
 
                 <AdminTrialSettings />
@@ -552,6 +553,82 @@ function AdminSingleDevice({ plans }) {
                         {saving ? 'Salvando...' : 'Salvar aparelhos'}
                     </button>
                 </div>
+            </div>
+        </div>
+    )
+}
+
+// E-mail do site (link de "Esqueci a senha"): se o SMTP está configurado na Vercel,
+// o último envio e um e-mail de teste para o próprio admin. Senha nunca aparece aqui.
+function AdminEmailStatus() {
+    const [data, setData] = useState(null)
+    const [sending, setSending] = useState(false)
+    const [status, setStatus] = useState(null) // { ok, text }
+
+    useEffect(() => { load() }, [])
+
+    const load = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/admin/email/status', { headers: { 'Authorization': `Bearer ${token}` } })
+            if (res.ok) setData(await res.json())
+        } catch (err) {
+            console.error('Erro ao ler o e-mail do site:', err)
+        }
+    }
+
+    const sendTest = async () => {
+        setSending(true)
+        setStatus(null)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch('/api/admin/email/test', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } })
+            const body = await res.json().catch(() => ({}))
+            setStatus({ ok: res.ok, text: body.message || (res.ok ? 'Enviado.' : 'Não foi enviado.') })
+            load()
+        } catch {
+            setStatus({ ok: false, text: 'Sem conexão. Tente de novo.' })
+        } finally {
+            setSending(false)
+        }
+    }
+
+    if (!data) return null
+    const last = data.last
+    const when = last && last.at ? new Date(last.at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : null
+    const kindName = { senha: 'link de nova senha', teste: 'e-mail de teste' }
+
+    return (
+        <div className="admin-card" style={{ marginTop: '2rem' }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>E-mail do site</h2>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
+                    Usado no <strong style={{ color: '#93c5fd' }}>Esqueci a senha</strong>. O serviço de envio é configurado nas variáveis da Vercel
+                    (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM), nunca aqui.
+                </p>
+            </div>
+
+            <div style={{ display: 'grid', gap: '10px', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.88rem', color: '#e2e8f0' }}>
+                <div>
+                    <strong style={{ color: data.configured ? '#6ee7b7' : '#fcd34d' }}>{data.configured ? 'Configurado' : 'Não configurado'}</strong>
+                    {data.configured
+                        ? <span style={{ color: 'rgba(255,255,255,0.5)' }}> · servidor {data.host}, porta {data.port}, remetente {data.from}</span>
+                        : <span style={{ color: 'rgba(255,255,255,0.5)' }}> · os e-mails de "Esqueci a senha" não estão saindo.</span>}
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.6)' }}>
+                    {last
+                        ? <>Último envio ({kindName[last.kind] || last.kind}, para {last.to}, {when}):{' '}
+                            <strong style={{ color: last.ok ? '#6ee7b7' : '#fca5a5' }}>{last.ok ? 'enviado' : 'não saiu'}</strong>
+                            {!last.ok && last.reason ? ` · ${last.reason}` : ''}</>
+                        : 'Nenhum envio registrado ainda.'}
+                </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap', marginTop: '12px' }}>
+                {status && <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>}
+                <button className="btn btn-primary btn-sm" onClick={sendTest} disabled={sending}>
+                    {sending ? 'Enviando...' : 'Mandar e-mail de teste para mim'}
+                </button>
             </div>
         </div>
     )

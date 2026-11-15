@@ -679,6 +679,52 @@ router.get('/logs/sessions', async (req, res) => {
 // ─── Lembretes no WhatsApp (contas vencendo e alertas do MEI) ───────────────
 
 // Última rodada: quando foi, quantos foram e por que falharam (motivo da Meta)
+// ========== E-MAIL DO SITE ==========
+// Se o SMTP está configurado na Vercel (sem mostrar senha), o último envio e um
+// e-mail de teste para o próprio admin (um por minuto).
+const mailer = require('../utils/email')
+
+router.get('/email/status', async (req, res) => {
+    try {
+        const { rows: [row] } = await db.query("SELECT value FROM system_settings WHERE key = 'email_last_status'")
+        let last = null
+        try { last = row && row.value ? JSON.parse(row.value) : null } catch (_) { last = null }
+        res.json({
+            configured: mailer.smtpConfigured(),
+            host: process.env.SMTP_HOST || null,
+            port: process.env.SMTP_HOST ? (Number(process.env.SMTP_PORT) || 587) : null,
+            from: mailer.fromAddress(),
+            last
+        })
+    } catch (error) {
+        console.error('Email status error:', error)
+        res.status(500).json({ message: 'Erro ao ler a situação do e-mail' })
+    }
+})
+
+router.post('/email/test', async (req, res) => {
+    try {
+        // Um teste por minuto (vale entre os servidores da Vercel)
+        const { rows } = await db.query(`
+            INSERT INTO system_settings (key, value, "updatedAt") VALUES ('email_test_at', $1, CURRENT_TIMESTAMP)
+            ON CONFLICT (key) DO UPDATE SET value = excluded.value, "updatedAt" = CURRENT_TIMESTAMP
+            WHERE system_settings."updatedAt" < CURRENT_TIMESTAMP - INTERVAL '1 minute'
+            RETURNING key
+        `, [new Date().toISOString()])
+        if (!rows.length) return res.status(429).json({ message: 'Espere um minuto para mandar outro e-mail de teste.' })
+
+        const result = await mailer.sendTestEmail(req.user.email)
+        if (result.sent) return res.json({ message: `E-mail de teste enviado para ${req.user.email}. Confira a caixa de entrada e o spam.` })
+        if (result.reason === 'not_configured') {
+            return res.status(400).json({ message: 'O envio de e-mails não está configurado na Vercel (SMTP_HOST, SMTP_USER e SMTP_PASS).' })
+        }
+        res.status(502).json({ message: result.message || 'O serviço de e-mail recusou o envio.' })
+    } catch (error) {
+        console.error('Email test error:', error)
+        res.status(500).json({ message: 'Erro ao mandar o e-mail de teste' })
+    }
+})
+
 router.get('/whatsapp/reminders', async (req, res) => {
     try {
         const { rows: [row] } = await db.query("SELECT value FROM system_settings WHERE key = 'whatsapp_last_run'")
