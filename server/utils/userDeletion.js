@@ -29,6 +29,8 @@ const USER_DATA_STATEMENTS = [
     'UPDATE mei_limits SET "updatedBy" = NULL WHERE "updatedBy" = $1',
     // Registros de segurança são mantidos (Marco Civil, art. 15), sem vínculo com a conta
     'UPDATE audit_logs SET user_id = NULL WHERE user_id = $1',
+    // Tentativas de entrar e de "Esqueci a senha" guardam o e-mail (LGPD: sai junto)
+    `DELETE FROM auth_attempts WHERE split_part(key, '|', 1) = (SELECT LOWER(email) FROM users WHERE id = $1)`,
     'DELETE FROM users WHERE id = $1'
 ]
 

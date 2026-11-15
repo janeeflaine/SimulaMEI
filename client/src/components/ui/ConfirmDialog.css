@@ -67,6 +67,7 @@
     color: #5b6b80;
     font-size: 0.9375rem;
     line-height: 1.55;
+    overflow-wrap: anywhere; /* e-mail longo não vaza da janela no celular */
 }
 
 /* Valores da operação, como um recibo */

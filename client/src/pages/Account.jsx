@@ -6,6 +6,7 @@ import MemberCard from '../components/plans/MemberCard'
 import PlanComparison, { PlanTableButton } from '../components/plans/PlanComparison'
 import { tierOf, sortPlans } from '../components/plans/planFeatures'
 import usePlanActions from '../hooks/usePlanActions'
+import { useConfirmDialog } from '../components/ui/ConfirmDialog'
 import './Account.css'
 
 const brDate = (value) => {
@@ -51,6 +52,7 @@ export default function Account() {
     const [deleting, setDeleting] = useState(false)
     const photo = useAccountPhoto(user?.id)
     const { busy: planBusy, actionFor: planAction, dialog: planDialog } = usePlanActions()
+    const { confirm, notify, dialog: deleteDialog } = useConfirmDialog()
 
     useEffect(() => {
         fetchPlans()
@@ -75,14 +77,59 @@ export default function Account() {
         }).format(value)
     }
 
+    // Quanto vai junto com a conta (carteiras, lançamentos, cartões), para a confirmação
+    const loadUsage = async () => {
+        try {
+            const res = await fetch('/api/finance/business-units?uso=1', {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            })
+            if (!res.ok) return null
+            const wallets = await res.json()
+            if (!Array.isArray(wallets)) return null
+            return {
+                wallets: wallets.length,
+                transactions: wallets.reduce((sum, w) => sum + (Number(w.transactionsCount) || 0), 0),
+                cards: wallets.reduce((sum, w) => sum + (Number(w.cardsCount) || 0), 0)
+            }
+        } catch (_) {
+            return null
+        }
+    }
+
+    const plural = (n, one, many) => `${n.toLocaleString('pt-BR')} ${n === 1 ? one : many}`
+
     const handleDeleteAccount = async (e) => {
         e.preventDefault()
         setDeleteError('')
 
-        if (deleteForm.confirmation !== 'EXCLUIR') {
+        if (!deleteForm.password) {
+            setDeleteError('Digite a sua senha para confirmar.')
+            return
+        }
+        if (deleteForm.confirmation.trim() !== 'EXCLUIR') {
             setDeleteError('Digite EXCLUIR (em letras maiúsculas) para confirmar.')
             return
         }
+
+        // Última conferência, numa janela do site (antes não havia; e o aviso final era do navegador)
+        const usage = await loadUsage()
+        const paid = currentPrice > 0 && ['active', 'past_due', 'canceling', 'trialing'].includes(user?.subscriptionStatus)
+        const details = [
+            usage && { label: 'Carteiras', value: usage.wallets ? plural(usage.wallets, 'carteira', 'carteiras') : 'nenhuma' },
+            usage && { label: 'Lançamentos', value: usage.transactions ? plural(usage.transactions, 'lançamento', 'lançamentos') : 'nenhum' },
+            usage && usage.cards > 0 && { label: 'Cartões e faturas', value: plural(usage.cards, 'cartão', 'cartões') },
+            paid && { label: 'Assinatura', value: `${planName} cancelado`, strong: true }
+        ].filter(Boolean)
+
+        const ok = await confirm({
+            title: 'Excluir sua conta para sempre?',
+            message: `A conta ${user?.email || ''} é apagada na hora, com tudo abaixo e também contas a pagar, categorias, alertas, simulações e o WhatsApp ligado a ela.${paid ? ' A assinatura é cancelada e não há novas cobranças.' : ''} Não dá para recuperar, nem pelo suporte: se quiser guardar alguma informação, anote ou baixe antes.`,
+            details,
+            confirmLabel: 'Excluir minha conta',
+            cancelLabel: 'Voltar',
+            tone: 'danger'
+        })
+        if (!ok) return
 
         setDeleting(true)
         try {
@@ -93,7 +140,7 @@ export default function Account() {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(deleteForm)
+                body: JSON.stringify({ password: deleteForm.password, confirmation: deleteForm.confirmation.trim() })
             })
             const data = await res.json().catch(() => ({}))
             if (!res.ok) {
@@ -101,8 +148,13 @@ export default function Account() {
                 setDeleting(false)
                 return
             }
+            await notify({
+                title: 'Conta excluída',
+                message: data.message || 'Sua conta e todos os seus dados foram excluídos definitivamente.',
+                confirmLabel: 'Ir para o início',
+                tone: 'success'
+            })
             logout()
-            alert(data.message || 'Sua conta foi excluída.')
             navigate('/')
         } catch (err) {
             setDeleteError('Erro de conexão. Nenhum dado foi excluído; tente novamente.')
@@ -264,9 +316,7 @@ export default function Account() {
                                 Esta ação é <strong>irreversível</strong>. Para confirmar, informe sua senha e digite <strong>EXCLUIR</strong>.
                             </p>
                             {deleteError && (
-                                <div className="alert alert-danger">
-                                    <span>⚠️</span> {deleteError}
-                                </div>
+                                <div className="alert alert-danger" role="alert">{deleteError}</div>
                             )}
                             <div className="profile-grid">
                                 <div className="form-group">
@@ -315,6 +365,7 @@ export default function Account() {
                 </section>
             </div>
             {planDialog}
+            {deleteDialog}
         </div>
     )
 }
