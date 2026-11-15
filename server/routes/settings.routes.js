@@ -9,13 +9,18 @@ const planLimits = require('../utils/planLimits')
 // Chaves que o próprio sistema grava (estado de rotinas): não se editam por aqui
 const INTERNAL_KEYS = ['whatsapp_last_run', 'whatsapp_resend_at', 'email_last_status']
 const SAFE_KEY = /^[A-Za-z][A-Za-z0-9_]{1,63}$/
+// Só estas chaves mudam por aqui: limites dos planos, teste grátis e o token antigo do
+// Mercado Pago (guardado cifrado). Qualquer outra chave é recusada: antes dava para
+// gravar uma chave nova qualquer, em texto puro e copiada para os registros.
+const OTHER_KEYS = ['trial_enabled', 'trial_days', 'MERCADOPAGO_ACCESS_TOKEN']
+const isEditable = (key) => OTHER_KEYS.includes(key) || !!planLimits.parseLimitKey(key)
 
 
 // Get Settings (Masked)
 router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const result = await db.query('SELECT key, value, "isEncrypted", "updatedAt" FROM system_settings')
-        const settings = result.rows
+        const settings = result.rows.filter((s) => isEditable(s.key))
 
         const maskedSettings = settings.map(s => {
             if (s.isEncrypted) {
@@ -49,6 +54,7 @@ router.put('/', authMiddleware, adminMiddleware, async (req, res) => {
 
         if (typeof key !== 'string' || !SAFE_KEY.test(key)) return res.status(400).json({ message: 'Chave inválida' })
         if (INTERNAL_KEYS.includes(key)) return res.status(400).json({ message: 'Esta configuração é gravada pelo próprio sistema.' })
+        if (!isEditable(key)) return res.status(400).json({ message: 'Esta configuração não muda por aqui.' })
         if (value !== undefined && value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
             return res.status(400).json({ message: 'Valor inválido' })
         }

@@ -899,33 +899,14 @@ router.put('/plan-limits', async (req, res) => {
 })
 
 // ========== SETTINGS ==========
-router.put('/settings/:key', async (req, res) => {
-    try {
-        const { key } = req.params
-        const { value } = req.body
-
-        const oldResult = await db.query('SELECT value FROM system_settings WHERE key = $1', [key])
-
-        await db.query(`
-            INSERT INTO system_settings (key, value, "updatedAt")
-            VALUES ($1, $2, NOW())
-            ON CONFLICT (key) DO UPDATE SET value = $2, "updatedAt" = NOW()
-        `, [key, value])
-
-        await auditLogger.log({
-            level: 'INFO',
-            event_type: 'SETTINGS_UPDATED',
-            actor: { user_id: req.user.id, role: req.user.role },
-            context: req.context || {},
-            target: { resource_type: 'SYSTEM_SETTINGS', resource_id: key },
-            changes: { old_value: oldResult.rows[0]?.value, new_value: value }
-        })
-
-        res.json({ message: 'Configuração atualizada' })
-    } catch (error) {
-        console.error('Update setting error:', error)
-        res.status(500).json({ message: 'Erro ao atualizar configuração' })
-    }
+// Situação dos serviços (variáveis da Vercel): só "configurado ou não", nunca o valor.
+// A antiga PUT /settings/:key saiu: gravava qualquer chave sem conferir e copiava o
+// valor (inclusive tokens) para os registros de auditoria. Os limites ficam em
+// /plan-limits e as poucas opções restantes em /api/settings (lista fechada).
+const { systemStatus } = require('../utils/systemStatus')
+router.get('/system-status', (req, res) => {
+    res.set('Cache-Control', 'no-store')
+    res.json(systemStatus())
 })
 
 // ========== REPORTS ==========
