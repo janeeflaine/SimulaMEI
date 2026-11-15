@@ -223,6 +223,32 @@
     gap: 10px;
 }
 .lgl-text ul:last-child { margin-bottom: 0; }
+.lgl-text ol {
+    margin: 12px 0 14px;
+    padding: 0;
+    list-style: none;
+    counter-reset: lgl-step;
+    display: grid;
+    gap: 12px;
+}
+.lgl-text ol > li { position: relative; padding-left: 40px; min-height: 28px; counter-increment: lgl-step; }
+.lgl-text ol > li::before {
+    content: counter(lgl-step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--lgl-ink);
+    color: #fff;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+}
 .lgl-text li { position: relative; padding-left: 20px; }
 .lgl-text li::before {
     content: '';
@@ -293,6 +319,9 @@
     text-decoration: none;
 }
 
+.lgl-btn--primary { background: var(--lgl-ink); border-color: var(--lgl-ink); color: #fff; }
+.lgl-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+
 /* Leia também */
 .lgl-related { margin-top: 40px; }
 .legal-doc .lgl-related h2 {
@@ -348,6 +377,7 @@
     .lgl-toc__list a:hover { background: #f6f8fa; color: var(--lgl-text); }
     .lgl-toc__list a.is-active:hover { background: #eef2f7; color: var(--lgl-ink); }
     .lgl-btn:hover { border-color: #c8d1dc; }
+    .lgl-btn--primary:hover { background: #0c1d38; border-color: #0c1d38; }
     .lgl-related__card:hover { border-color: #c8d1dc; }
 }
 

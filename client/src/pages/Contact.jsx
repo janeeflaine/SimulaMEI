@@ -17,7 +17,6 @@ import { COMPANY, CONTACT_EMAILS } from '../utils/legalInfo'
 import { useAuth } from '../context/AuthContext'
 import Select from '../components/ui/Select'
 import { showToast } from '../utils/toast'
-import './LegalPages.css'
 import './Contact.css'
 
 // Assunto do formulário -> caixa de e-mail responsável
