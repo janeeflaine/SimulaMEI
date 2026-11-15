@@ -166,6 +166,9 @@
     background: #111827;
 }
 
+/* Páginas já no padrão novo (fundo claro): marcam o conteúdo com .adm-light */
+.adm-main:has(> .adm-light) { background: #f6f8fa; }
+
 /* Página que quebrou */
 .adm-crash {
     max-width: 560px;
