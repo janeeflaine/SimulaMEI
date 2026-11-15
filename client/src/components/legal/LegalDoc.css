@@ -255,8 +255,8 @@
     line-height: 1.6;
 }
 .lgl-note strong { color: #065f46; }
-.lgl-note--warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
-.lgl-note--warn strong { color: #92400e; }
+.lgl-text .lgl-note--warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+.lgl-text .lgl-note--warn strong { color: #92400e; }
 
 /* Dados de contato em pares rótulo/valor */
 .lgl-facts {
