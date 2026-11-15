@@ -18,6 +18,43 @@ router.use(adminMiddleware)
 // recebeu o plano pelo admin (sem assinatura no Stripe).
 const PAYING_SQL = `p.price > 0 AND u."stripeSubscriptionId" IS NOT NULL AND u."subscriptionStatus" IN ('active', 'canceling')`
 
+// Contas de cliente por plano: total, quem paga e quem está cancelando (Painel e Relatórios)
+const PLANS_SQL = `
+    SELECT p.id, p.name, ROUND(COALESCE(p.price, 0)::numeric, 2)::float AS price,
+           COUNT(u.id)::int AS count,
+           COUNT(u.id) FILTER (WHERE ${PAYING_SQL})::int AS paying,
+           COUNT(u.id) FILTER (WHERE ${PAYING_SQL} AND u."subscriptionStatus" = 'canceling')::int AS canceling
+    FROM users u
+    LEFT JOIN plans p ON p.id = u."planId"
+    WHERE u.role = 'USER' AND u."deletedAt" IS NULL
+    GROUP BY p.id, p.name, p.price
+`
+
+// Conta sem plano (planId vazio ou de um plano apagado) usa o Gratuito: soma no
+// plano de preço zero, em vez de aparecer como um segundo "Gratuito"
+function foldPlans(rawRows) {
+    const rows = rawRows.map((r) => ({ ...r, price: Number(r.price) || 0, count: Number(r.count) || 0, paying: Number(r.paying) || 0, canceling: Number(r.canceling) || 0 }))
+    const free = rows.find((r) => r.id !== null && r.price === 0)
+    const plans = []
+    for (const r of rows) {
+        if (r.id === null && free) {
+            free.count += r.count
+            continue
+        }
+        plans.push(r)
+    }
+    return plans
+        .map((r) => ({
+            id: r.id,
+            name: r.id === null ? 'Gratuito' : r.name,
+            price: r.price,
+            count: r.count,
+            paying: r.paying,
+            canceling: r.canceling,
+        }))
+        .sort((a, b) => a.price - b.price || String(a.name).localeCompare(String(b.name), 'pt-BR'))
+}
+
 router.get('/stats', async (req, res) => {
     try {
         const [usersResult, plansResult, simulationsResult, activityResult, suspiciousResult] = await Promise.all([
@@ -29,16 +66,7 @@ router.get('/stats', async (req, res) => {
                 FROM users
                 WHERE role = 'USER' AND "deletedAt" IS NULL
             `),
-            db.query(`
-                SELECT p.id, p.name, ROUND(COALESCE(p.price, 0)::numeric, 2)::float AS price,
-                       COUNT(u.id)::int AS count,
-                       COUNT(u.id) FILTER (WHERE ${PAYING_SQL})::int AS paying,
-                       COUNT(u.id) FILTER (WHERE ${PAYING_SQL} AND u."subscriptionStatus" = 'canceling')::int AS canceling
-                FROM users u
-                LEFT JOIN plans p ON p.id = u."planId"
-                WHERE u.role = 'USER' AND u."deletedAt" IS NULL
-                GROUP BY p.id, p.name, p.price
-            `),
+            db.query(PLANS_SQL),
             db.query(`
                 SELECT COUNT(*)::int AS total,
                        COUNT(*) FILTER (WHERE "createdAt" >= NOW() - INTERVAL '30 days')::int AS "last30"
@@ -62,28 +90,7 @@ router.get('/stats', async (req, res) => {
             `),
         ])
 
-        // Conta sem plano (planId vazio ou de um plano apagado) usa o Gratuito: soma no
-        // plano de preço zero, em vez de aparecer como um segundo "Gratuito"
-        const rows = plansResult.rows.map((r) => ({ ...r, price: Number(r.price) || 0 }))
-        const free = rows.find((r) => r.id !== null && r.price === 0)
-        const plans = []
-        for (const r of rows) {
-            if (r.id === null && free) {
-                free.count += r.count
-                continue
-            }
-            plans.push(r)
-        }
-        const byPlan = plans
-            .map((r) => ({
-                id: r.id,
-                name: r.id === null ? 'Gratuito' : r.name,
-                price: r.price,
-                count: r.count,
-                paying: r.paying,
-                canceling: r.canceling,
-            }))
-            .sort((a, b) => a.price - b.price || String(a.name).localeCompare(String(b.name), 'pt-BR'))
+        const byPlan = foldPlans(plansResult.rows)
 
         const paying = byPlan.reduce((n, p) => n + p.paying, 0)
         const canceling = byPlan.reduce((n, p) => n + p.canceling, 0)
@@ -922,49 +929,78 @@ router.put('/settings/:key', async (req, res) => {
 })
 
 // ========== REPORTS ==========
+// Períodos aceitos (os nomes antigos week/month/year continuam valendo)
+const REPORT_PERIODS = {
+    '7d': { unit: 'day', size: 7 },
+    '30d': { unit: 'day', size: 30 },
+    '12m': { unit: 'month', size: 12 },
+}
+const OLD_PERIODS = { week: '7d', month: '30d', year: '12m' }
+// "createdAt" é gravado sem fuso (no fuso do banco): converte para o horário de Brasília
+const LOCAL_TS = (col) => `((${col} AT TIME ZONE current_setting('TimeZone')) AT TIME ZONE 'America/Sao_Paulo')`
+
+// Uma linha por dia (ou mês) do período, com zero onde não houve nada.
+// $1 = 'day' | 'month', $2 = quantidade de dias/meses (sempre da lista acima)
+const seriesSql = (table, where) => `
+    WITH b AS (
+        SELECT generate_series(
+            date_trunc($1, NOW() AT TIME ZONE 'America/Sao_Paulo') - ($2::int - 1) * ('1 ' || $1)::interval,
+            date_trunc($1, NOW() AT TIME ZONE 'America/Sao_Paulo'),
+            ('1 ' || $1)::interval
+        ) AS bucket
+    ), c AS (
+        SELECT date_trunc($1, ${LOCAL_TS('t."createdAt"')}) AS bucket, COUNT(*)::int AS n
+        FROM ${table} t
+        WHERE ${where} ${LOCAL_TS('t."createdAt"')} >= (SELECT MIN(bucket) FROM b)
+        GROUP BY 1
+    )
+    SELECT to_char(b.bucket, 'YYYY-MM-DD') AS date, COALESCE(c.n, 0)::int AS count
+    FROM b LEFT JOIN c ON c.bucket = b.bucket
+    ORDER BY b.bucket
+`
+
 router.get('/reports', async (req, res) => {
     try {
-        const { period } = req.query
+        const raw = typeof req.query.period === 'string' ? req.query.period : ''
+        const period = REPORT_PERIODS[raw] ? raw : (OLD_PERIODS[raw] || '30d')
+        const { unit, size } = REPORT_PERIODS[period]
 
-        let interval = "INTERVAL '1 month'"
-        if (period === 'week') interval = "INTERVAL '7 days'"
-        if (period === 'year') interval = "INTERVAL '1 year'"
+        const [signupsResult, simulationsResult, convertedResult, plansResult] = await Promise.all([
+            // Cadastros de clientes (contas de admin e apagadas fora, como no Painel)
+            db.query(seriesSql('users', `t.role = 'USER' AND t."deletedAt" IS NULL AND`), [unit, size]),
+            db.query(seriesSql('simulations', ''), [unit, size]),
+            // Dos cadastrados no período, quantos pagam hoje
+            db.query(`
+                SELECT COUNT(*)::int AS count
+                FROM users u
+                JOIN plans p ON p.id = u."planId"
+                WHERE u.role = 'USER' AND u."deletedAt" IS NULL AND ${PAYING_SQL}
+                  AND date_trunc($1, ${LOCAL_TS('u."createdAt"')}) >= date_trunc($1, NOW() AT TIME ZONE 'America/Sao_Paulo') - ($2::int - 1) * ('1 ' || $1)::interval
+            `, [unit, size]),
+            db.query(PLANS_SQL),
+        ])
 
-        const usersByPlanResult = await db.query(`
-            SELECT COALESCE(p.name, 'Gratuito') as name, COUNT(*) as count
-            FROM users u
-            LEFT JOIN plans p ON u."planId" = p.id
-            WHERE u.role = 'USER' AND u."deletedAt" IS NULL
-            GROUP BY p.name
-        `)
-
-        const paidUsersResult = await db.query(`
-            SELECT p.name as period, p.price * COUNT(*) as revenue, COUNT(*) as subscriptions
-            FROM users u
-            JOIN plans p ON u."planId" = p.id
-            WHERE p.price > 0 AND u."createdAt" >= NOW() - ${interval}
-            GROUP BY p.id, p.name, p.price
-        `)
-
-        const newUsersResult = await db.query(`
-            SELECT COUNT(*) as count FROM users WHERE "createdAt" >= NOW() - ${interval} AND "deletedAt" IS NULL
-        `)
-
-        const totalSimulationsResult = await db.query(`
-            SELECT COUNT(*) as count FROM simulations WHERE "createdAt" >= NOW() - ${interval}
-        `)
-
-        const paidUsers = paidUsersResult.rows
-        const totalRevenue = paidUsers.reduce((sum, p) => sum + p.revenue, 0)
-        const newUsersCount = newUsersResult.rows[0].count
+        const simByDate = new Map(simulationsResult.rows.map((r) => [r.date, Number(r.count) || 0]))
+        const series = signupsResult.rows.map((r) => ({
+            date: r.date,
+            signups: Number(r.count) || 0,
+            simulations: simByDate.get(r.date) || 0,
+        }))
+        const signups = series.reduce((n, r) => n + r.signups, 0)
+        const simulations = series.reduce((n, r) => n + r.simulations, 0)
+        const converted = Number(convertedResult.rows[0]?.count) || 0
+        const byPlan = foldPlans(plansResult.rows)
+        const paying = byPlan.reduce((n, p) => n + p.paying, 0)
+        const monthlyRevenue = Math.round(byPlan.reduce((sum, p) => sum + p.paying * p.price, 0) * 100) / 100
 
         res.json({
-            usersByPlan: usersByPlanResult.rows,
-            revenueByPeriod: paidUsers,
-            totalRevenue,
-            newUsers: newUsersCount,
-            totalSimulations: totalSimulationsResult.rows[0].count,
-            conversionRate: newUsersCount > 0 ? paidUsers.reduce((sum, p) => sum + parseInt(p.subscriptions), 0) / newUsersCount : 0
+            period,
+            unit,
+            series,
+            totals: { signups, simulations, converted, conversionRate: signups > 0 ? converted / signups : 0 },
+            plans: byPlan,
+            subscriptions: { paying, monthlyRevenue },
+            generatedAt: new Date().toISOString(),
         })
     } catch (error) {
         console.error('Reports error:', error)
