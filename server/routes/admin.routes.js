@@ -797,6 +797,100 @@ router.put('/plans/:id', (req, res) => {
     return savePlan(req, res, id)
 })
 
+// ========== LIMITES DE USO POR PLANO ==========
+const planLimits = require('../utils/planLimits')
+
+router.get('/plan-limits', async (req, res) => {
+    try {
+        const [plansResult, settingsResult] = await Promise.all([
+            db.query('SELECT id, name, price, "isActive" FROM plans ORDER BY price ASC, id ASC'),
+            db.query(`SELECT key, value FROM system_settings WHERE key ~ '^[a-z_]+_[0-9]+$'`),
+        ])
+        const raw = Object.fromEntries(settingsResult.rows.map(r => [r.key, r.value]))
+        const limits = {}
+        for (const p of plansResult.rows) {
+            limits[p.id] = {}
+            for (const def of planLimits.LIMITS) {
+                limits[p.id][def.key] = planLimits.readLimitValue(def, raw[`${def.key}_${p.id}`], p.id)
+            }
+        }
+        res.json({
+            plans: plansResult.rows.map(p => ({ id: p.id, name: p.name, price: Math.round(Number(p.price) * 100) / 100, isActive: Number(p.isActive) === 1 })),
+            defs: planLimits.LIMITS.map(({ key, label, type, max }) => ({ key, label, type, max })),
+            limits,
+        })
+    } catch (error) {
+        console.error('Get plan limits error:', error)
+        res.status(500).json({ message: 'Erro ao carregar os limites' })
+    }
+})
+
+router.put('/plan-limits', async (req, res) => {
+    const body = req.body && typeof req.body === 'object' ? req.body.limits : null
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return res.status(400).json({ message: 'Envie os limites por plano.' })
+    let client
+    try {
+        const plansResult = await db.query('SELECT id, name FROM plans')
+        const planIds = new Set(plansResult.rows.map(p => p.id))
+        const rows = []
+        for (const [pid, values] of Object.entries(body)) {
+            const planId = toUserId(pid)
+            if (!planId || !planIds.has(planId)) return res.status(400).json({ message: 'Plano não encontrado.' })
+            if (!values || typeof values !== 'object' || Array.isArray(values)) return res.status(400).json({ message: 'Limites inválidos.' })
+            for (const [key, value] of Object.entries(values)) {
+                const def = planLimits.LIMITS.find(l => l.key === key)
+                if (!def) return res.status(400).json({ message: `Limite desconhecido: ${String(key).slice(0, 40)}.` })
+                const clean = planLimits.cleanLimitValue(def, value)
+                if (clean === null) {
+                    const plan = plansResult.rows.find(p => p.id === planId)
+                    return res.status(400).json({
+                        message: def.type === 'bool'
+                            ? `${def.label} (${plan.name}): ligado ou desligado.`
+                            : `${def.label} (${plan.name}): use um número inteiro de 0 a ${def.max} (0 = sem limite).`,
+                        planId, key,
+                    })
+                }
+                rows.push({ settingKey: `${key}_${planId}`, value: clean })
+            }
+        }
+        if (rows.length === 0) return res.json({ message: 'Nada mudou.', changed: 0 })
+
+        client = await pool.connect()
+        await client.query('BEGIN')
+        const old = await client.query('SELECT key, value FROM system_settings WHERE key = ANY($1)', [rows.map(r => r.settingKey)])
+        const oldMap = Object.fromEntries(old.rows.map(r => [r.key, r.value]))
+        const changed = rows.filter(r => oldMap[r.settingKey] !== r.value)
+        for (const r of changed) {
+            await client.query(`
+                INSERT INTO system_settings (key, value, "updatedAt") VALUES ($1, $2, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = $2, "updatedAt" = NOW()
+            `, [r.settingKey, r.value])
+        }
+        await client.query('COMMIT')
+
+        if (changed.length) {
+            await auditLogger.log({
+                level: 'INFO',
+                event_type: 'SETTINGS_UPDATED',
+                actor: { user_id: req.user.id, role: req.user.role },
+                context: req.context || {},
+                target: { resource_type: 'PLAN_LIMITS', resource_id: 'plan-limits' },
+                changes: {
+                    old_value: Object.fromEntries(changed.map(r => [r.settingKey, oldMap[r.settingKey] ?? null])),
+                    new_value: Object.fromEntries(changed.map(r => [r.settingKey, r.value])),
+                }
+            })
+        }
+        res.json({ message: changed.length ? 'Limites salvos.' : 'Nada mudou.', changed: changed.length })
+    } catch (error) {
+        if (client) await client.query('ROLLBACK').catch(() => {})
+        console.error('Save plan limits error:', error)
+        res.status(500).json({ message: 'Erro ao salvar os limites' })
+    } finally {
+        if (client) client.release()
+    }
+})
+
 // ========== SETTINGS ==========
 router.put('/settings/:key', async (req, res) => {
     try {

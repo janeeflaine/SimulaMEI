@@ -3,6 +3,12 @@ const router = express.Router()
 const { db } = require('../db')
 const { authMiddleware, adminMiddleware } = require('../middleware/auth')
 const { encrypt } = require('../utils/encryption')
+const auditLogger = require('../utils/auditLogger')
+const planLimits = require('../utils/planLimits')
+
+// Chaves que o próprio sistema grava (estado de rotinas): não se editam por aqui
+const INTERNAL_KEYS = ['whatsapp_last_run', 'whatsapp_resend_at', 'email_last_status']
+const SAFE_KEY = /^[A-Za-z][A-Za-z0-9_]{1,63}$/
 
 
 // Get Settings (Masked)
@@ -38,9 +44,31 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
 // Update Setting
 router.put('/', authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { key, value } = req.body
+        const { key } = req.body || {}
+        let { value } = req.body || {}
 
-        if (!key) return res.status(400).json({ message: 'Chave obrigatória' })
+        if (typeof key !== 'string' || !SAFE_KEY.test(key)) return res.status(400).json({ message: 'Chave inválida' })
+        if (INTERNAL_KEYS.includes(key)) return res.status(400).json({ message: 'Esta configuração é gravada pelo próprio sistema.' })
+        if (value !== undefined && value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+            return res.status(400).json({ message: 'Valor inválido' })
+        }
+        if (value !== undefined && value !== null && String(value).length > 2000) return res.status(400).json({ message: 'Valor grande demais' })
+
+        // Limite de plano: mesmo número/ligado que a tela de Funcionalidades aceita
+        // (antes "abc" era gravado e virava "sem limite")
+        const limit = planLimits.parseLimitKey(key)
+        if (limit) {
+            const clean = planLimits.cleanLimitValue(limit.def, value)
+            if (clean === null) return res.status(400).json({ message: `${limit.def.label}: valor inválido.` })
+            value = clean
+        }
+        if (key === 'trial_days' && !(Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= 365)) {
+            return res.status(400).json({ message: 'Dias de teste: de 0 a 365.' })
+        }
+        if (key === 'trial_enabled' && !['true', 'false'].includes(String(value))) {
+            return res.status(400).json({ message: 'Teste grátis: ligado ou desligado.' })
+        }
+        const old = await db.query('SELECT value, "isEncrypted" FROM system_settings WHERE key = $1', [key])
 
         let storedValue = value
         let isEncrypted = 0
@@ -59,7 +87,19 @@ router.put('/', authMiddleware, adminMiddleware, async (req, res) => {
             value = excluded.value,
             "isEncrypted" = excluded."isEncrypted",
             "updatedAt" = CURRENT_TIMESTAMP
-        `, [key, storedValue, isEncrypted])
+        `, [key, value === undefined || value === null ? null : String(storedValue), isEncrypted])
+
+        await auditLogger.log({
+            level: 'INFO',
+            event_type: 'SETTINGS_UPDATED',
+            actor: { user_id: req.user.id, role: req.user.role },
+            context: req.context || {},
+            target: { resource_type: 'SYSTEM_SETTINGS', resource_id: key },
+            // Valor secreto nunca vai para o registro
+            changes: isEncrypted || old.rows[0]?.isEncrypted
+                ? { old_value: '(secreto)', new_value: '(secreto)' }
+                : { old_value: old.rows[0]?.value ?? null, new_value: String(value ?? '') }
+        })
 
         res.json({ success: true })
     } catch (err) {
