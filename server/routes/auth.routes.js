@@ -355,8 +355,33 @@ router.post('/register', authLimiter, async (req, res) => {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 const WRONG_LOGIN = 'E-mail ou senha incorretos.'
-const LOCKED_LOGIN = 'Muitas tentativas erradas para este e-mail. Espere 15 minutos ou crie uma senha nova em "Esqueci a senha".'
-const BUSY_IP = 'Muitas tentativas de entrar a partir desta rede. Espere 15 minutos e tente de novo.'
+const minutesText = (seconds) => {
+    const m = Math.max(1, Math.ceil(seconds / 60))
+    return m === 1 ? '1 minuto' : `${m} minutos`
+}
+const lockedLogin = (seconds) => `Muitas tentativas erradas para este e-mail. Tente de novo em ${minutesText(seconds)} ou crie uma senha nova em "Esqueci a senha".`
+const busyIp = (seconds) => `Muitas tentativas de entrar a partir desta rede. Tente de novo em ${minutesText(seconds)}.`
+
+/**
+ * Quanto falta para a trava sair: a trava cai quando sobram menos de `limit`
+ * tentativas na janela, ou seja, quando vence a tentativa de número `limit`,
+ * contando da mais nova. Devolve segundos (0 se já não trava).
+ */
+async function secondsUntilFree(kind, key, minutes, limit) {
+    try {
+        const { rows } = await db.query(
+            `SELECT GREATEST(0, CEIL(EXTRACT(EPOCH FROM (created_at + make_interval(mins => $3) - NOW()))))::int AS s
+             FROM auth_attempts
+             WHERE kind = $1 AND key = $2 AND created_at > NOW() - make_interval(mins => $3)
+             ORDER BY created_at DESC
+             OFFSET $4 LIMIT 1`,
+            [kind, String(key).slice(0, 254), minutes, limit - 1]
+        )
+        return rows[0] ? Number(rows[0].s) || 0 : 0
+    } catch (_) {
+        return minutes * 60
+    }
+}
 
 router.post('/login', authLimiter, async (req, res) => {
     try {
@@ -379,15 +404,28 @@ router.post('/login', authLimiter, async (req, res) => {
         ])
         // Mesmo e-mail nos últimos 15 min (o registro desta tentativa já foi gravado acima)
         const byEmail15 = await countRecent('login-email', email, 15)
-        if (byEmailIp > LOGIN_MAX_PER_EMAIL_IP || byEmail15 > LOGIN_MAX_PER_EMAIL_15 || byEmail > LOGIN_MAX_PER_EMAIL || byIp > LOGIN_MAX_PER_IP) {
+        const locks = [
+            byEmailIp > LOGIN_MAX_PER_EMAIL_IP && ['login', `${email}|${ip}`, 15, LOGIN_MAX_PER_EMAIL_IP],
+            byEmail15 > LOGIN_MAX_PER_EMAIL_15 && ['login-email', email, 15, LOGIN_MAX_PER_EMAIL_15],
+            byEmail > LOGIN_MAX_PER_EMAIL && ['login-email', email, 60, LOGIN_MAX_PER_EMAIL],
+            byIp > LOGIN_MAX_PER_IP && ['login-ip', ip, 15, LOGIN_MAX_PER_IP]
+        ].filter(Boolean)
+        if (locks.length) {
+            // Tentar de novo enquanto está travado não aumenta a espera: tira este pedido
+            // da conta e diz quanto falta (antes repetia "15 minutos" a cada tentativa)
+            await forgetAttempts(attemptIds)
+            const waits = await Promise.all(locks.map(([kind, key, minutes, limit]) => secondsUntilFree(kind, key, minutes, limit)))
+            const retryAfter = Math.max(60, ...waits)
+            const onlyIp = locks.every(l => l[0] === 'login-ip')
             await auditLogger.log({
                 level: 'WARN',
                 event_type: 'USER_LOGIN_THROTTLED',
                 actor: {},
                 context: req.context || {},
-                metadata: { email, ip, byEmailIp, byEmail15, byEmail, byIp }
+                metadata: { email, ip, byEmailIp, byEmail15, byEmail, byIp, retryAfter }
             })
-            return res.status(429).json({ message: byIp > LOGIN_MAX_PER_IP && byEmailIp <= LOGIN_MAX_PER_EMAIL_IP ? BUSY_IP : LOCKED_LOGIN })
+            res.set('Retry-After', String(retryAfter))
+            return res.status(429).json({ message: onlyIp ? busyIp(retryAfter) : lockedLogin(retryAfter), retryAfter })
         }
 
         // Find user (contas antigas podem ter letras maiúsculas no e-mail)

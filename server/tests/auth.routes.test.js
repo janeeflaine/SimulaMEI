@@ -68,6 +68,7 @@ beforeEach(() => {
         }
         if (q.startsWith('SELECT COUNT(*)::int AS n FROM auth_attempts')) return { rows: [{ n: (state.attempts[`${params[0]}|${params[1]}`] || 0) + (state.preset[params[0]] || 0) }] }
         if (q.startsWith('DELETE FROM auth_attempts WHERE kind = $1')) { delete state.attempts[`${params[0]}|${params[1]}`]; delete state.preset[params[0]]; return { rowCount: 1 } }
+        if (q.startsWith('SELECT GREATEST(0, CEIL(EXTRACT(EPOCH')) return { rows: [{ s: state.waitSeconds ?? 900 }] }
         if (q.startsWith('SELECT value FROM system_settings WHERE key = $1')) return { rows: state.settings[params[0]] != null ? [{ value: state.settings[params[0]] }] : [] }
         if (q.startsWith('SELECT ip_address, device_fingerprint FROM user_sessions')) return { rows: state.lastSession ? [state.lastSession] : [] }
         if (q.startsWith('SELECT id FROM users WHERE LOWER(email) = $1')) return { rows: state.users.filter(u => u.email.toLowerCase() === params[0]) }
@@ -210,6 +211,25 @@ describe('Entrar', () => {
         expect(res.statusCode).toBe(429)
         expect(res.body.message).toMatch(/Esqueci a senha/)
         expect(sql.some(s => s.q.includes('WHERE LOWER(u.email) = $1'))).toBe(false)
+    })
+
+    test('travado: diz quanto falta (9 min e 1 s viram "10 minutos") e esta tentativa não aumenta a espera', async () => {
+        state.preset.login = 5
+        state.waitSeconds = 541
+        const res = await login({ email: 'joana@teste.com', password: 'qualquer1' })
+        expect(res.statusCode).toBe(429)
+        expect(res.body.message).toContain('Tente de novo em 10 minutos')
+        expect(res.body.retryAfter).toBe(541)
+        expect(res.headers['retry-after']).toBe('541')
+        expect(sql.some(s => s.q.startsWith('DELETE FROM auth_attempts WHERE id = ANY'))).toBe(true)
+    })
+
+    test('travado com menos de um minuto para sair: "1 minuto"', async () => {
+        state.preset.login = 5
+        state.waitSeconds = 20
+        const res = await login({ email: 'joana@teste.com', password: 'qualquer1' })
+        expect(res.body.message).toContain('Tente de novo em 1 minuto ')
+        expect(res.body.retryAfter).toBe(60)
     })
 
     test('décimo primeiro erro no e-mail em 15 min, vindo de outro IP (Wi-Fi, 4G, IPv6): 429', async () => {

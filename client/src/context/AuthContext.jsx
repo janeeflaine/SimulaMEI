@@ -30,7 +30,10 @@ export function AuthProvider({ children }) {
         if (!res.ok) {
             const isJson = res.headers.get('content-type')?.includes('application/json')
             const error = isJson ? await res.json().catch(() => ({})) : {}
-            throw new Error(error.message || 'Não deu para entrar agora. Tente de novo em alguns minutos.')
+            const err = new Error(error.message || 'Não deu para entrar agora. Tente de novo em alguns minutos.')
+            // Trava de tentativas: quantos segundos faltam (a tela de Entrar conta para baixo)
+            if (res.status === 429 && Number(error.retryAfter) > 0) err.retryAfter = Number(error.retryAfter)
+            throw err
         }
 
         const data = await res.json()

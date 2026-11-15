@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AuthFrame, { AuthAlert, PasswordField, looksLikeEmail, normalizeEmail } from '../components/auth/AuthFrame'
@@ -19,6 +19,24 @@ export default function Login() {
         return reason || ''
     })
     const [loading, setLoading] = useState(false)
+    // Trava de tentativas: até quando e para qual e-mail (o aviso conta os minutos que faltam)
+    const [lock, setLock] = useState(null) // { until, email, message }
+    const [now, setNow] = useState(Date.now())
+
+    useEffect(() => {
+        if (!lock) return
+        const timer = setInterval(() => setNow(Date.now()), 15000)
+        return () => clearInterval(timer)
+    }, [lock])
+
+    const lockLeft = lock ? Math.max(0, lock.until - now) : 0
+    const lockedNow = !!lock && lockLeft > 0 && normalizeEmail(email) === lock.email
+    const lockMessage = () => {
+        if (!lock) return ''
+        if (lockLeft <= 0) return ''
+        const m = Math.max(1, Math.ceil(lockLeft / 60000))
+        return lock.message.replace(/em \d+ minutos?/, `em ${m === 1 ? '1 minuto' : `${m} minutos`}`)
+    }
 
     const handleSubmit = async (e) => {
         e.preventDefault()
@@ -28,6 +46,7 @@ export default function Login() {
         if (!password) return setError('Digite a sua senha.')
 
         setLoading(true)
+        setLock(null)
         try {
             const user = await login(cleanEmail, password)
             if (user.role === 'ADMIN') {
@@ -41,7 +60,13 @@ export default function Login() {
                 navigate('/dashboard')
             }
         } catch (err) {
-            setError(err.message || 'Não deu para entrar agora. Tente de novo.')
+            if (err.retryAfter) {
+                setNow(Date.now())
+                setLock({ until: Date.now() + err.retryAfter * 1000, email: cleanEmail, message: err.message })
+                setError('')
+            } else {
+                setError(err.message || 'Não deu para entrar agora. Tente de novo.')
+            }
             setLoading(false)
         }
     }
@@ -54,8 +79,9 @@ export default function Login() {
             <p className="acs-sub">Use o e-mail e a senha da sua conta.</p>
 
             <form onSubmit={handleSubmit} className="acs-form" noValidate>
-                {!error && notice && <AuthAlert tone="info">{notice}</AuthAlert>}
-                <AuthAlert>{error}</AuthAlert>
+                {!error && !lock && notice && <AuthAlert tone="info">{notice}</AuthAlert>}
+                <AuthAlert>{error || lockMessage()}</AuthAlert>
+                {lock && lockLeft <= 0 && <AuthAlert tone="success">Já pode tentar de novo.</AuthAlert>}
 
                 <div className="acs-field">
                     <label htmlFor="acs-email">E-mail</label>
@@ -84,7 +110,7 @@ export default function Login() {
                     aside={<Link to="/esqueci-senha" className="acs-link acs-link--small">Esqueci a senha</Link>}
                 />
 
-                <button type="submit" className="acs-submit" disabled={loading}>
+                <button type="submit" className="acs-submit" disabled={loading || lockedNow}>
                     {loading ? 'Entrando...' : 'Entrar'}
                 </button>
             </form>
