@@ -1,988 +1,519 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ToggleRight, Gauge, Mail, MessageCircle, AlertTriangle, RotateCw, CircleCheck, CircleAlert, Send } from 'lucide-react'
+import { FEATURE_LABELS } from '../../components/plans/planFeatures'
+import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { showToast } from '../../utils/toast'
+// AdminPages.css segue importado: as outras páginas do admin ainda usam as classes dele
 import './AdminPages.css'
+import './AdminFeatures.css'
 
-export default function AdminFeatures() {
-    const [plans, setPlans] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [saving, setSaving] = useState(false)
+const TZ = 'America/Sao_Paulo'
+const fmtWhen = (v) => {
+    if (!v) return ''
+    const d = new Date(v)
+    return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' }).format(d)
+}
+const authHeaders = (json = false) => {
+    const h = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    if (json) h['Content-Type'] = 'application/json'
+    return h
+}
+async function api(url, options = {}) {
+    const res = await fetch(url, options)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+        const err = new Error(data.message || 'Não deu para concluir agora. Tente de novo.')
+        err.data = data
+        throw err
+    }
+    return data
+}
 
-    const featuresList = [
-        // ── Grátis ──────────────────────────────────────────────────────────
-        { key: 'comparativo',    name: 'Comparativo MEI x ME',          description: 'Comparar custos entre MEI e Microempresa',              group: 'Grátis' },
-        { key: 'alertas',        name: 'Alertas de Limite',              description: 'Alertas sobre limite anual de faturamento',             group: 'Grátis' },
-        { key: 'categorias',     name: 'Categorias Personalizadas',      description: 'Criar e gerenciar categorias de receitas e despesas',   group: 'Grátis' },
-        { key: 'cartoes',        name: 'Cartões (Cadastro Manual)',      description: 'Cadastrar cartões e lançar despesas manualmente',       group: 'Grátis' },
-        // ── Prata ────────────────────────────────────────────────────────────
-        { key: 'historico',      name: 'Histórico de Simulações',        description: 'Salvar e visualizar simulações anteriores',             group: 'Prata'  },
-        { key: 'pdf',            name: 'Exportar PDF',                   description: 'Baixar relatórios em PDF',                             group: 'Prata'  },
-        { key: 'contas_pagar',   name: 'Contas a Pagar (Boletos)',        description: 'Gerenciar boletos e contas futuras',                   group: 'Prata'  },
-        { key: 'transferencias', name: 'Transferências entre Carteiras', description: 'Mover saldo entre carteiras PF e PJ',                  group: 'Prata'  },
-        { key: 'multi_carteiras',name: 'Multi-Carteiras',                description: 'Criar e gerenciar múltiplas carteiras',                group: 'Prata'  },
-        { key: 'upload_faturas', name: 'Leitura de Faturas com IA',     description: 'Upload de PDF/foto e extração inteligente via Gemini',  group: 'Prata'  },
-        { key: 'whatsapp',       name: 'Assistente no WhatsApp',        description: 'Lançar, consultar e pagar contas por mensagem de texto', group: 'Prata'  },
-        // ── Ouro ─────────────────────────────────────────────────────────────
-        { key: 'whatsapp_midia', name: 'WhatsApp: Áudio e Foto',        description: 'Lançamentos por áudio, foto ou PDF lidos pelo Gemini',   group: 'Ouro'   },
-    ]
+function Switch({ checked, onChange, label, disabled, busy }) {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            aria-label={label}
+            aria-busy={busy || undefined}
+            className={`afn-switch ${checked ? 'is-on' : ''} ${busy ? 'is-busy' : ''}`}
+            onClick={() => onChange(!checked)}
+            disabled={disabled || busy}
+        >
+            <span aria-hidden="true" />
+        </button>
+    )
+}
 
-    useEffect(() => {
-        fetchPlans()
+function Section({ icon: Icon, title, intro, children, aside, id }) {
+    return (
+        <section className="afn-section" aria-labelledby={`${id}-t`}>
+            <div className="afn-section__head">
+                <div className="afn-section__title">
+                    <span className="afn-section__icon" aria-hidden="true"><Icon size={18} /></span>
+                    <div>
+                        <h2 id={`${id}-t`}>{title}</h2>
+                        {intro && <p>{intro}</p>}
+                    </div>
+                </div>
+                {aside}
+            </div>
+            {children}
+        </section>
+    )
+}
+
+function Problem({ text, onRetry }) {
+    return (
+        <div className="afn-problem" role="alert">
+            <AlertTriangle size={18} aria-hidden="true" />
+            <span>{text}</span>
+            {onRetry && <button type="button" className="afn-btn afn-btn--sm" onClick={onRetry}><RotateCw size={15} aria-hidden="true" />Tentar de novo</button>}
+        </div>
+    )
+}
+
+// ── Recursos por plano: cada chave salva na hora ───────────────────────────────
+function FeatureMatrix() {
+    const [plans, setPlans] = useState(null)
+    const [error, setError] = useState(false)
+    const [busy, setBusy] = useState({})
+
+    const load = useCallback(async () => {
+        setError(false)
+        try {
+            const data = await api('/api/admin/plans', { headers: authHeaders() })
+            if (!Array.isArray(data)) throw new Error('resposta inesperada')
+            setPlans(data.filter((p) => p.isActive))
+        } catch (err) {
+            console.error('Recursos por plano:', err)
+            setError(true)
+        }
     }, [])
+    useEffect(() => { load() }, [load])
 
-    const fetchPlans = async () => {
+    const toggle = async (plan, key, value) => {
+        const id = `${plan.id}:${key}`
+        setBusy((b) => ({ ...b, [id]: true }))
+        // Muda na tela na hora e volta se o servidor recusar
+        setPlans((ps) => ps.map((p) => (p.id === plan.id ? { ...p, features: { ...p.features, [key]: value } } : p)))
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/admin/plans', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            const data = await res.json()
-            setPlans(data.filter(p => p.isActive))
-        } catch (error) {
-            console.error('Erro ao carregar planos:', error)
+            await api(`/api/admin/plans/${plan.id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify({ features: { [key]: value } }) })
+        } catch (err) {
+            setPlans((ps) => ps.map((p) => (p.id === plan.id ? { ...p, features: { ...p.features, [key]: !value } } : p)))
+            showToast(err.message, 'error')
         } finally {
-            setLoading(false)
+            setBusy((b) => { const n = { ...b }; delete n[id]; return n })
         }
-    }
-
-    const toggleFeature = async (planId, featureKey, currentValue) => {
-        setSaving(true)
-        try {
-            const token = localStorage.getItem('token')
-            const plan = plans.find(p => p.id === planId)
-            const updatedFeatures = { ...plan.features, [featureKey]: !currentValue }
-
-            await fetch(`/api/admin/plans/${planId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ ...plan, features: updatedFeatures })
-            })
-
-            fetchPlans()
-        } catch (error) {
-            console.error('Erro ao atualizar funcionalidade:', error)
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center" style={{ minHeight: '50vh' }}>
-                <div className="loader"></div>
-            </div>
-        )
     }
 
     return (
-        <div className="admin-page">
-            <div className="page-header">
-                <h1>Controle de Funcionalidades</h1>
-                <p className="text-secondary">Defina quais recursos estão disponíveis em cada plano</p>
-            </div>
-
-            <div className="admin-card">
-                <div className="table-container">
-                    <table className="table">
-                        <thead>
-                            <tr>
-                                <th>Funcionalidade</th>
-                                {plans.map(plan => (
-                                    <th key={plan.id} style={{ textAlign: 'center' }}>{plan.name}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {['Grátis', 'Prata', 'Ouro'].map(group => {
-                                const groupFeatures = featuresList.filter(f => f.group === group)
-                                return (
-                                    <>
-                                        <tr key={`group-${group}`}>
-                                            <td colSpan={plans.length + 1} style={{ background: 'rgba(37,99,235,0.07)', padding: '6px 16px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', color: '#93c5fd', textTransform: 'uppercase', borderTop: '1px solid rgba(37,99,235,0.15)', borderBottom: '1px solid rgba(37,99,235,0.15)' }}>
-                                                {group === 'Grátis' ? '🆓 Padrão Grátis' : group === 'Prata' ? '🥈 Prata' : '🥇 Ouro'}
+        <Section
+            id="afn-feat"
+            icon={ToggleRight}
+            title="Recursos por plano"
+            intro="Ligou ou desligou, vale na hora para todas as contas do plano. Os nomes são os que o cliente vê em Planos."
+            aside={<Link to="/admin/planos" className="afn-link">Preços e planos</Link>}
+        >
+            {error && <Problem text="Não deu para carregar os planos." onRetry={load} />}
+            {!error && !plans && <p className="afn-muted" role="status">Carregando…</p>}
+            {plans && (
+                <>
+                    <div className="afn-table-wrap afn-only-wide">
+                        <table className="afn-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Recurso</th>
+                                    {plans.map((p) => <th key={p.id} scope="col" className="afn-col-plan">{p.name}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {FEATURE_LABELS.map(([key, label]) => (
+                                    <tr key={key}>
+                                        <th scope="row">{label}</th>
+                                        {plans.map((p) => (
+                                            <td key={p.id} className="afn-col-plan">
+                                                <Switch checked={!!p.features?.[key]} label={`${label} no plano ${p.name}`}
+                                                    busy={!!busy[`${p.id}:${key}`]} onChange={(v) => toggle(p, key, v)} />
                                             </td>
-                                        </tr>
-                                        {groupFeatures.map((feature) => (
-                                            <tr key={feature.key}>
-                                                <td>
-                                                    <div className="feature-info">
-                                                        <h4>{feature.name}</h4>
-                                                        <p>{feature.description}</p>
-                                                    </div>
-                                                </td>
-                                                {plans.map(plan => (
-                                                    <td key={plan.id} style={{ textAlign: 'center' }}>
-                                                        <div
-                                                            className={`admin-toggle ${plan.features?.[feature.key] ? 'active' : ''}`}
-                                                            onClick={() => toggleFeature(plan.id, feature.key, plan.features?.[feature.key])}
-                                                            style={{ margin: '0 auto', opacity: saving ? 0.5 : 1 }}
-                                                        />
-                                                    </td>
-                                                ))}
-                                            </tr>
                                         ))}
-                                    </>
-                                )
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-
-                <AdminTransactionLimits plans={plans} />
-
-                <AdminWalletLimits plans={plans} />
-
-                <AdminWhatsappLimits plans={plans} />
-
-                <AdminInvoiceUploadLimits plans={plans} />
-                <AdminSingleDevice plans={plans} />
-                <AdminEmailStatus />
-                <AdminWhatsAppReminders />
-
-                <AdminTrialSettings />
-
-                <div className="alert-banner" style={{ marginTop: 'var(--spacing-6)', marginBottom: 0 }}>
-                    <span>💡</span>
-                    <span>As alterações são aplicadas imediatamente para todos os usuários do plano.</span>
-                </div>
-            </div>
-        </div>
-    )
-}
-
-function AdminTransactionLimits({ plans }) {
-    const [limits, setLimits] = useState({})
-    const [saving, setSaving] = useState(false)
-    const [loaded, setLoaded] = useState(false)
-
-    useEffect(() => { fetchLimits() }, [])
-
-    const fetchLimits = async () => {
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-            const data = await res.json()
-            const parsed = {}
-            plans.forEach(p => {
-                const setting = data.find(s => s.key === `transaction_limit_${p.id}`)
-                parsed[p.id] = setting ? setting.value : '0'
-            })
-            setLimits(parsed)
-        } catch (err) {
-            console.error('Erro ao buscar limites de transações:', err)
-        } finally {
-            setLoaded(true)
-        }
-    }
-
-    const handleSave = async () => {
-        setSaving(true)
-        try {
-            const token = localStorage.getItem('token')
-            await Promise.all(
-                plans.map(p =>
-                    fetch('/api/settings', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ key: `transaction_limit_${p.id}`, value: String(limits[p.id] ?? '0') })
-                    })
-                )
-            )
-            alert('Limites de lançamentos salvos!')
-        } catch (err) {
-            console.error(err)
-            alert('Erro ao salvar limites')
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    if (!loaded) return null
-
-    return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                    📝 Limite de Lançamentos por Plano (mensal)
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', margin: 0 }}>
-                    Quantidade máxima de lançamentos financeiros por mês. Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
-                </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {plans.map(plan => (
-                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div>
-                            <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
-                            <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
-                                {limits[plan.id] === '0' || !limits[plan.id] ? 'Ilimitado' : `Máximo de ${limits[plan.id]} lançamentos/mês`}
-                            </p>
-                        </div>
-                        <input
-                            type="number"
-                            min="0"
-                            value={limits[plan.id] ?? '0'}
-                            onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
-                            style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
-                        />
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
-                ))}
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-                        {saving ? 'Salvando...' : 'Salvar Limites'}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    <div className="afn-only-narrow afn-plan-cards">
+                        {plans.map((p) => (
+                            <details key={p.id} className="afn-plan-card">
+                                <summary>
+                                    <span>{p.name}</span>
+                                    <small>{FEATURE_LABELS.filter(([k]) => p.features?.[k]).length} de {FEATURE_LABELS.length} recursos</small>
+                                </summary>
+                                <ul>
+                                    {FEATURE_LABELS.map(([key, label]) => (
+                                        <li key={key}>
+                                            <span>{label}</span>
+                                            <Switch checked={!!p.features?.[key]} label={`${label} no plano ${p.name}`}
+                                                busy={!!busy[`${p.id}:${key}`]} onChange={(v) => toggle(p, key, v)} />
+                                        </li>
+                                    ))}
+                                </ul>
+                            </details>
+                        ))}
+                    </div>
+                </>
+            )}
+        </Section>
     )
 }
 
-// Padrão quando o limite ainda não foi salvo (Gratuito, Prata, Ouro), igual ao servidor
-const WHATSAPP_NUMBERS_DEFAULT = { 1: '1', 2: '3', 3: '4' }
-
-function AdminWhatsappLimits({ plans }) {
-    const [limits, setLimits] = useState({})
+// ── Limites de uso: editados juntos e salvos de uma vez ─────────────────────────
+function LimitsTable() {
+    const [data, setData] = useState(null)
+    const [draft, setDraft] = useState({})
+    const [error, setError] = useState(false)
     const [saving, setSaving] = useState(false)
-    const [loaded, setLoaded] = useState(false)
+    const [problem, setProblem] = useState(null)
 
-    useEffect(() => { fetchLimits() }, [])
-
-    const fetchLimits = async () => {
+    const load = useCallback(async () => {
+        setError(false)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-            const data = await res.json()
-            const parsed = {}
-            plans.forEach(p => {
-                const setting = data.find(s => s.key === `whatsapp_numbers_${p.id}`)
-                parsed[p.id] = setting ? setting.value : (WHATSAPP_NUMBERS_DEFAULT[p.id] ?? '1')
-            })
-            setLimits(parsed)
+            const d = await api('/api/admin/plan-limits', { headers: authHeaders() })
+            if (!d || !Array.isArray(d.plans) || !Array.isArray(d.defs) || !d.limits) throw new Error('resposta inesperada')
+            setData(d)
+            const text = {}
+            for (const p of d.plans) {
+                text[p.id] = {}
+                for (const def of d.defs) {
+                    const v = d.limits[p.id]?.[def.key]
+                    text[p.id][def.key] = def.type === 'bool' ? !!v : String(v ?? 0)
+                }
+            }
+            setDraft(text)
+            setProblem(null)
         } catch (err) {
-            console.error('Erro ao buscar limites de WhatsApp:', err)
-        } finally {
-            setLoaded(true)
+            console.error('Limites:', err)
+            setError(true)
         }
-    }
+    }, [])
+    useEffect(() => { load() }, [load])
 
-    const handleSave = async () => {
+    const plans = useMemo(() => (data ? data.plans.filter((p) => p.isActive) : []), [data])
+    const changes = useMemo(() => {
+        if (!data) return {}
+        const out = {}
+        for (const p of plans) {
+            for (const def of data.defs) {
+                const now = draft[p.id]?.[def.key]
+                const before = data.limits[p.id]?.[def.key]
+                const same = def.type === 'bool' ? now === !!before : String(now).trim() === String(before)
+                if (!same) {
+                    out[p.id] = out[p.id] || {}
+                    out[p.id][def.key] = def.type === 'bool' ? now : (String(now).trim() === '' ? '' : Number(String(now).trim()))
+                }
+            }
+        }
+        return out
+    }, [data, draft, plans])
+    const dirty = Object.keys(changes).length > 0
+
+    const set = (pid, key, value) => setDraft((d) => ({ ...d, [pid]: { ...d[pid], [key]: value } }))
+
+    const save = async () => {
+        setProblem(null)
         setSaving(true)
         try {
-            const token = localStorage.getItem('token')
-            await Promise.all(
-                plans.map(p =>
-                    fetch('/api/settings', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ key: `whatsapp_numbers_${p.id}`, value: String(Math.max(0, parseInt(limits[p.id], 10) || 0)) })
-                    })
-                )
-            )
-            alert('Limites de números de WhatsApp salvos!')
+            await api('/api/admin/plan-limits', { method: 'PUT', headers: authHeaders(true), body: JSON.stringify({ limits: changes }) })
+            showToast('Limites salvos.', 'success')
+            await load()
         } catch (err) {
-            console.error(err)
-            alert('Erro ao salvar limites')
+            setProblem({ text: err.message, planId: err.data?.planId, key: err.data?.key })
         } finally {
             setSaving(false)
         }
     }
 
-    if (!loaded) return null
-
-    return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                    💬 Números de WhatsApp por Plano
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
-                    Quantos celulares cada conta pode conectar ao assistente. Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
-                    Para ligar ou desligar o WhatsApp em um plano, use <strong style={{ color: '#93c5fd' }}>Assistente no WhatsApp</strong> na tabela acima.
-                </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {plans.map(plan => {
-                    const enabled = !!plan.features?.whatsapp
-                    const value = limits[plan.id] ?? '1'
-                    return (
-                        <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <div>
-                                <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
-                                <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
-                                    {value === '0' ? 'Ilimitado' : `Até ${value} número(s) por conta`}
-                                    {!enabled && ' · WhatsApp desligado neste plano'}
-                                </p>
-                            </div>
-                            <input
-                                type="number"
-                                min="0"
-                                value={value}
-                                onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
-                                aria-label={`Números de WhatsApp do plano ${plan.name}`}
-                                style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
-                            />
-                        </div>
-                    )
-                })}
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-                        {saving ? 'Salvando...' : 'Salvar Limites'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
-}
-
-// Leituras de fatura com IA por dia (cada leitura custa na IA). Padrão igual ao servidor.
-const INVOICE_UPLOAD_LIMIT_DEFAULT = '20'
-
-function AdminInvoiceUploadLimits({ plans }) {
-    const [limits, setLimits] = useState({})
-    const [saving, setSaving] = useState(false)
-    const [loaded, setLoaded] = useState(false)
-    const [status, setStatus] = useState(null) // { ok, text }
-
-    useEffect(() => { fetchLimits() }, [])
-
-    const fetchLimits = async () => {
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-            const data = await res.json()
-            const parsed = {}
-            plans.forEach(p => {
-                const setting = data.find(s => s.key === `invoice_upload_limit_${p.id}`)
-                parsed[p.id] = setting && setting.value !== '' ? setting.value : INVOICE_UPLOAD_LIMIT_DEFAULT
-            })
-            setLimits(parsed)
-        } catch (err) {
-            console.error('Erro ao buscar limites de leitura de faturas:', err)
-        } finally {
-            setLoaded(true)
+    const field = (p, def) => {
+        const v = draft[p.id]?.[def.key]
+        const label = `${def.label} no plano ${p.name}`
+        if (def.type === 'bool') {
+            return <Switch checked={!!v} label={label} disabled={saving} onChange={(x) => set(p.id, def.key, x)} />
         }
-    }
-
-    const handleSave = async () => {
-        setSaving(true)
-        setStatus(null)
-        try {
-            const token = localStorage.getItem('token')
-            const results = await Promise.all(
-                plans.map(p =>
-                    fetch('/api/settings', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ key: `invoice_upload_limit_${p.id}`, value: String(Math.max(0, parseInt(limits[p.id], 10) || 0)) })
-                    })
-                )
-            )
-            setStatus(results.every(r => r.ok)
-                ? { ok: true, text: 'Limites de leitura de faturas salvos.' }
-                : { ok: false, text: 'Alguns limites não foram salvos. Tente de novo.' })
-        } catch (err) {
-            console.error(err)
-            setStatus({ ok: false, text: 'Erro ao salvar os limites. Tente de novo.' })
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    if (!loaded) return null
-
-    return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                    Leituras de fatura com IA por dia
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
-                    Quantas faturas cada conta pode enviar para a IA ler a cada 24 horas. Cada leitura tem custo na IA.
-                    Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
-                    Para ligar ou desligar a leitura em um plano, use <strong style={{ color: '#93c5fd' }}>Leitura de faturas com IA</strong> na tabela acima.
-                </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {plans.map(plan => {
-                    const enabled = !!plan.features?.upload_faturas
-                    const value = limits[plan.id] ?? INVOICE_UPLOAD_LIMIT_DEFAULT
-                    return (
-                        <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <div>
-                                <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
-                                <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
-                                    {String(value) === '0' ? 'Ilimitado' : `Até ${value} leitura(s) a cada 24 horas`}
-                                    {!enabled && ' · leitura de faturas desligada neste plano'}
-                                </p>
-                            </div>
-                            <input
-                                type="number"
-                                min="0"
-                                value={value}
-                                onChange={e => setLimits(prev => ({ ...prev, [plan.id]: e.target.value }))}
-                                aria-label={`Leituras de fatura por dia no plano ${plan.name}`}
-                                style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
-                            />
-                        </div>
-                    )
-                })}
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
-                    {status && (
-                        <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>
-                    )}
-                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-                        {saving ? 'Salvando...' : 'Salvar Limites'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
-}
-
-// Aparelhos por conta, em cada plano: vários ao mesmo tempo (padrão) ou um por vez.
-// Um por vez: entrar num aparelho (navegador) novo encerra a sessão dos outros.
-// O servidor lê system_settings "single_device_<id do plano>" a cada entrada.
-function AdminSingleDevice({ plans }) {
-    const [modes, setModes] = useState({}) // { [planId]: 'multi' | 'single' }
-    const [saving, setSaving] = useState(false)
-    const [loaded, setLoaded] = useState(false)
-    const [status, setStatus] = useState(null) // { ok, text }
-
-    useEffect(() => { fetchModes() }, [])
-
-    const fetchModes = async () => {
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-            const data = await res.json()
-            const parsed = {}
-            plans.forEach(p => {
-                const setting = Array.isArray(data) ? data.find(s => s.key === `single_device_${p.id}`) : null
-                parsed[p.id] = setting && String(setting.value) === 'true' ? 'single' : 'multi'
-            })
-            setModes(parsed)
-        } catch (err) {
-            console.error('Erro ao buscar aparelhos por conta:', err)
-        } finally {
-            setLoaded(true)
-        }
-    }
-
-    const handleSave = async () => {
-        setSaving(true)
-        setStatus(null)
-        try {
-            const token = localStorage.getItem('token')
-            const results = await Promise.all(
-                plans.map(p =>
-                    fetch('/api/settings', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ key: `single_device_${p.id}`, value: modes[p.id] === 'single' ? 'true' : 'false' })
-                    })
-                )
-            )
-            setStatus(results.every(r => r.ok)
-                ? { ok: true, text: 'Salvo. Vale a partir da próxima vez que cada pessoa entrar.' }
-                : { ok: false, text: 'Alguns planos não foram salvos. Tente de novo.' })
-        } catch (err) {
-            console.error(err)
-            setStatus({ ok: false, text: 'Erro ao salvar. Tente de novo.' })
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    if (!loaded) return null
-
-    const option = (planId, value, label) => {
-        const active = modes[planId] === value
+        const invalid = problem && problem.planId === p.id && problem.key === def.key
         return (
-            <button
-                type="button"
-                onClick={() => setModes(prev => ({ ...prev, [planId]: value }))}
-                aria-pressed={active}
-                style={{ minHeight: '40px', padding: '0 14px', borderRadius: '8px', border: `1px solid ${active ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`, background: active ? 'rgba(59,130,246,0.18)' : '#111827', color: active ? '#dbeafe' : 'rgba(255,255,255,0.6)', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
-            >
-                {label}
-            </button>
+            <input
+                type="text"
+                inputMode="numeric"
+                className="afn-num"
+                aria-label={label}
+                aria-invalid={invalid || undefined}
+                value={v ?? ''}
+                disabled={saving}
+                onChange={(e) => set(p.id, def.key, e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
+            />
         )
     }
 
     return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                    Aparelhos por conta
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
-                    <strong style={{ color: '#93c5fd' }}>Vários aparelhos</strong>: a pessoa fica conectada no celular e no computador ao mesmo tempo.{' '}
-                    <strong style={{ color: '#93c5fd' }}>Um por vez</strong>: ao entrar num aparelho ou navegador novo, os outros saem da conta
-                    (evita que uma assinatura seja dividida entre várias pessoas). Vale a partir da próxima entrada de cada pessoa.
-                </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {plans.map(plan => (
-                    <div key={plan.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div>
-                            <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
-                            <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>
-                                {modes[plan.id] === 'single' ? 'Um aparelho por vez' : 'Vários aparelhos ao mesmo tempo'}
-                            </p>
-                        </div>
-                        <div role="group" aria-label={`Aparelhos no plano ${plan.name}`} style={{ display: 'flex', gap: '6px' }}>
-                            {option(plan.id, 'multi', 'Vários aparelhos')}
-                            {option(plan.id, 'single', 'Um por vez')}
-                        </div>
+        <Section
+            id="afn-lim"
+            icon={Gauge}
+            title="Limites de uso por plano"
+            intro="0 = sem limite. Vale para os planos ativos; o que passar do limite mostra ao cliente o aviso do plano."
+        >
+            {error && <Problem text="Não deu para carregar os limites." onRetry={load} />}
+            {!error && !data && <p className="afn-muted" role="status">Carregando…</p>}
+            {data && (
+                <>
+                    <div className="afn-table-wrap afn-only-wide">
+                        <table className="afn-table afn-table--limits">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Limite</th>
+                                    {plans.map((p) => <th key={p.id} scope="col" className="afn-col-plan">{p.name}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.defs.map((def) => (
+                                    <tr key={def.key}>
+                                        <th scope="row">
+                                            {def.label}
+                                            {def.key === 'single_device' && <small>Entrar num aparelho novo tira a conta dos outros.</small>}
+                                        </th>
+                                        {plans.map((p) => <td key={p.id} className="afn-col-plan">{field(p, def)}</td>)}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
-                ))}
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
-                    {status && (
-                        <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>
-                    )}
-                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-                        {saving ? 'Salvando...' : 'Salvar aparelhos'}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    <div className="afn-only-narrow afn-plan-cards">
+                        {plans.map((p) => (
+                            <details key={p.id} className="afn-plan-card">
+                                <summary><span>{p.name}</span><small>{changes[p.id] ? 'Com mudanças' : 'Limites'}</small></summary>
+                                <ul>
+                                    {data.defs.map((def) => (
+                                        <li key={def.key}>
+                                            <span>{def.label}</span>
+                                            {field(p, def)}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </details>
+                        ))}
+                    </div>
+                    {problem && <p className="afn-note afn-note--error" role="alert">{problem.text}</p>}
+                    <div className="afn-actions">
+                        {dirty && <span className="afn-muted">Há mudanças que ainda não foram salvas.</span>}
+                        <button type="button" className="afn-btn" onClick={load} disabled={!dirty || saving}>Desfazer</button>
+                        <button type="button" className="afn-btn afn-btn--primary" onClick={save} disabled={!dirty || saving}>{saving ? 'Salvando…' : 'Salvar limites'}</button>
+                    </div>
+                </>
+            )}
+        </Section>
     )
 }
 
-// E-mail do site (link de "Esqueci a senha"): se o SMTP está configurado na Vercel,
-// o último envio e um e-mail de teste para o próprio admin. Senha nunca aparece aqui.
-function AdminEmailStatus() {
+// ── E-mail do site ──────────────────────────────────────────────────────────────
+function EmailStatus() {
     const [data, setData] = useState(null)
+    const [error, setError] = useState(false)
     const [sending, setSending] = useState(false)
-    const [status, setStatus] = useState(null) // { ok, text }
+    const [result, setResult] = useState(null)
 
-    useEffect(() => { load() }, [])
-
-    const load = async () => {
+    const load = useCallback(async () => {
+        setError(false)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/admin/email/status', { headers: { 'Authorization': `Bearer ${token}` } })
-            if (res.ok) setData(await res.json())
+            const d = await api('/api/admin/email/status', { headers: authHeaders() })
+            if (!d || typeof d.configured !== 'boolean') throw new Error('resposta inesperada')
+            setData(d)
         } catch (err) {
-            console.error('Erro ao ler o e-mail do site:', err)
+            console.error('E-mail do site:', err)
+            setError(true)
         }
-    }
+    }, [])
+    useEffect(() => { load() }, [load])
 
     const sendTest = async () => {
         setSending(true)
-        setStatus(null)
+        setResult(null)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/admin/email/test', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } })
-            const body = await res.json().catch(() => ({}))
-            setStatus({ ok: res.ok, text: body.message || (res.ok ? 'Enviado.' : 'Não foi enviado.') })
-            load()
-        } catch {
-            setStatus({ ok: false, text: 'Sem conexão. Tente de novo.' })
+            const d = await api('/api/admin/email/test', { method: 'POST', headers: authHeaders() })
+            setResult({ ok: true, text: d.message || 'Enviado.' })
+        } catch (err) {
+            setResult({ ok: false, text: err.message })
         } finally {
             setSending(false)
+            load()
         }
     }
 
-    if (!data) return null
-    const last = data.last
-    const when = last && last.at ? new Date(last.at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : null
-    const kindName = { senha: 'link de nova senha', teste: 'e-mail de teste' }
+    const kindName = { senha: 'link de senha nova', teste: 'e-mail de teste' }
+    const last = data?.last
 
     return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>E-mail do site</h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
-                    Usado no <strong style={{ color: '#93c5fd' }}>Esqueci a senha</strong>. O serviço de envio é configurado nas variáveis da Vercel
-                    (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM), nunca aqui.
-                </p>
-            </div>
-
-            <div style={{ display: 'grid', gap: '10px', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.88rem', color: '#e2e8f0' }}>
-                <div>
-                    <strong style={{ color: data.configured ? '#6ee7b7' : '#fcd34d' }}>{data.configured ? 'Configurado' : 'Não configurado'}</strong>
-                    {data.configured
-                        ? <span style={{ color: 'rgba(255,255,255,0.5)' }}> · servidor {data.host}, porta {data.port}, remetente {data.from}</span>
-                        : <span style={{ color: 'rgba(255,255,255,0.5)' }}> · os e-mails de "Esqueci a senha" não estão saindo.</span>}
-                </div>
-                <div style={{ color: 'rgba(255,255,255,0.6)' }}>
-                    {last
-                        ? <>Último envio ({kindName[last.kind] || last.kind}, para {last.to}, {when}):{' '}
-                            <strong style={{ color: last.ok ? '#6ee7b7' : '#fca5a5' }}>{last.ok ? 'enviado' : 'não saiu'}</strong>
-                            {!last.ok && last.reason ? ` · ${last.reason}` : ''}</>
-                        : 'Nenhum envio registrado ainda.'}
-                </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap', marginTop: '12px' }}>
-                {status && <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>}
-                <button className="btn btn-primary btn-sm" onClick={sendTest} disabled={sending}>
-                    {sending ? 'Enviando...' : 'Mandar e-mail de teste para mim'}
-                </button>
-            </div>
-        </div>
+        <Section
+            id="afn-mail"
+            icon={Mail}
+            title="E-mail do site"
+            intro="Usado no link de senha nova. O serviço de envio fica nas variáveis da Vercel (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM), nunca aqui."
+        >
+            {error && <Problem text="Não deu para ler a situação do e-mail." onRetry={load} />}
+            {data && (
+                <>
+                    <dl className="afn-facts">
+                        <div>
+                            <dt>Situação</dt>
+                            <dd className={data.configured ? 'is-ok' : 'is-warn'}>
+                                {data.configured ? <CircleCheck size={16} aria-hidden="true" /> : <CircleAlert size={16} aria-hidden="true" />}
+                                {data.configured ? 'Configurado' : 'Não configurado: os e-mails não estão saindo'}
+                            </dd>
+                        </div>
+                        {data.configured && (
+                            <>
+                                <div><dt>Servidor</dt><dd>{data.host}, porta {data.port}</dd></div>
+                                <div><dt>Remetente</dt><dd>{data.from}</dd></div>
+                            </>
+                        )}
+                        <div className="is-wide">
+                            <dt>Último envio</dt>
+                            <dd>
+                                {last
+                                    ? <>{kindName[last.kind] || 'e-mail'} para {last.to}, {fmtWhen(last.at)}: <b className={last.ok ? 'is-ok' : 'is-bad'}>{last.ok ? 'enviado' : 'não saiu'}</b>{!last.ok && last.reason ? `. ${last.reason}` : ''}</>
+                                    : 'Nenhum envio registrado ainda.'}
+                            </dd>
+                        </div>
+                    </dl>
+                    {result && <p className={`afn-note ${result.ok ? 'afn-note--ok' : 'afn-note--error'}`} role="status">{result.text}</p>}
+                    <div className="afn-actions">
+                        <button type="button" className="afn-btn afn-btn--primary" onClick={sendTest} disabled={sending}>
+                            <Send size={16} aria-hidden="true" />{sending ? 'Enviando…' : 'Mandar e-mail de teste para mim'}
+                        </button>
+                    </div>
+                </>
+            )}
+        </Section>
     )
 }
 
-// Lembretes no WhatsApp: última rodada (contas vencendo e alertas do MEI) e "Enviar agora".
-// Mostra o motivo que a Meta deu quando a mensagem não sai (ex.: modelo ainda não aprovado).
-function AdminWhatsAppReminders() {
+// ── Lembretes no WhatsApp ───────────────────────────────────────────────────────
+function WhatsAppReminders({ confirm }) {
     const [data, setData] = useState(null)
+    const [error, setError] = useState(false)
     const [running, setRunning] = useState(false)
-    const [confirming, setConfirming] = useState(null) // null | 'run' | 'resend'
-    const [status, setStatus] = useState(null) // { ok, text }
+    const [result, setResult] = useState(null)
 
-    const token = localStorage.getItem('token')
-    const fetchData = async () => {
+    const load = useCallback(async () => {
+        setError(false)
         try {
-            const res = await fetch('/api/admin/whatsapp/reminders', { headers: { 'Authorization': `Bearer ${token}` } })
-            if (res.ok) setData(await res.json())
+            const d = await api('/api/admin/whatsapp/reminders', { headers: authHeaders() })
+            if (!d || !d.templates) throw new Error('resposta inesperada')
+            setData(d)
         } catch (err) {
-            console.error('Erro ao buscar lembretes do WhatsApp:', err)
+            console.error('Lembretes no WhatsApp:', err)
+            setError(true)
         }
-    }
-    useEffect(() => { fetchData() }, [])
+    }, [])
+    useEffect(() => { load() }, [load])
 
-    const runNow = async (resend) => {
+    const run = async (resend) => {
+        const ok = await confirm(resend
+            ? { title: 'Reenviar os lembretes de contas de hoje?', message: 'Manda o lembrete de contas de hoje de novo, também para quem já recebeu hoje.', confirmLabel: 'Reenviar' }
+            : { title: 'Enviar os lembretes agora?', message: 'Manda o lembrete de contas e os alertas do MEI para quem ainda não recebeu hoje.', confirmLabel: 'Enviar agora' })
+        if (!ok) return
         setRunning(true)
-        setStatus(null)
+        setResult(null)
         try {
-            const res = await fetch('/api/admin/whatsapp/reminders/run', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ resend })
+            const body = await api('/api/admin/whatsapp/reminders/run', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ resend }) })
+            const fails = (body.failed || 0) + (body.alertas?.failed || 0)
+            setResult({
+                ok: fails === 0 && !body.resendBusy,
+                text: `${body.resendBusy ? 'Um reenvio já rodou há menos de 1 minuto; esta rodada não reenviou. ' : ''}Rodada feita: ${body.sent || 0} lembrete(s) de contas e ${body.alertas?.sent || 0} alerta(s) enviados${fails ? `, ${fails} falha(s) (o motivo está abaixo)` : ''}.`,
             })
-            const body = await res.json().catch(() => ({}))
-            if (!res.ok) {
-                setStatus({ ok: false, text: body.message || 'Não deu para rodar agora. Tente de novo.' })
-            } else {
-                const fails = (body.failed || 0) + (body.alertas?.failed || 0)
-                setStatus({ ok: fails === 0 && !body.resendBusy, text: `${body.resendBusy ? 'Um reenvio já rodou há menos de 1 minuto; esta rodada não reenviou. ' : ''}Rodada feita: ${body.sent || 0} lembrete(s) de contas e ${body.alertas?.sent || 0} alerta(s) enviados${fails ? `, ${fails} falha(s) (motivo abaixo)` : ''}.` })
-            }
-            fetchData()
-        } catch {
-            setStatus({ ok: false, text: 'Sem conexão. Tente de novo.' })
+        } catch (err) {
+            setResult({ ok: false, text: err.message })
         } finally {
             setRunning(false)
-            setConfirming(null)
+            load()
         }
     }
 
-    if (!data) return null
-    const run = data.lastRun
-    const when = run ? new Date(run.ranAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : null
-    const line = (label, part) => part ? `${label}: ${part.sent} enviado(s), ${part.failed} falha(s), ${part.skipped} sem o recurso ou já enviado(s)` : null
-    // Por que um número ficou de fora do lembrete de contas
+    const lastRun = data?.lastRun
+    const part = (p) => (p ? `${p.sent} enviado(s), ${p.failed} falha(s), ${p.skipped} sem o recurso ou já enviado(s)` : '—')
     const billsWhy = (c) => {
         if (!c || c.withBills == null) return null
         if (!c.links) return 'Nenhum número de WhatsApp vinculado.'
-        const parts = [`${c.withBills} de ${c.links} número(s) vinculados têm contas a pagar vencendo até hoje`]
+        const parts = [`${c.withBills} de ${c.links} número(s) vinculados têm contas vencendo até hoje`]
         if (c.reminderOff) parts.push(`${c.reminderOff} com o lembrete desligado (PARAR)`)
         if (c.alreadyToday && !c.resend) parts.push(`${c.alreadyToday} já marcado(s) como enviado(s) hoje`)
-        return parts.join('; ') + '.'
+        return `${parts.join('; ')}.`
     }
-    const why = billsWhy(run?.contas)
-    const box = { padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }
 
     return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                    Lembretes no WhatsApp
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
-                    Todo dia às 8h (Brasília) o sistema manda o lembrete de contas vencendo (modelo <strong style={{ color: '#93c5fd' }}>{data.templates.contas}</strong>)
-                    e os alertas do MEI (modelo <strong style={{ color: '#93c5fd' }}>{data.templates.alertas}</strong>) para os números com lembrete ligado.
-                    Os dois modelos precisam estar aprovados no WhatsApp Manager da Meta.
-                </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {(!data.configured || !data.cronSecret) && (
-                    <div role="alert" style={{ ...box, borderColor: 'rgba(252,165,165,0.35)', color: '#fca5a5', fontSize: '0.85rem' }}>
-                        {!data.configured && <div>WhatsApp não configurado no servidor: falta WHATSAPP_TOKEN ou WHATSAPP_PHONE_NUMBER_ID na Vercel.</div>}
-                        {!data.cronSecret && <div>Falta CRON_SECRET na Vercel: sem ele o envio das 8h é recusado.</div>}
-                    </div>
-                )}
-
-                <div style={box}>
-                    <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>
-                        {run ? `Última rodada: ${when} (${run.trigger === 'admin' ? 'pelo botão' : 'automática'})` : 'Nenhuma rodada registrada ainda'}
-                    </h4>
-                    {run ? (
-                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.82rem', margin: '6px 0 0', lineHeight: 1.6 }}>
-                            {line('Contas vencendo', run.contas)}{run.contas?.resend ? ' (reenvio)' : ''}<br />
-                            {why && <>{why}<br /></>}
-                            {line('Alertas do MEI', run.alertas)}
-                        </p>
-                    ) : (
-                        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.82rem', margin: '6px 0 0', lineHeight: 1.5 }}>
-                            Se o horário das 8h já passou e nada aparece aqui, o envio automático não está rodando: confira o Cron Job na Vercel (Settings &gt; Cron Jobs) e o CRON_SECRET.
-                        </p>
+        <Section
+            id="afn-wa"
+            icon={MessageCircle}
+            title="Lembretes no WhatsApp"
+            intro={data ? `Todo dia às 8h (Brasília) saem o lembrete de contas vencendo (modelo ${data.templates.contas}) e os alertas do MEI (modelo ${data.templates.alertas}). Os dois modelos precisam estar aprovados no WhatsApp Manager da Meta.` : null}
+        >
+            {error && <Problem text="Não deu para ler os lembretes do WhatsApp." onRetry={load} />}
+            {data && (
+                <>
+                    {(!data.configured || !data.cronSecret) && (
+                        <div className="afn-note afn-note--error" role="alert">
+                            {!data.configured && <p>WhatsApp não configurado no servidor: falta WHATSAPP_TOKEN ou WHATSAPP_PHONE_NUMBER_ID na Vercel.</p>}
+                            {!data.cronSecret && <p>Falta CRON_SECRET na Vercel: sem ele o envio das 8h é recusado.</p>}
+                        </div>
                     )}
-                    {run?.errors?.length > 0 && (
-                        <ul style={{ margin: '10px 0 0', paddingLeft: '18px', color: '#fca5a5', fontSize: '0.82rem', lineHeight: 1.5 }}>
-                            {run.errors.map((e, i) => (
+                    <dl className="afn-facts">
+                        <div className="is-wide">
+                            <dt>Última rodada</dt>
+                            <dd>{lastRun ? `${fmtWhen(lastRun.ranAt)} (${lastRun.trigger === 'admin' ? 'pelo botão' : 'automática'})` : 'Nenhuma rodada registrada ainda. Se já passou das 8h, confira o Cron Job na Vercel (Settings > Cron Jobs) e o CRON_SECRET.'}</dd>
+                        </div>
+                        {lastRun && (
+                            <>
+                                <div><dt>Contas vencendo{lastRun.contas?.resend ? ' (reenvio)' : ''}</dt><dd>{part(lastRun.contas)}</dd></div>
+                                <div><dt>Alertas do MEI</dt><dd>{part(lastRun.alertas)}</dd></div>
+                                {billsWhy(lastRun.contas) && <div className="is-wide"><dt>Quem entrou no lembrete de contas</dt><dd>{billsWhy(lastRun.contas)}</dd></div>}
+                            </>
+                        )}
+                    </dl>
+                    {lastRun?.errors?.length > 0 && (
+                        <ul className="afn-errors">
+                            {lastRun.errors.map((e, i) => (
                                 <li key={i}>{e.kind === 'contas' ? 'Contas' : 'Alertas'} ({e.template}){e.count > 1 ? `, ${e.count} vezes` : ''}: {e.reason}</li>
                             ))}
                         </ul>
                     )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
-                    {status && (
-                        <span role="status" style={{ fontSize: '0.85rem', color: status.ok ? '#6ee7b7' : '#fca5a5' }}>{status.text}</span>
-                    )}
-                    {confirming ? (
-                        <>
-                            <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>
-                                {confirming === 'resend'
-                                    ? 'Manda o lembrete de contas de hoje de novo, também para quem já foi marcado hoje.'
-                                    : 'Manda agora para quem ainda não recebeu hoje.'}
-                            </span>
-                            <button className="btn btn-secondary btn-sm" onClick={() => setConfirming(null)} disabled={running}>Voltar</button>
-                            <button className="btn btn-primary btn-sm" onClick={() => runNow(confirming === 'resend')} disabled={running}>{running ? 'Enviando...' : 'Confirmar envio'}</button>
-                        </>
-                    ) : (
-                        <>
-                            {run?.contas?.alreadyToday > 0 && (
-                                <button className="btn btn-secondary btn-sm" onClick={() => setConfirming('resend')}>Reenviar contas de hoje</button>
-                            )}
-                            <button className="btn btn-primary btn-sm" onClick={() => setConfirming('run')}>Enviar agora</button>
-                        </>
-                    )}
-                </div>
-            </div>
-        </div>
-    )
-}
-
-function AdminWalletLimits({ plans }) {
-    const [limits, setLimits] = useState({})   // { [planId]: { total, pf, pj } }
-    const [saving, setSaving] = useState(false)
-    const [loaded, setLoaded] = useState(false)
-
-    useEffect(() => { fetchLimits() }, [])
-
-    const fetchLimits = async () => {
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-            const data = await res.json()
-            const parsed = {}
-            plans.forEach(p => {
-                parsed[p.id] = {
-                    total: data.find(s => s.key === `wallet_limit_${p.id}`)?.value    ?? '0',
-                    pf:    data.find(s => s.key === `wallet_pf_limit_${p.id}`)?.value ?? '0',
-                    pj:    data.find(s => s.key === `wallet_pj_limit_${p.id}`)?.value ?? '0',
-                }
-            })
-            setLimits(parsed)
-        } catch (err) {
-            console.error('Erro ao buscar limites de carteiras:', err)
-        } finally {
-            setLoaded(true)
-        }
-    }
-
-    const handleSave = async () => {
-        setSaving(true)
-        try {
-            const token = localStorage.getItem('token')
-            const saves = plans.flatMap(p => [
-                fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ key: `wallet_limit_${p.id}`,    value: String(limits[p.id]?.total ?? '0') }) }),
-                fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ key: `wallet_pf_limit_${p.id}`, value: String(limits[p.id]?.pf    ?? '0') }) }),
-                fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ key: `wallet_pj_limit_${p.id}`, value: String(limits[p.id]?.pj    ?? '0') }) }),
-            ])
-            await Promise.all(saves)
-            alert('Limites de carteiras salvos!')
-        } catch (err) {
-            console.error(err)
-            alert('Erro ao salvar limites')
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    const update = (planId, field, value) =>
-        setLimits(prev => ({ ...prev, [planId]: { ...prev[planId], [field]: value } }))
-
-    const describeLimit = (v) => v === '0' ? 'Ilimitado' : v
-
-    if (!loaded) return null
-
-    const inputStyle = { width: '68px', padding: '8px 6px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.875rem', fontFamily: 'inherit' }
-    const colLabel = { fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', textAlign: 'center', marginBottom: '6px' }
-
-    return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                    👛 Limite de Carteiras por Plano
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>
-                    Defina o total de carteiras e os limites por tipo PF/PJ por plano. Use <strong style={{ color: '#93c5fd' }}>0</strong> para ilimitado.
-                </p>
-            </div>
-
-            {/* Header das colunas */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px 72px 72px', gap: '10px', alignItems: 'center', padding: '0 16px 8px' }}>
-                <div />
-                <div style={colLabel}>Total</div>
-                <div style={colLabel}>👤 PF</div>
-                <div style={colLabel}>🏢 PJ</div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {plans.map(plan => {
-                    const l = limits[plan.id] || { total: '0', pf: '0', pj: '0' }
-                    return (
-                        <div key={plan.id} style={{ display: 'grid', gridTemplateColumns: '1fr 72px 72px 72px', gap: '10px', alignItems: 'center', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <div>
-                                <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>{plan.name}</h4>
-                                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.775rem', margin: '3px 0 0' }}>
-                                    Total: {describeLimit(l.total)} &nbsp;·&nbsp; PF: {describeLimit(l.pf)} &nbsp;·&nbsp; PJ: {describeLimit(l.pj)}
-                                </p>
-                            </div>
-                            <input type="number" min="0" value={l.total} onChange={e => update(plan.id, 'total', e.target.value)} style={inputStyle} />
-                            <input type="number" min="0" value={l.pf}    onChange={e => update(plan.id, 'pf',    e.target.value)} style={inputStyle} />
-                            <input type="number" min="0" value={l.pj}    onChange={e => update(plan.id, 'pj',    e.target.value)} style={inputStyle} />
-                        </div>
-                    )
-                })}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-                <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-                    {saving ? 'Salvando...' : 'Salvar Limites'}
-                </button>
-            </div>
-        </div>
-    )
-}
-
-function AdminTrialSettings() {
-    const [trialEnabled, setTrialEnabled] = useState(false)
-    const [trialDays, setTrialDays] = useState(7)
-    const [loading, setLoading] = useState(true)
-    const [saving, setSaving] = useState(false)
-
-    useEffect(() => {
-        fetchTrialSettings()
-    }, [])
-
-    const fetchTrialSettings = async () => {
-        try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/settings', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            const data = await res.json()
-            const enabled = data.find(s => s.key === 'trial_enabled')?.value === 'true'
-            const days = data.find(s => s.key === 'trial_days')?.value || 7
-            setTrialEnabled(enabled)
-            setTrialDays(parseInt(days))
-        } catch (error) {
-            console.error('Erro ao buscar trial:', error)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleSaveTrial = async (newEnabled, newDays) => {
-        setSaving(true)
-        try {
-            const token = localStorage.getItem('token')
-
-            // Save enabled status
-            await fetch('/api/settings', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ key: 'trial_enabled', value: newEnabled.toString() })
-            })
-
-            // Save days
-            await fetch('/api/settings', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ key: 'trial_days', value: newDays.toString() })
-            })
-
-            alert('Configurações de Trial salvas!')
-        } catch (error) {
-            console.error('Erro ao salvar trial:', error)
-            alert('Erro ao salvar configurações')
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    if (loading) return null
-
-    return (
-        <div className="admin-card" style={{ marginTop: '2rem' }}>
-            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                    ⭐ Acesso para Novos Usuários (Trial)
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginTop: '6px', marginBottom: 0 }}>Disponibiliza todas as funções premium automaticamente para novos cadastros.</p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div>
-                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>Ativar Período de Avaliação</h4>
-                        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>Novos usuários receberão o plano Ouro temporariamente.</p>
-                    </div>
-                    <div
-                        className={`admin-toggle ${trialEnabled ? 'active' : ''}`}
-                        onClick={() => {
-                            const next = !trialEnabled
-                            setTrialEnabled(next)
-                            handleSaveTrial(next, trialDays)
-                        }}
-                        style={{ opacity: saving ? 0.5 : 1 }}
-                    />
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div>
-                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>Duração do Acesso (Dias)</h4>
-                        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: '0.8rem', margin: '3px 0 0' }}>Quantidade de dias que o usuário terá acesso total.</p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <input
-                            type="number"
-                            value={trialDays}
-                            onChange={(e) => setTrialDays(e.target.value)}
-                            style={{ width: '76px', padding: '9px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#111827', color: '#f1f5f9', textAlign: 'center', fontSize: '0.9rem', fontFamily: 'inherit' }}
-                        />
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleSaveTrial(trialEnabled, trialDays)}
-                            disabled={saving}
-                        >
-                            {saving ? '...' : 'Salvar'}
+                    {result && <p className={`afn-note ${result.ok ? 'afn-note--ok' : 'afn-note--error'}`} role="status">{result.text}</p>}
+                    <div className="afn-actions">
+                        {lastRun?.contas?.alreadyToday > 0 && (
+                            <button type="button" className="afn-btn" onClick={() => run(true)} disabled={running}>Reenviar contas de hoje</button>
+                        )}
+                        <button type="button" className="afn-btn afn-btn--primary" onClick={() => run(false)} disabled={running}>
+                            <Send size={16} aria-hidden="true" />{running ? 'Enviando…' : 'Enviar agora'}
                         </button>
                     </div>
-                </div>
-            </div>
+                </>
+            )}
+        </Section>
+    )
+}
+
+export default function AdminFeatures() {
+    const { confirm, dialog } = useConfirmDialog()
+    return (
+        <div className="afn adm-light">
+            <header className="afn-head">
+                <h1>Funcionalidades</h1>
+                <p>O que cada plano libera, os limites de uso e os envios automáticos do site.</p>
+            </header>
+            <FeatureMatrix />
+            <LimitsTable />
+            <EmailStatus />
+            <WhatsAppReminders confirm={confirm} />
+            {dialog}
         </div>
     )
 }
