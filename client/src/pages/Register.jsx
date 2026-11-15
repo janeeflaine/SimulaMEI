@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Check } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { LEGAL_VERSION } from '../utils/legalInfo'
-import './Login.css'
+import AuthFrame, { AuthAlert, LimitFact, PasswordField, looksLikeEmail, normalizeEmail, passwordProblem, readJson } from '../components/auth/AuthFrame'
+
+const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export default function Register() {
     const navigate = useNavigate()
@@ -10,7 +13,7 @@ export default function Register() {
     const planIdParam = searchParams.get('planId') || sessionStorage.getItem('selectedPlanId')
 
     const { register } = useAuth()
-    const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '' })
+    const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' })
     const [acceptedTerms, setAcceptedTerms] = useState(false)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
@@ -18,247 +21,147 @@ export default function Register() {
     const [selectedPlan, setSelectedPlan] = useState(null)
 
     useEffect(() => {
-        if (planIdParam) {
-            fetchSelectedPlan(planIdParam)
-        }
+        if (!planIdParam) return
+        let alive = true
+        fetch('/api/plans')
+            .then(res => (res.ok ? res.json() : []))
+            .then(plans => {
+                const found = Array.isArray(plans) ? plans.find(p => Number(p.id) === Number(planIdParam)) : null
+                if (alive && found) setSelectedPlan(found)
+            })
+            .catch(() => {})
+        return () => { alive = false }
     }, [planIdParam])
 
-    const fetchSelectedPlan = async (id) => {
-        try {
-            const res = await fetch('/api/plans')
-            if (res.ok) {
-                const plans = await res.json()
-                const found = plans.find(p => Number(p.id) === Number(id))
-                if (found) setSelectedPlan(found)
-            }
-        } catch (err) {
-            console.error('Erro ao buscar plano selecionado:', err)
-        }
-    }
+    const set = (field) => (e) => setForm(prev => ({ ...prev, [field]: e.target.value }))
 
-    const handleChange = (e) => {
-        setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
-    }
+    const pwProblem = passwordProblem(form.password)
+    const longEnough = form.password.length >= 8
+    const same = form.confirmPassword.length > 0 && form.password === form.confirmPassword
 
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
+        const name = form.name.trim()
+        const email = normalizeEmail(form.email)
 
-        if (formData.password !== formData.confirmPassword) {
-            setError('As senhas não coincidem')
-            return
-        }
-
-        if (formData.password.length < 8) {
-            setError('A senha deve ter pelo menos 8 caracteres')
-            return
-        }
-
-        if (!acceptedTerms) {
-            setError('Para criar a conta, aceite os Termos de Serviço e a Política de Privacidade')
-            return
-        }
+        if (name.length < 2) return setError('Digite o seu nome.')
+        if (!looksLikeEmail(email)) return setError('Digite um e-mail válido, por exemplo joana@gmail.com.')
+        if (pwProblem) return setError(pwProblem)
+        if (form.password !== form.confirmPassword) return setError('As duas senhas não estão iguais.')
+        if (!acceptedTerms) return setError('Para criar a conta, marque que leu e aceita os Termos de Serviço e a Política de Privacidade.')
 
         setLoading(true)
         setLoadingStatus('Criando sua conta...')
 
         try {
-            const targetPlanId = selectedPlan ? selectedPlan.id : (planIdParam ? Number(planIdParam) : null)
-            const user = await register(formData.name, formData.email, formData.password, targetPlanId, LEGAL_VERSION)
+            const targetPlanId = selectedPlan ? selectedPlan.id : null
+            const user = await register(name, email, form.password, targetPlanId, LEGAL_VERSION)
 
-            // If user requires payment (paid plan selected), immediately redirect to Stripe Checkout!
+            // Plano pago: vai direto para o pagamento no Stripe
             if (user?.requiresPayment || (selectedPlan && Number(selectedPlan.price) > 0)) {
-                setLoadingStatus('Conectando ao Stripe para o pagamento...')
+                setLoadingStatus('Abrindo o pagamento...')
                 sessionStorage.removeItem('selectedPlanId')
                 const token = localStorage.getItem('token')
                 try {
                     const stripeRes = await fetch('/api/stripe/create-checkout-session', {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({ planId: targetPlanId })
                     })
-
-                    const stripeData = await stripeRes.json()
+                    const stripeData = await readJson(stripeRes)
                     if (stripeRes.ok && stripeData.url) {
                         window.location.href = stripeData.url
                         return
-                    } else {
-                        throw new Error(stripeData.message || 'Erro ao gerar checkout com Stripe.')
                     }
+                    throw new Error(stripeData.message || 'Erro ao abrir o pagamento.')
                 } catch (stripeErr) {
                     console.error('Checkout error after register:', stripeErr)
-                    // If session creation had an issue, account is created; navigate to /planos where user can retry directly
+                    // A conta já existe: em Planos dá para tentar o pagamento de novo
                     navigate(`/planos?pending=true&retryPlan=${targetPlanId}`)
                     return
                 }
             }
 
             sessionStorage.removeItem('selectedPlanId')
-            // Free plan
             navigate('/dashboard')
         } catch (err) {
-            setError(err.message || 'Erro ao cadastrar')
+            setError(err.message || 'Não deu para criar a conta agora. Tente de novo.')
             setLoading(false)
             setLoadingStatus('')
         }
     }
 
     const isPaidPlan = selectedPlan && Number(selectedPlan.price) > 0
+    const loginLink = planIdParam ? `/login?planId=${encodeURIComponent(planIdParam)}` : '/login'
 
     return (
-        <div className="auth-page">
-            <div className="container">
-                <div className="auth-container">
-                    <div className="auth-header">
-                        <Link to="/" className="auth-logo">
-                            <span>📊</span> EuSempreMEI
-                        </Link>
-                        <h1 className="auth-title">
-                            {isPaidPlan ? `Crie sua conta - Plano ${selectedPlan.name}` : 'Crie sua conta'}
-                        </h1>
-                        <p className="auth-subtitle">
-                            {isPaidPlan
-                                ? 'Cadastre-se abaixo para ir direto ao pagamento seguro no cartão'
-                                : 'Comece a gerenciar seus impostos gratuitamente'}
-                        </p>
+        <AuthFrame aside="Comece pelo plano gratuito e mude quando quiser" extra={<LimitFact />}>
+            <h1 className="acs-title">Criar conta</h1>
+            <p className="acs-sub">
+                {isPaidPlan ? 'Depois de criar a conta, você vai para o pagamento no cartão.' : 'Leva menos de um minuto. Não pede cartão.'}
+            </p>
+
+            {selectedPlan && (
+                <div className={`acs-plan${isPaidPlan ? ' is-paid' : ''}`}>
+                    <div>
+                        <span className="acs-plan__label">Plano escolhido</span>
+                        <strong>{selectedPlan.name}</strong>
                     </div>
-
-                    {selectedPlan && (
-                        <div style={{
-                            background: isPaidPlan ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)' : '#f3f4f6',
-                            border: isPaidPlan ? '1px solid #10b981' : '1px solid #e5e7eb',
-                            borderRadius: '12px',
-                            padding: '14px 18px',
-                            marginBottom: '20px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between'
-                        }}>
-                            <div>
-                                <span style={{ fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: isPaidPlan ? '#059669' : '#6b7280' }}>
-                                    Plano Escolhido
-                                </span>
-                                <h3 style={{ margin: '2px 0 0 0', fontSize: '18px', color: '#111827' }}>
-                                    Plano {selectedPlan.name}
-                                </h3>
-                                <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#4b5563' }}>
-                                    {isPaidPlan ? 'Pagamento seguro no Stripe com cartão' : 'Acesso Grátis'}
-                                </p>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <span style={{ fontSize: '20px', fontWeight: '800', color: isPaidPlan ? '#059669' : '#111827' }}>
-                                    {Number(selectedPlan.price) === 0 ? 'Grátis' : `R$ ${Number(selectedPlan.price).toFixed(2).replace('.', ',')}`}
-                                </span>
-                                {Number(selectedPlan.price) > 0 && <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>/mês</span>}
-                            </div>
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit} className="auth-form">
-                        {error && (
-                            <div className="alert alert-danger">
-                                <span>⚠️</span> {error}
-                            </div>
-                        )}
-
-                        <div className="form-group">
-                            <label className="form-label">Nome completo</label>
-                            <input
-                                type="text"
-                                name="name"
-                                value={formData.name}
-                                onChange={handleChange}
-                                placeholder="Seu nome"
-                                className="form-input"
-                                required
-                                disabled={loading}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">E-mail</label>
-                            <input
-                                type="email"
-                                name="email"
-                                value={formData.email}
-                                onChange={handleChange}
-                                placeholder="seu@email.com"
-                                className="form-input"
-                                required
-                                disabled={loading}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Senha</label>
-                            <input
-                                type="password"
-                                name="password"
-                                value={formData.password}
-                                onChange={handleChange}
-                                placeholder="Mínimo 8 caracteres"
-                                className="form-input"
-                                required
-                                disabled={loading}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Confirmar senha</label>
-                            <input
-                                type="password"
-                                name="confirmPassword"
-                                value={formData.confirmPassword}
-                                onChange={handleChange}
-                                placeholder="Digite a senha novamente"
-                                className="form-input"
-                                required
-                                disabled={loading}
-                            />
-                        </div>
-
-                        <div className="form-group auth-terms">
-                            <label className="auth-terms-label">
-                                <input
-                                    type="checkbox"
-                                    checked={acceptedTerms}
-                                    onChange={(e) => setAcceptedTerms(e.target.checked)}
-                                    required
-                                    disabled={loading}
-                                />
-                                <span>
-                                    Tenho 18 anos ou mais, li e aceito os{' '}
-                                    <Link to="/termos-de-servico" target="_blank" className="auth-link">Termos de Serviço</Link>{' '}
-                                    e estou ciente da{' '}
-                                    <Link to="/politica-de-privacidade" target="_blank" className="auth-link">Política de Privacidade</Link>.
-                                </span>
-                            </label>
-                        </div>
-
-                        <button
-                            type="submit"
-                            className="btn btn-primary btn-lg auth-submit"
-                            disabled={loading}
-                        >
-                            {loading ? (loadingStatus || 'Processando...') : (
-                                isPaidPlan ? `💳 Cadastrar e Pagar Plano ${selectedPlan?.name || ''}` : '🚀 Criar Conta Grátis'
-                            )}
-                        </button>
-                    </form>
-
-                    <div className="auth-footer">
-                        <p>
-                            Já tem uma conta?{' '}
-                            <Link to={planIdParam ? `/login?planId=${planIdParam}` : '/login'} className="auth-link">
-                                Entrar
-                            </Link>
-                        </p>
+                    <div className="acs-plan__price">
+                        {isPaidPlan ? <>{brl(selectedPlan.price)}<small> por mês</small></> : 'Grátis'}
                     </div>
+                    <Link to="/planos" className="acs-link acs-link--small">Trocar plano</Link>
                 </div>
-            </div>
-        </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="acs-form" noValidate>
+                <AuthAlert>{error}</AuthAlert>
+
+                <div className="acs-field">
+                    <label htmlFor="acs-name">Nome</label>
+                    <input id="acs-name" type="text" autoComplete="name" value={form.name} onChange={set('name')}
+                        placeholder="Seu nome" disabled={loading} maxLength={80} />
+                </div>
+
+                <div className="acs-field">
+                    <label htmlFor="acs-email">E-mail</label>
+                    <input id="acs-email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none"
+                        spellCheck={false} value={form.email} onChange={set('email')} placeholder="seu@email.com"
+                        disabled={loading} maxLength={254} />
+                </div>
+
+                <PasswordField id="acs-password" label="Senha" value={form.password} onChange={set('password')}
+                    autoComplete="new-password" disabled={loading} describedBy="acs-rules" />
+
+                <PasswordField id="acs-confirm" label="Repita a senha" value={form.confirmPassword} onChange={set('confirmPassword')}
+                    autoComplete="new-password" disabled={loading} describedBy="acs-rules"
+                    invalid={form.confirmPassword.length > 0 && !same} />
+
+                <ul className="acs-rules" id="acs-rules">
+                    <li className={longEnough ? 'is-ok' : ''}><Check size={16} strokeWidth={2.4} aria-hidden="true" />Pelo menos 8 caracteres</li>
+                    <li className={same ? 'is-ok' : ''}><Check size={16} strokeWidth={2.4} aria-hidden="true" />As duas senhas iguais</li>
+                </ul>
+
+                <label className="acs-check">
+                    <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} disabled={loading} />
+                    <span className="acs-check__box" aria-hidden="true"><Check size={16} strokeWidth={3} /></span>
+                    <span>
+                        Tenho 18 anos ou mais, li e aceito os{' '}
+                        <Link to="/termos-de-servico" target="_blank" rel="noopener" className="acs-link">Termos de Serviço</Link>{' '}
+                        e estou ciente da{' '}
+                        <Link to="/politica-de-privacidade" target="_blank" rel="noopener" className="acs-link">Política de Privacidade</Link>.
+                    </span>
+                </label>
+
+                <button type="submit" className="acs-submit" disabled={loading}>
+                    {loading ? (loadingStatus || 'Criando sua conta...') : (isPaidPlan ? 'Criar conta e pagar' : 'Criar conta grátis')}
+                </button>
+            </form>
+
+            <p className="acs-switch">
+                Já tem conta? <Link to={loginLink} className="acs-link">Entrar</Link>
+            </p>
+        </AuthFrame>
     )
 }

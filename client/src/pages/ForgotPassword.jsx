@@ -1,97 +1,78 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import './Login.css'
+import { MailCheck } from 'lucide-react'
+import AuthFrame, { AuthAlert, looksLikeEmail, normalizeEmail, readJson } from '../components/auth/AuthFrame'
 
 export default function ForgotPassword() {
     const [email, setEmail] = useState('')
-    const [message, setMessage] = useState('')
+    const [sentTo, setSentTo] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
 
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
-        setMessage('')
-        setLoading(true)
+        const clean = normalizeEmail(email)
+        if (!looksLikeEmail(clean)) return setError('Digite o e-mail da sua conta, por exemplo joana@gmail.com.')
 
+        setLoading(true)
         try {
             const res = await fetch('/api/auth/forgot-password', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ email })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: clean })
             })
-
-            const data = await res.json()
-
-            if (res.ok) {
-                setMessage(data.message || 'Se o e-mail estiver cadastrado, você receberá um link de recuperação em breve.')
-            } else {
-                setError(data.message || 'Ocorreu um erro ao processar sua solicitação.')
-            }
-        } catch (err) {
-            setError('Erro de conexão. Tente novamente mais tarde.')
+            const data = await readJson(res)
+            if (res.ok) setSentTo(clean)
+            else setError(data.message || 'Não deu para enviar agora. Tente de novo em alguns minutos.')
+        } catch {
+            setError('Sem conexão com o site. Confira a internet e tente de novo.')
         } finally {
             setLoading(false)
         }
     }
 
-    return (
-        <div className="auth-page">
-            <div className="container">
-                <div className="auth-container">
-                    <div className="auth-header">
-                        <Link to="/" className="auth-logo">
-                            <span>📊</span> EuSempreMEI
-                        </Link>
-                        <h1 className="auth-title">Recuperar Senha</h1>
-                        <p className="auth-subtitle">Informe seu e-mail para receber o link de recuperação</p>
-                    </div>
-
-                    <form onSubmit={handleSubmit} className="auth-form">
-                        {error && (
-                            <div className="alert alert-danger" style={{ padding: '12px', backgroundColor: '#fee2e2', color: '#b91c1c', borderRadius: '6px', marginBottom: '16px' }}>
-                                <span>⚠️</span> {error}
-                            </div>
-                        )}
-                        {message && (
-                            <div className="alert alert-success" style={{ padding: '12px', backgroundColor: '#d1fae5', color: '#047857', borderRadius: '6px', marginBottom: '16px' }}>
-                                <span>✅</span> {message}
-                            </div>
-                        )}
-
-                        <div className="form-group">
-                            <label className="form-label">E-mail</label>
-                            <input
-                                type="email"
-                                name="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="seu@email.com"
-                                className="form-input"
-                                required
-                            />
-                        </div>
-
-                        <button
-                            type="submit"
-                            className="btn btn-primary btn-lg auth-submit"
-                            style={{ width: '100%' }}
-                            disabled={loading || message}
-                        >
-                            {loading ? 'Enviando...' : 'Enviar Link de Recuperação'}
-                        </button>
-                    </form>
-
-                    <div className="auth-footer" style={{ marginTop: '24px', textAlign: 'center' }}>
-                        <p>
-                            Lembrou a senha?{' '}
-                            <Link to="/login" className="auth-link" style={{ color: 'var(--color-primary)', fontWeight: '500' }}>Voltar ao login</Link>
-                        </p>
-                    </div>
+    if (sentTo) {
+        return (
+            <AuthFrame>
+                <div className="acs-done">
+                    <span className="acs-done__icon"><MailCheck size={28} strokeWidth={1.8} aria-hidden="true" /></span>
+                    <h1 className="acs-title">Confira seu e-mail</h1>
+                    <p className="acs-sub" role="status">
+                        Se existir uma conta com <strong>{sentTo}</strong>, mandamos um link para criar uma senha nova.
+                        O link vale por 1 hora.
+                    </p>
+                    <p className="acs-hint">Não chegou em alguns minutos? Olhe a caixa de spam ou de promoções.</p>
+                    <Link to="/login" className="acs-submit">Voltar para Entrar</Link>
+                    <button type="button" className="acs-secondary" onClick={() => { setSentTo(''); setEmail('') }}>
+                        Usar outro e-mail
+                    </button>
                 </div>
-            </div>
-        </div>
+            </AuthFrame>
+        )
+    }
+
+    return (
+        <AuthFrame>
+            <h1 className="acs-title">Esqueci a senha</h1>
+            <p className="acs-sub">Digite o e-mail da sua conta. Vamos mandar um link para você criar uma senha nova.</p>
+
+            <form onSubmit={handleSubmit} className="acs-form" noValidate>
+                <AuthAlert>{error}</AuthAlert>
+                <div className="acs-field">
+                    <label htmlFor="acs-email">E-mail</label>
+                    <input id="acs-email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none"
+                        spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)}
+                        placeholder="seu@email.com" disabled={loading} maxLength={254} />
+                </div>
+                <button type="submit" className="acs-submit" disabled={loading}>
+                    {loading ? 'Enviando...' : 'Enviar o link'}
+                </button>
+            </form>
+
+            <p className="acs-switch">
+                Lembrou a senha? <Link to="/login" className="acs-link">Entrar</Link>
+            </p>
+        </AuthFrame>
     )
 }

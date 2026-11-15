@@ -40,8 +40,8 @@
 
 /* DAS: o elemento marcante */
 .res-das {
-    display: grid;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
     gap: 6px;
     padding: 28px;
     border-radius: 22px;
@@ -97,6 +97,31 @@
     color: var(--res-ink);
     font-size: 0.8125rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.res-das__foot {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: auto 0 0;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* O rodapé desce até o fim do bloco (margin-top: auto); acima dele, no mínimo 18px */
+.res-das .res-chips { margin-bottom: 12px; }
+
+.res-das__foot dt {
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.res-das__foot dd {
+    margin: 2px 0 0;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: #fff;
     font-variant-numeric: tabular-nums;
 }
 

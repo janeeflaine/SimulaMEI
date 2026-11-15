@@ -9,6 +9,16 @@ const reais = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency
 const pct = (v) => `${(Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 const thousand = (v) => `R$ ${(Number(v) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} mil`
 const ACTIVITY = { comercio: 'Comércio', servico: 'Serviço', ambos: 'Comércio e serviço' }
+const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+
+// Próximo DAS: vence no dia 20 do mês seguinte ao do faturamento (dia de hoje em Brasília)
+function nextDas(now = new Date()) {
+    const [y, m, d] = now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split('-').map(Number)
+    let year = y, month = m // mês do vencimento (1-12)
+    if (d > 20) { month += 1; if (month > 12) { month = 1; year += 1 } }
+    const ref = month === 1 ? 12 : month - 1
+    return { date: `20/${String(month).padStart(2, '0')}/${year}`, ref: MONTHS[ref - 1] }
+}
 
 export default function Results() {
     const navigate = useNavigate()
@@ -34,6 +44,7 @@ export default function Results() {
     const tone = percent > 100 ? 'over' : percent >= (Number(limits.warningPercentage) || 70) ? 'near' : 'ok'
     const excess = result.excess?.kind
     const next = result.next
+    const due = nextDas()
 
     const notice = tone === 'ok'
         ? { title: 'Dentro do limite', text: `Com esse faturamento ainda cabem ${brl(left)} no ano.` }
@@ -61,7 +72,11 @@ export default function Results() {
                             {Number(breakdown.icms) > 0 && <li>ICMS {brl(breakdown.icms)}</li>}
                             {Number(breakdown.iss) > 0 && <li>ISS {brl(breakdown.iss)}</li>}
                         </ul>
-                        <p className="res-das__note">O valor é o mesmo todo mês e vence no dia 20.</p>
+                        <dl className="res-das__foot">
+                            <div><dt>Próximo vencimento</dt><dd>{due.date}</dd></div>
+                            <div><dt>Referente a</dt><dd>{due.ref}</dd></div>
+                        </dl>
+                        <p className="res-das__note">O valor é o mesmo todo mês e vence sempre no dia 20.</p>
                     </section>
 
                     <section className="res-limit" aria-labelledby="res-limit-title">
