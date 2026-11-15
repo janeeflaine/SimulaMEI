@@ -1,277 +1,347 @@
-import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import {
-    ShieldCheck, Building2, Lock, FileText, Database, UserCheck, Mail, ArrowLeft,
-    Scale, Globe, Clock, Trash2, MessageCircle, Bell
-} from 'lucide-react'
+import { Building2, Ban, FileCheck2, Trash2, Mail, FileText, MessageSquare } from 'lucide-react'
+import LegalDoc from '../components/legal/LegalDoc'
 import { COMPANY, CONTACT_EMAILS, LEGAL_LAST_UPDATED } from '../utils/legalInfo'
-import './LegalPages.css'
+
+// O texto das partes é o texto legal em vigor (versão LEGAL_VERSION).
+// Mudou o texto? Atualize LEGAL_LAST_UPDATED e LEGAL_VERSION em utils/legalInfo.js.
+// Quebra a linha depois do @ (e não no meio do domínio) em telas estreitas
+function MailText({ email }) {
+    const [user, domain] = email.split('@')
+    return <>{user}@<wbr />{domain}</>
+}
+
+const SECTIONS = [
+    {
+        id: 'introducao',
+        title: 'Introdução',
+        content: (
+            <>
+                <p>
+                    Esta Política explica, em linguagem simples, quais dados pessoais o {COMPANY.productName} trata, para quê, com quem compartilha, por quanto tempo guarda e como você exerce os seus direitos. Ela segue a Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018 — LGPD), o Marco Civil da Internet (Lei nº 12.965/2014), o Código de Defesa do Consumidor e as resoluções da Autoridade Nacional de Proteção de Dados (ANPD).
+                </p>
+                <p>
+                    Ela vale para o site {COMPANY.domain}, para a aplicação {COMPANY.productName} e para os canais de atendimento ligados a ela, inclusive o WhatsApp, quando você decide ativá-lo.
+                </p>
+            </>
+        ),
+    },
+    {
+        id: 'dados-que-coletamos',
+        title: 'Dados que coletamos',
+        content: (
+            <>
+                <ul>
+                    <li>
+                        <strong>Cadastro:</strong> nome, e-mail e senha (guardada só como código criptografado, com bcrypt; ninguém consegue ler a sua senha), além da data e da versão destes documentos que você aceitou ao criar a conta.
+                    </li>
+                    <li>
+                        <strong>Simulações:</strong> tipo de atividade (comércio, serviço ou os dois), faturamento informado e se você tem funcionário. Sem conta, a simulação é calculada e não fica guardada no nosso banco de dados; com conta, ela entra no seu histórico.
+                    </li>
+                    <li>
+                        <strong>Gestão financeira:</strong> lançamentos de receitas e despesas, contas a pagar, categorias, carteiras (pessoal ou do MEI, com CPF ou CNPJ quando você informa), cartões (apelido, bandeira, 4 últimos números, dias de fechamento e vencimento e limite), alertas que você configura e as imagens opcionais que você escolhe para cartões e carteiras. Não pedimos o número completo nem o código de segurança de cartões; por isso, não use como imagem a foto do seu cartão de verdade.
+                    </li>
+                    <li>
+                        <strong>Faturas enviadas:</strong> arquivos de fatura (PDF, imagem, CSV ou OFX) que você decide enviar, para que a inteligência artificial leia as compras.
+                    </li>
+                    <li>
+                        <strong>Assinatura e pagamento:</strong> plano escolhido, situação da assinatura e os códigos que identificam você e a sua assinatura no Stripe. Os dados do cartão de crédito são digitados na página do Stripe e não passam pelos nossos servidores.
+                    </li>
+                    <li>
+                        <strong>Dados técnicos e de segurança:</strong> endereço IP, data e hora de acesso, navegador (user agent), um identificador técnico do aparelho (criado no seu navegador a partir de características como idioma, tamanho da tela e fuso horário, somadas a um número aleatório) e o registro de eventos da conta, como entradas, saídas, tentativas de entrar com senha errada (com o e-mail digitado) e pedidos de senha nova.
+                    </li>
+                    <li>
+                        <strong>Canal WhatsApp (opcional):</strong> se você vincular o seu número, tratamos o número de telefone, a data em que você autorizou o contato e as mensagens de texto, áudio, imagem ou PDF que você enviar ao nosso número oficial.
+                    </li>
+                    <li>
+                        <strong>Atendimento:</strong> o que você nos escreve por e-mail ou pela página de contato, com o seu nome e e-mail.
+                    </li>
+                </ul>
+                <p>
+                    <strong>Armazenamento no navegador:</strong> não usamos cookies de publicidade nem ferramentas de rastreamento ou análise de terceiros. Usamos o armazenamento do seu navegador apenas para manter você conectado (código de sessão e nome, e-mail e plano para mostrar no topo do site), guardar o identificador técnico do aparelho, o plano escolhido antes do cadastro, preferências de avisos, o resultado da última simulação e o motivo de uma saída automática da conta. Na página de pagamento, o Stripe usa os próprios cookies, conforme a política dele.
+                </p>
+                <p>
+                    <strong>Dados sensíveis:</strong> não pedimos dados sensíveis (como saúde, religião ou opinião política). Evite escrevê-los nas descrições de lançamentos ou nas mensagens.
+                </p>
+            </>
+        ),
+    },
+    {
+        id: 'finalidades-e-bases-legais',
+        title: 'Finalidades e bases legais',
+        content: (
+            <>
+                <p>Cada uso dos seus dados tem uma finalidade definida e uma base legal prevista no art. 7º da LGPD:</p>
+                <ul>
+                    <li><strong>Criar e manter a sua conta, calcular simulações e oferecer as ferramentas financeiras e os alertas no site:</strong> execução de contrato (art. 7º, V).</li>
+                    <li><strong>Cobrar as assinaturas pelo Stripe e cumprir obrigações fiscais:</strong> execução de contrato (art. 7º, V) e cumprimento de obrigação legal (art. 7º, II).</li>
+                    <li><strong>Ler com inteligência artificial as faturas que você envia:</strong> execução de contrato (art. 7º, V), só quando você envia o arquivo.</li>
+                    <li><strong>Atendimento pelo WhatsApp e lembretes e alertas por lá:</strong> consentimento (art. 7º, I), dado quando você vincula o número e que pode ser retirado a qualquer momento.</li>
+                    <li><strong>Guardar os registros de acesso:</strong> cumprimento de obrigação legal do Marco Civil da Internet (art. 7º, II).</li>
+                    <li><strong>Proteger a conta (limite de tentativas de entrar, conferência de senha vazada, controle de aparelhos e registro de eventos) e evitar fraudes:</strong> legítimo interesse (art. 7º, IX), sempre limitado ao necessário para a sua segurança.</li>
+                    <li><strong>Responder ao seu contato e defender direitos em processos:</strong> execução de contrato e exercício regular de direitos (art. 7º, V e VI).</li>
+                </ul>
+                <p className="lgl-note">
+                    <strong>Não comercializamos dados:</strong> o {COMPANY.productName} e seu controlador não vendem, alugam ou cedem dados pessoais para fins de marketing ou publicidade de terceiros, e não enviamos propaganda.
+                </p>
+                <p>
+                    <strong>Inteligência artificial:</strong> a IA lê faturas, sugere categorias e entende os pedidos feitos pelo WhatsApp. Ela não decide nada sozinha: nada é gravado na sua conta sem a sua confirmação, e você pode pedir a revisão de qualquer resultado (art. 20 da LGPD).
+                </p>
+            </>
+        ),
+    },
+    {
+        id: 'compartilhamento',
+        title: 'Compartilhamento com terceiros',
+        content: (
+            <>
+                <p>Compartilhamos dados apenas com fornecedores que operam o serviço em nosso nome (operadores), na medida do necessário e só para essas finalidades:</p>
+                <ul>
+                    <li><strong>Vercel Inc.:</strong> hospedagem do site e do servidor.</li>
+                    <li><strong>Supabase Inc.:</strong> banco de dados onde as suas informações ficam guardadas.</li>
+                    <li><strong>Google LLC (API Gemini):</strong> leitura das faturas que você envia e, no canal WhatsApp, interpretação de mensagens de texto, áudio e imagem.</li>
+                    <li><strong>Stripe:</strong> cobrança e pagamento das assinaturas.</li>
+                    <li><strong>Resend:</strong> envio dos e-mails do site, como o link para criar uma senha nova.</li>
+                    <li><strong>Meta Platforms (WhatsApp Business):</strong> somente se você ativar o canal WhatsApp, para entregar e receber as mensagens.</li>
+                    <li><strong>Autoridades públicas:</strong> quando houver requisição legal ou ordem judicial.</li>
+                </ul>
+            </>
+        ),
+    },
+    {
+        id: 'transferencia-internacional',
+        title: 'Transferência internacional',
+        content: (
+            <>
+                <p>
+                    Os fornecedores acima guardam ou processam dados fora do Brasil, nos <strong>Estados Unidos</strong>:
+                </p>
+                <ul>
+                    <li><strong>Hospedagem (Vercel) e banco de dados (Supabase):</strong> todos os dados da conta, enquanto ela existir.</li>
+                    <li><strong>Inteligência artificial (Google):</strong> o arquivo da fatura e as mensagens do WhatsApp, só pelo tempo de processar o pedido.</li>
+                    <li><strong>Pagamentos (Stripe), e-mails (Resend) e WhatsApp (Meta):</strong> os dados necessários para cobrar, mandar o e-mail ou entregar a mensagem, pelos prazos de cada um.</li>
+                </ul>
+                <p>
+                    Essas transferências se apoiam nas garantias contratuais de proteção de dados desses fornecedores (art. 33, II, da LGPD) e são necessárias para prestar o serviço que você contratou (art. 33, IX, da LGPD). Todos os seus direitos desta Política valem também para esses dados, e você pode pedir mais informações pelo canal de privacidade.
+                </p>
+            </>
+        ),
+    },
+    {
+        id: 'por-quanto-tempo',
+        title: 'Por quanto tempo guardamos os dados',
+        content: (
+            <ul>
+                <li><strong>Dados da conta, financeiros e simulações:</strong> enquanto a sua conta existir. Quando você exclui a conta, são apagados de vez.</li>
+                <li><strong>Faturas enviadas:</strong> o arquivo é lido na hora e não fica guardado. Guardamos o nome, o tipo e o tamanho do arquivo e as compras lidas, que seguem o prazo dos dados da conta.</li>
+                <li><strong>Assinatura:</strong> os códigos do Stripe são apagados junto com a conta, e a assinatura é cancelada. O Stripe guarda os próprios registros das cobranças pelos prazos legais que valem para ele.</li>
+                <li><strong>Tentativas de entrar e pedidos de senha nova (e-mail e IP):</strong> até 1 dia. Saem antes quando você entra com a senha certa, cria uma senha nova ou exclui a conta.</li>
+                <li><strong>Link de senha nova:</strong> vale por 1 hora e só pode ser usado uma vez.</li>
+                <li><strong>Aparelhos conectados (IP, navegador e identificador técnico):</strong> enquanto a conta existir.</li>
+                <li><strong>Registros de acesso e de segurança (IP, data, hora e evento):</strong> no mínimo 6 meses, como exige o art. 15 do Marco Civil da Internet, inclusive depois da exclusão da conta, quando deixam de estar ligados a ela.</li>
+                <li><strong>Canal WhatsApp:</strong> o número e a data da autorização ficam guardados enquanto o canal estiver ativo e saem ao desconectar o número ou excluir a conta. O conteúdo das mensagens não é armazenado: um pedido entendido fica guardado no máximo 30 minutos, esperando a sua confirmação, e o identificador técnico de cada mensagem recebida, por 30 dias, para evitar processamento em dobro e abusos. Áudios e imagens não ficam guardados como arquivo.</li>
+                <li><strong>Atendimento:</strong> as mensagens que você nos envia ficam guardadas pelo tempo necessário para responder e manter o histórico do seu pedido.</li>
+            </ul>
+        ),
+    },
+    {
+        id: 'seguranca',
+        title: 'Segurança',
+        content: (
+            <>
+                <ul>
+                    <li>Comunicação criptografada (HTTPS) em todo o site;</li>
+                    <li>Senhas guardadas só como código bcrypt;</li>
+                    <li>Senhas que aparecem em vazamentos conhecidos são recusadas. A conferência é feita no serviço Have I Been Pwned, que recebe só os 5 primeiros caracteres de um código da senha, nunca a senha nem o seu e-mail;</li>
+                    <li>Limite de tentativas de entrar com senha errada, por e-mail e por rede;</li>
+                    <li>Link de senha nova de uso único e com prazo;</li>
+                    <li>Cada conta só acessa os próprios dados, conferido em cada operação;</li>
+                    <li>Conta bloqueada ou excluída perde o acesso na hora, em todos os aparelhos;</li>
+                    <li>Opção de um aparelho por vez, conforme o plano: ao entrar num aparelho novo, os outros saem da conta;</li>
+                    <li>Códigos de vínculo do WhatsApp guardados só como código criptografado e válidos por 15 minutos;</li>
+                    <li>Acesso interno restrito à administração do site, apenas para suporte, segurança e cobrança;</li>
+                    <li>Registro de eventos de segurança para auditoria.</li>
+                </ul>
+                <p>
+                    Se houver um incidente de segurança que possa trazer risco ou dano relevante, avisaremos os titulares afetados e a Autoridade Nacional de Proteção de Dados (ANPD), como determinam o art. 48 da LGPD e a Resolução CD/ANPD nº 15/2024.
+                </p>
+            </>
+        ),
+    },
+    {
+        id: 'canal-whatsapp',
+        title: 'Canal WhatsApp',
+        content: (
+            <>
+                <p>
+                    O atendimento pelo WhatsApp é opcional e só começa quando você vincula o seu número na área da conta. Por ele, você pode registrar movimentações, consultar e marcar contas a pagar e receber lembretes de vencimento e alertas do MEI (como limite de faturamento, DAS e declaração anual).
+                </p>
+                <ul>
+                    <li>O número é vinculado por um código de uso único, gerado na sua conta e enviado do seu próprio WhatsApp;</li>
+                    <li>O assistente usa inteligência artificial (Google Gemini) apenas para entender o seu pedido e responde somente sobre as suas finanças no {COMPANY.productName};</li>
+                    <li>Nenhum lançamento é gravado sem a sua confirmação no próprio WhatsApp;</li>
+                    <li>Você pode desligar o lembrete diário enviando <strong>PARAR</strong> e desconectar o número enviando <strong>DESVINCULAR</strong> ou pela sua conta;</li>
+                    <li>As mensagens passam pela infraestrutura da Meta (WhatsApp Business) e seguem também a política de privacidade do WhatsApp;</li>
+                    <li>Áudios e imagens são usados apenas para entender o seu pedido e não ficam guardados como arquivo.</li>
+                </ul>
+            </>
+        ),
+    },
+    {
+        id: 'seus-direitos',
+        title: 'Seus direitos (art. 18 da LGPD)',
+        content: (
+            <>
+                <ul>
+                    <li>Confirmação de que tratamos os seus dados e acesso a eles;</li>
+                    <li>Correção de dados incompletos, errados ou desatualizados;</li>
+                    <li>Anonimização, bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em desacordo com a LGPD;</li>
+                    <li>Portabilidade dos dados a outro fornecedor;</li>
+                    <li>Eliminação dos dados tratados com o seu consentimento e retirada desse consentimento (por exemplo, desconectando o WhatsApp);</li>
+                    <li>Informação sobre com quem compartilhamos os seus dados e sobre a possibilidade de não dar o consentimento e o que acontece nesse caso;</li>
+                    <li>Oposição a um tratamento feito com base no legítimo interesse, quando ele não seguir a LGPD;</li>
+                    <li>Revisão de resultados da inteligência artificial (art. 20 da LGPD);</li>
+                    <li>Petição à ANPD, se entender que os seus direitos não foram atendidos.</li>
+                </ul>
+                <p>
+                    Para exercer qualquer direito, escreva para{' '}
+                    <a className="lgl-link" href={`mailto:${CONTACT_EMAILS.privacidade}`}>{CONTACT_EMAILS.privacidade}</a>{' '}
+                    a partir do e-mail cadastrado na sua conta. Podemos pedir informações para confirmar que é você antes de atender. Respondemos em até 15 dias, como prevê o art. 19 da LGPD. A exclusão da conta você também faz sozinho, em Minha conta.
+                </p>
+            </>
+        ),
+    },
+    {
+        id: 'exclusao',
+        title: 'Exclusão da conta e dos dados',
+        content: (
+            <>
+                <p>
+                    Você pode excluir a sua conta a qualquer momento em <strong>Minha conta &gt; Excluir conta</strong>, ou pedir a exclusão pelo e-mail de privacidade. Ao excluir, apagamos de vez a conta, as carteiras, os lançamentos, os cartões, as faturas, as categorias, os alertas, as simulações, o vínculo com o WhatsApp e as tentativas de entrar ligadas ao seu e-mail, e cancelamos a assinatura no Stripe.
+                </p>
+                <p>
+                    Ficam apenas os registros de acesso e de segurança exigidos pelo Marco Civil da Internet, sem ligação com a conta, e os registros de cobrança que o próprio Stripe guarda. O passo a passo está na página{' '}
+                    <Link to="/exclusao-de-dados" className="lgl-link">Exclusão de Dados</Link>.
+                </p>
+            </>
+        ),
+    },
+    {
+        id: 'menores-de-idade',
+        title: 'Menores de idade',
+        content: (
+            <p>
+                O {COMPANY.productName} é destinado a maiores de 18 anos. Não coletamos de propósito dados de crianças ou adolescentes; se identificarmos um cadastro assim, ele será excluído.
+            </p>
+        ),
+    },
+    {
+        id: 'canal-de-privacidade',
+        title: 'Canal de privacidade',
+        content: (
+            <>
+                <p>
+                    Como agente de tratamento de pequeno porte, o controlador não é obrigado a indicar um encarregado de dados (Resolução CD/ANPD nº 2/2022, art. 11) e mantém este canal de comunicação dedicado aos titulares e à ANPD:
+                </p>
+                <dl className="lgl-facts">
+                    <div className="is-wide">
+                        <dt>Controlador</dt>
+                        <dd>{COMPANY.legalName}</dd>
+                    </div>
+                    <div>
+                        <dt>CNPJ</dt>
+                        <dd>{COMPANY.cnpj}</dd>
+                    </div>
+                    <div>
+                        <dt>Telefone</dt>
+                        <dd><a className="lgl-link" href={COMPANY.phoneHref}>{COMPANY.phone}</a></dd>
+                    </div>
+                    <div className="is-wide">
+                        <dt>Endereço</dt>
+                        <dd>{COMPANY.address}</dd>
+                    </div>
+                    <div>
+                        <dt>Privacidade e LGPD</dt>
+                        <dd><a className="lgl-link" href={`mailto:${CONTACT_EMAILS.privacidade}`}>{CONTACT_EMAILS.privacidade}</a></dd>
+                    </div>
+                    <div>
+                        <dt>Atendimento geral</dt>
+                        <dd><a className="lgl-link" href={`mailto:${CONTACT_EMAILS.contato}`}>{CONTACT_EMAILS.contato}</a></dd>
+                    </div>
+                    <div className="is-wide">
+                        <dt>Página de atendimento</dt>
+                        <dd><Link to="/contato" className="lgl-link">Fale com a gente</Link></dd>
+                    </div>
+                </dl>
+            </>
+        ),
+    },
+    {
+        id: 'alteracoes',
+        title: 'Alterações desta política',
+        content: (
+            <p>
+                Podemos atualizar esta Política quando o serviço ou a lei mudarem. A data da última atualização fica no topo desta página. Mudanças relevantes, como um novo uso dos dados ou um novo fornecedor, serão avisadas por e-mail aos usuários cadastrados antes de valerem.
+            </p>
+        ),
+    },
+]
+
+const SUMMARY = {
+    title: 'Em poucas palavras',
+    items: [
+        {
+            icon: Ban,
+            title: 'Não vendemos seus dados',
+            text: 'Nada é vendido, alugado ou cedido para publicidade de ninguém.',
+        },
+        {
+            icon: FileCheck2,
+            title: 'Você decide o que envia',
+            text: 'Faturas e WhatsApp são opcionais. Arquivos e áudios são lidos e não ficam guardados.',
+        },
+        {
+            icon: Trash2,
+            title: 'Pode apagar quando quiser',
+            text: 'Em Minha conta você exclui a conta e os dados saem de vez.',
+        },
+        {
+            icon: Mail,
+            title: 'Fale com quem cuida disso',
+            text: <MailText email={CONTACT_EMAILS.privacidade} />,
+        },
+    ],
+    note: 'Este resumo ajuda na leitura. O que vale é o texto completo abaixo.',
+}
+
+const RELATED = [
+    { to: '/termos-de-servico', icon: FileText, title: 'Termos de serviço', text: 'As regras de uso do site e das assinaturas.' },
+    { to: '/exclusao-de-dados', icon: Trash2, title: 'Exclusão de dados', text: 'Como apagar a sua conta e tudo o que está nela.' },
+    { to: '/contato', icon: MessageSquare, title: 'Fale com a gente', text: 'Dúvidas, suporte e pedidos sobre os seus dados.' },
+]
 
 export default function PrivacyPolicy() {
-    useEffect(() => {
-        window.scrollTo(0, 0)
-    }, [])
-
     return (
-        <div className="legal-page-container">
-            <div className="legal-page-content">
-                {/* Header */}
-                <div className="legal-header">
-                    <div className="legal-badge">
-                        <ShieldCheck size={16} />
-                        Segurança & Conformidade LGPD
-                    </div>
-                    <h1>Política de Privacidade</h1>
-                    <p>
-                        Como o {COMPANY.productName} coleta, usa, compartilha e protege os seus dados pessoais.
-                    </p>
-                    <div className="legal-updated">
-                        Última atualização: {LEGAL_LAST_UPDATED}
-                    </div>
-                </div>
-
-                {/* Identificação do Controlador */}
-                <div className="legal-entity-card">
-                    <div className="legal-entity-icon">
-                        <Building2 size={24} />
-                    </div>
-                    <div className="legal-entity-body">
-                        <h3>Identificação do Controlador</h3>
+        <LegalDoc
+            title="Política de privacidade"
+            intro={`Como o ${COMPANY.productName} coleta, usa, compartilha e protege os seus dados pessoais.`}
+            updated={LEGAL_LAST_UPDATED}
+            summary={SUMMARY}
+            entity={(
+                <>
+                    <span className="lgl-entity__icon" aria-hidden="true"><Building2 size={20} /></span>
+                    <div>
+                        <h3>Quem é o controlador dos dados</h3>
                         <p>
                             O <strong>{COMPANY.productName}</strong> é um produto pertencente e operado por{' '}
                             <strong>{COMPANY.legalName}</strong>, {COMPANY.legalNature} inscrito no CNPJ sob o{' '}
                             <strong>nº {COMPANY.cnpj}</strong>, com sede em {COMPANY.address}, que atua como controlador dos dados pessoais tratados na plataforma.
                         </p>
                     </div>
-                </div>
-
-                {/* Document Body */}
-                <div className="legal-document-card">
-                    <section className="legal-section">
-                        <h2>
-                            <FileText size={20} className="text-emerald-500" />
-                            1. Introdução
-                        </h2>
-                        <p>
-                            Esta Política explica, de forma clara e acessível, como tratamos dados pessoais, em observância à Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018 — LGPD), ao Marco Civil da Internet (Lei nº 12.965/2014) e ao Código de Defesa do Consumidor.
-                        </p>
-                        <p>
-                            Ela se aplica ao site {COMPANY.domain}, à aplicação {COMPANY.productName} e aos canais de atendimento vinculados a ela, inclusive o atendimento por WhatsApp, quando ativado pelo usuário.
-                        </p>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Database size={20} className="text-emerald-500" />
-                            2. Dados que Coletamos
-                        </h2>
-                        <ul>
-                            <li>
-                                <strong>Dados de cadastro:</strong> nome, e-mail e senha (armazenada apenas de forma criptografada, com hash bcrypt).
-                            </li>
-                            <li>
-                                <strong>Dados de simulação:</strong> tipo de atividade (comércio, serviço ou ambos), faturamento informado e se você possui funcionário. A simulação pode ser feita sem cadastro.
-                            </li>
-                            <li>
-                                <strong>Dados de gestão financeira:</strong> lançamentos de receitas e despesas, contas a pagar, categorias, carteiras (PF/PJ, com CNPJ quando informado) e cartões cadastrados (apelido, bandeira, 4 últimos dígitos, dias de fechamento e vencimento e limite) e as imagens opcionais que você escolher para personalizar cartões e carteiras. Não solicitamos o número completo nem o código de segurança de cartões — por isso, não use como imagem a foto do seu cartão real.
-                            </li>
-                            <li>
-                                <strong>Faturas enviadas:</strong> arquivos de fatura (PDF, imagem, CSV ou OFX) que você decide enviar, para extração automática dos itens por inteligência artificial.
-                            </li>
-                            <li>
-                                <strong>Dados de pagamento:</strong> nome e CPF do pagador em pagamentos via Pix, e o histórico das suas assinaturas. Dados de cartão de crédito são digitados diretamente no ambiente do processador de pagamento e não passam pelos nossos servidores.
-                            </li>
-                            <li>
-                                <strong>Dados técnicos e de segurança:</strong> endereço IP, data e hora de acesso, navegador (user agent) e um identificador técnico do dispositivo, usados para manter a sessão segura e impedir acessos simultâneos indevidos.
-                            </li>
-                            <li>
-                                <strong>Dados do canal WhatsApp (opcional):</strong> se você vincular seu número, tratamos o número de telefone, a data em que você autorizou o contato e as mensagens de texto, áudio, imagem ou PDF que você enviar ao nosso número oficial.
-                            </li>
-                        </ul>
-                        <p>
-                            <strong>Armazenamento no navegador:</strong> não utilizamos cookies de publicidade nem ferramentas de rastreamento de terceiros. Usamos o armazenamento local do navegador apenas para manter você conectado (token de sessão), guardar preferências de tela, o identificador técnico de segurança e o resultado da última simulação.
-                        </p>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Scale size={20} className="text-emerald-500" />
-                            3. Finalidades e Bases Legais
-                        </h2>
-                        <p>Cada tratamento tem uma finalidade definida e uma base legal prevista no art. 7º da LGPD:</p>
-                        <ul>
-                            <li><strong>Criar e manter sua conta, calcular simulações e oferecer as ferramentas financeiras:</strong> execução de contrato (art. 7º, V).</li>
-                            <li><strong>Processar pagamentos e emitir cobranças das assinaturas:</strong> execução de contrato (art. 7º, V) e cumprimento de obrigação legal (art. 7º, II).</li>
-                            <li><strong>Ler faturas enviadas por você com inteligência artificial:</strong> execução de contrato (art. 7º, V), mediante sua ação de envio.</li>
-                            <li><strong>Segurança da conta, prevenção a fraudes e registros de acesso:</strong> legítimo interesse (art. 7º, IX) e cumprimento de obrigação legal do Marco Civil da Internet (art. 7º, II).</li>
-                            <li><strong>Enviar alertas e lembretes (por exemplo, vencimento de contas e do DAS):</strong> execução de contrato (art. 7º, V); no WhatsApp, somente após o seu consentimento (art. 7º, I).</li>
-                            <li><strong>Atender solicitações e exercer direitos em processos:</strong> execução de contrato e exercício regular de direitos (art. 7º, V e VI).</li>
-                        </ul>
-                        <div className="legal-highlight-box">
-                            <strong>Não comercializamos dados:</strong> o {COMPANY.productName} e seu controlador não vendem, alugam ou cedem dados pessoais para fins de marketing ou publicidade de terceiros.
-                        </div>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Building2 size={20} className="text-emerald-500" />
-                            4. Compartilhamento com Terceiros
-                        </h2>
-                        <p>Compartilhamos dados apenas com fornecedores que operam a plataforma em nosso nome (operadores), na medida necessária:</p>
-                        <ul>
-                            <li><strong>Vercel Inc.:</strong> hospedagem do site e da aplicação.</li>
-                            <li><strong>Supabase Inc.:</strong> banco de dados onde suas informações ficam armazenadas.</li>
-                            <li><strong>Google (Gemini API):</strong> leitura automática das faturas que você envia e, no canal WhatsApp, interpretação de mensagens de texto, áudio e imagem.</li>
-                            <li><strong>Stripe e Mercado Pago:</strong> processamento de pagamentos de assinaturas.</li>
-                            <li><strong>Provedor de e-mail:</strong> envio de mensagens transacionais, como a recuperação de senha.</li>
-                            <li><strong>Meta Platforms (WhatsApp Business):</strong> somente se você ativar o canal WhatsApp, para entrega e recebimento das mensagens.</li>
-                            <li><strong>Autoridades públicas:</strong> quando houver requisição legal ou ordem judicial.</li>
-                        </ul>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Globe size={20} className="text-emerald-500" />
-                            5. Transferência Internacional
-                        </h2>
-                        <p>
-                            Parte dos fornecedores acima mantém servidores fora do Brasil; em especial, nossa hospedagem e nosso banco de dados ficam nos Estados Unidos. Essas transferências ocorrem nos termos do art. 33 da LGPD, com base nas garantias contratuais de proteção de dados oferecidas por esses fornecedores, e são necessárias para a prestação do serviço que você contratou.
-                        </p>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Clock size={20} className="text-emerald-500" />
-                            6. Por Quanto Tempo Guardamos os Dados
-                        </h2>
-                        <ul>
-                            <li><strong>Dados da conta e financeiros:</strong> enquanto sua conta estiver ativa. Após a exclusão da conta, são apagados definitivamente.</li>
-                            <li><strong>Registros de acesso e de segurança (IP, data, hora e evento):</strong> no mínimo 6 meses, conforme exige o art. 15 do Marco Civil da Internet, mesmo após a exclusão da conta.</li>
-                            <li><strong>Registros de pagamentos:</strong> apagados da nossa base junto com a conta. Os processadores de pagamento (Stripe e Mercado Pago) mantêm os próprios registros das transações pelos prazos legais que se aplicam a eles.</li>
-                            <li><strong>Canal WhatsApp:</strong> o número vinculado e a data da autorização ficam guardados enquanto o canal estiver ativo e são apagados ao desconectar o número ou excluir a conta. O conteúdo das mensagens não é armazenado; guardamos por 30 dias apenas o identificador técnico de cada mensagem recebida, para evitar processamento em duplicidade e abusos.</li>
-                            <li><strong>Arquivos de fatura e mensagens de áudio:</strong> são processados em memória e não ficam armazenados como arquivo. Guardamos apenas o nome e o tamanho do arquivo e os dados extraídos dele (itens, valores e datas), que seguem o prazo dos dados da conta.</li>
-                        </ul>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Lock size={20} className="text-emerald-500" />
-                            7. Segurança
-                        </h2>
-                        <ul>
-                            <li>Comunicação criptografada por HTTPS;</li>
-                            <li>Senhas armazenadas somente como hash bcrypt;</li>
-                            <li>Acesso aos dados restrito por conta, com verificação de propriedade em cada operação;</li>
-                            <li>Controle de sessão que encerra acessos antigos ao detectar login em novo dispositivo;</li>
-                            <li>Registro de eventos de segurança para auditoria.</li>
-                        </ul>
-                        <p>
-                            Em caso de incidente de segurança que possa gerar risco ou dano relevante, comunicaremos os titulares afetados e a Autoridade Nacional de Proteção de Dados (ANPD), conforme o art. 48 da LGPD.
-                        </p>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <MessageCircle size={20} className="text-emerald-500" />
-                            8. Canal WhatsApp
-                        </h2>
-                        <p>
-                            O atendimento pelo WhatsApp é opcional e só é ativado quando você vincula seu número na área da conta. Por ele, você pode registrar movimentações, consultar contas a vencer e marcar contas como pagas, e receber lembretes de vencimento.
-                        </p>
-                        <ul>
-                            <li>O número é vinculado por um código de uso único, gerado na sua conta e enviado do seu próprio WhatsApp;</li>
-                            <li>O assistente usa inteligência artificial (Google Gemini) apenas para entender o seu pedido e responde somente sobre as suas finanças no {COMPANY.productName};</li>
-                            <li>Nenhum lançamento é gravado sem a sua confirmação no próprio WhatsApp;</li>
-                            <li>Você pode desligar o lembrete diário enviando <strong>PARAR</strong> e desconectar o número enviando <strong>DESVINCULAR</strong> ou pela sua conta;</li>
-                            <li>As mensagens trafegam pela infraestrutura da Meta (WhatsApp Business) e estão sujeitas também à política de privacidade do WhatsApp;</li>
-                            <li>Áudios e imagens são usados apenas para interpretar o seu pedido e não são armazenados como arquivo.</li>
-                        </ul>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <UserCheck size={20} className="text-emerald-500" />
-                            9. Seus Direitos (art. 18 da LGPD)
-                        </h2>
-                        <ul>
-                            <li>Confirmação da existência de tratamento e acesso aos seus dados;</li>
-                            <li>Correção de dados incompletos, inexatos ou desatualizados;</li>
-                            <li>Anonimização, bloqueio ou eliminação de dados desnecessários ou excessivos;</li>
-                            <li>Portabilidade dos dados a outro fornecedor;</li>
-                            <li>Eliminação dos dados tratados com base no consentimento e revogação desse consentimento;</li>
-                            <li>Informação sobre com quem compartilhamos seus dados;</li>
-                            <li>Petição à ANPD, caso entenda que seus direitos não foram atendidos.</li>
-                        </ul>
-                        <p>
-                            Para exercer qualquer direito, escreva para <strong>{CONTACT_EMAILS.privacidade}</strong> a partir do e-mail cadastrado na sua conta. Poderemos pedir informações adicionais para confirmar a sua identidade antes de atender ao pedido.
-                        </p>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Trash2 size={20} className="text-emerald-500" />
-                            10. Exclusão da Conta e dos Dados
-                        </h2>
-                        <p>
-                            Você pode pedir a exclusão definitiva da sua conta e dos seus dados a qualquer momento. O passo a passo está na página{' '}
-                            <Link to="/exclusao-de-dados" style={{ color: 'var(--color-primary-dark)', fontWeight: 600 }}>Exclusão de Dados</Link>.
-                        </p>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <ShieldCheck size={20} className="text-emerald-500" />
-                            11. Menores de Idade
-                        </h2>
-                        <p>
-                            O {COMPANY.productName} é destinado a maiores de 18 anos. Não coletamos intencionalmente dados de crianças ou adolescentes; se identificarmos esse tipo de cadastro, ele será excluído.
-                        </p>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Mail size={20} className="text-emerald-500" />
-                            12. Canal de Privacidade
-                        </h2>
-                        <p>
-                            Como agente de tratamento de pequeno porte, nos termos da Resolução CD/ANPD nº 2/2022, o controlador disponibiliza um canal de comunicação dedicado para titulares e para a ANPD:
-                        </p>
-                        <div className="legal-highlight-box">
-                            <ul style={{ margin: '4px 0 0 16px' }}>
-                                <li><strong>Controlador:</strong> {COMPANY.legalName}</li>
-                                <li><strong>CNPJ:</strong> {COMPANY.cnpj}</li>
-                                <li><strong>Endereço:</strong> {COMPANY.address}</li>
-                                <li><strong>Telefone:</strong> {COMPANY.phone}</li>
-                                <li><strong>Privacidade e LGPD:</strong> {CONTACT_EMAILS.privacidade}</li>
-                                <li><strong>Atendimento geral:</strong> {CONTACT_EMAILS.contato}</li>
-                                <li><strong>Página de atendimento:</strong> <Link to="/contato" style={{ color: 'var(--color-primary-dark)' }}>Fale Conosco</Link></li>
-                            </ul>
-                        </div>
-                    </section>
-
-                    <section className="legal-section">
-                        <h2>
-                            <Bell size={20} className="text-emerald-500" />
-                            13. Alterações desta Política
-                        </h2>
-                        <p>
-                            Podemos atualizar esta Política para refletir mudanças nos serviços ou na legislação. A data da última atualização fica no topo desta página, e alterações relevantes serão comunicadas aos usuários cadastrados com antecedência.
-                        </p>
-                    </section>
-
-                    <div className="legal-action-links">
-                        <Link to="/" className="btn btn-secondary btn-sm">
-                            <ArrowLeft size={16} /> Voltar para o Início
-                        </Link>
-                        <Link to="/termos-de-servico" className="btn btn-secondary btn-sm">
-                            Ler Termos de Serviço
-                        </Link>
-                        <Link to="/contato" className="btn btn-primary btn-sm">
-                            Falar com Suporte
-                        </Link>
-                    </div>
-                </div>
-            </div>
-        </div>
+                </>
+            )}
+            sections={SECTIONS}
+            related={RELATED}
+        />
     )
 }
