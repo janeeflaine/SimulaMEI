@@ -1009,78 +1009,102 @@ router.get('/reports', async (req, res) => {
 })
 
 // ========== AUDIT LOGS ==========
+const { detailOf } = require('../utils/auditView')
+const LOG_LEVELS = ['INFO', 'WARN', 'ERROR', 'CRITICAL']
+const SUSPICIOUS_SQL = `(al.level IN ('WARN','ERROR','CRITICAL') OR al.event_type IN ('CONCURRENT_LOGIN_PREVENTED','USER_LOGIN_FAILED','USER_BLOCKED','USER_LOGIN_BLOCKED','USER_LOGIN_THROTTLED','ADMIN_LOGIN_DENIED'))`
+// Conta afetada pela ação (quando o registro aponta para uma conta): só o nome
+// (CASE: o banco não garante a ordem do AND, e "abc"::int daria erro)
+const TARGET_JOIN = `LEFT JOIN users t ON al.resource_type = 'USER' AND t.id = CASE WHEN al.resource_id ~ '^[0-9]{1,9}$' THEN al.resource_id::int END`
+// "timestamp" é gravado sem fuso (no fuso do banco): o dia escolhido vale no horário de Brasília
+const DAY_START = (n) => `((($${n}::date)::timestamp AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE current_setting('TimeZone'))`
+const DAY_END = (n) => `(((($${n}::date) + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE current_setting('TimeZone'))`
+const isDay = (v) => {
+    if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+    const d = new Date(`${v}T12:00:00Z`)
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+}
+const toInt = (v, def, min, max) => {
+    const n = typeof v === 'string' && /^[0-9]{1,6}$/.test(v) ? Number(v) : def
+    return Math.min(max, Math.max(min, n))
+}
 
 /**
  * GET /api/admin/logs
- * Query params: level, event_type, user_id, search, from, to, page, limit, suspicious
+ * Filtros: level, event_type, user_id, search (nome, e-mail, evento ou IP),
+ * from/to (dias AAAA-MM-DD no horário de Brasília), suspicious, page, limit.
+ * A lista traz só o necessário para a tabela; o resto vem em /logs/:id.
  */
 router.get('/logs', async (req, res) => {
     try {
-        const {
-            level,
-            event_type,
-            user_id,
-            search,
-            from,
-            to,
-            suspicious,
-            page = 1,
-            limit = 50,
-        } = req.query
-
+        const q = req.query
+        const one = (v) => (typeof v === 'string' ? v : '')
         const conditions = []
         const params = []
-        let idx = 1
+        const add = (sql, value) => { params.push(value); conditions.push(sql.replace('?', `$${params.length}`)) }
 
-        if (level)      { conditions.push(`al.level = $${idx++}`);              params.push(level) }
-        if (event_type) { conditions.push(`al.event_type = $${idx++}`);         params.push(event_type) }
-        if (user_id)    { conditions.push(`al.user_id = $${idx++}`);            params.push(parseInt(user_id)) }
-        if (from)       { conditions.push(`al.timestamp >= $${idx++}`);         params.push(new Date(from)) }
-        if (to)         { conditions.push(`al.timestamp <= $${idx++}`);         params.push(new Date(to)) }
-
-        if (suspicious === 'true') {
-            conditions.push(`(al.level IN ('WARN','ERROR','CRITICAL') OR al.event_type IN ('CONCURRENT_LOGIN_PREVENTED','USER_LOGIN_FAILED','USER_BLOCKED','USER_LOGIN_BLOCKED'))`)
+        const level = one(q.level)
+        if (level) {
+            if (!LOG_LEVELS.includes(level)) return res.status(400).json({ message: 'Nível inválido.' })
+            add('al.level = ?', level)
         }
+        const eventType = one(q.event_type)
+        if (eventType) {
+            if (!/^[A-Z_]{1,60}$/.test(eventType)) return res.status(400).json({ message: 'Evento inválido.' })
+            add('al.event_type = ?', eventType)
+        }
+        if (one(q.user_id)) {
+            const uid = toUserId(one(q.user_id))
+            if (!uid) return res.status(400).json({ message: 'Conta inválida.' })
+            add('al.user_id = ?', uid)
+        }
+        for (const [key, build] of [['from', DAY_START], ['to', DAY_END]]) {
+            const v = one(q[key])
+            if (!v) continue
+            if (!isDay(v)) return res.status(400).json({ message: 'Data inválida. Use o formato AAAA-MM-DD.' })
+            params.push(v)
+            conditions.push(`al.timestamp ${key === 'from' ? '>=' : '<'} ${build(params.length)}`)
+        }
+        if (one(q.from) && one(q.to) && one(q.from) > one(q.to)) {
+            return res.status(400).json({ message: 'A data inicial é depois da final.' })
+        }
+        if (one(q.suspicious) === 'true') conditions.push(SUSPICIOUS_SQL)
 
+        const search = one(q.search).trim().slice(0, 100)
         if (search) {
-            conditions.push(`(u.name ILIKE $${idx} OR u.email ILIKE $${idx} OR al.event_type ILIKE $${idx} OR al.ip_address ILIKE $${idx})`)
-            params.push(`%${search}%`)
-            idx++
+            // % e _ digitados valem como texto, não como curinga
+            params.push(`%${search.replace(/[\\%_]/g, (c) => '\\' + c)}%`)
+            const n = params.length
+            conditions.push(`(u.name ILIKE $${n} OR u.email ILIKE $${n} OR al.event_type ILIKE $${n} OR al.ip_address ILIKE $${n})`)
         }
 
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-
-        const pageNum  = Math.max(1, parseInt(page))
-        const pageSize = Math.min(200, Math.max(1, parseInt(limit)))
-        const offset   = (pageNum - 1) * pageSize
+        const pageSize = toInt(one(q.limit), 50, 1, 200)
+        const pageNum = toInt(one(q.page), 1, 1, 100000)
+        const offset = (pageNum - 1) * pageSize
 
         const countResult = await pool.query(
-            `SELECT COUNT(*) as total FROM audit_logs al LEFT JOIN users u ON al.user_id = u.id ${where}`,
+            `SELECT COUNT(*)::int AS total FROM audit_logs al LEFT JOIN users u ON al.user_id = u.id ${where}`,
             params
         )
-        const total = parseInt(countResult.rows[0].total)
-
-        params.push(pageSize)
-        params.push(offset)
+        const total = Number(countResult.rows[0]?.total) || 0
 
         const logsResult = await pool.query(`
-            SELECT al.id, al.timestamp, al.level, al.event_type,
-                   al.user_id, al.user_role, al.ip_address, al.user_agent,
-                   al.device_fingerprint, al.resource_type, al.resource_id,
-                   al.old_value, al.new_value, al.metadata,
-                   u.name as user_name, u.email as user_email
+            SELECT al.id, al.timestamp, al.level, al.event_type, al.user_id, al.user_role,
+                   al.ip_address, al.resource_type, al.resource_id,
+                   u.name AS user_name, t.name AS target_name
             FROM audit_logs al
             LEFT JOIN users u ON al.user_id = u.id
+            ${TARGET_JOIN}
             ${where}
-            ORDER BY al.timestamp DESC
-            LIMIT $${idx++} OFFSET $${idx++}
-        `, params)
+            ORDER BY al.timestamp DESC, al.id DESC
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `, [...params, pageSize, offset])
 
         res.json({
-            logs:  logsResult.rows,
+            logs: logsResult.rows,
             total,
-            page:  pageNum,
-            pages: Math.ceil(total / pageSize),
+            page: pageNum,
+            pages: Math.max(1, Math.ceil(total / pageSize)),
         })
     } catch (error) {
         console.error('Logs error:', error)
@@ -1090,7 +1114,7 @@ router.get('/logs', async (req, res) => {
 
 /**
  * GET /api/admin/logs/event-types
- * Returns distinct event_types for filter dropdown
+ * Tipos de evento que existem nos registros (para o filtro)
  */
 router.get('/logs/event-types', async (req, res) => {
     try {
@@ -1105,23 +1129,54 @@ router.get('/logs/event-types', async (req, res) => {
 
 /**
  * GET /api/admin/logs/sessions
- * Returns active sessions (for monitoring who is online)
+ * Entradas dos últimos 7 dias (o tempo que um login vale): a última de cada conta
  */
 router.get('/logs/sessions', async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT us.id, us.user_id, us.ip_address, us.user_agent,
-                   us.device_fingerprint, us.created_at, us.last_activity,
-                   u.name as user_name, u.email as user_email
+                   us.created_at, u.name AS user_name, u.email AS user_email
             FROM user_sessions us
-            LEFT JOIN users u ON us.user_id = u.id
-            WHERE us.is_active = 1
-            ORDER BY us.last_activity DESC
+            JOIN users u ON us.user_id = u.id AND u."deletedAt" IS NULL
+            WHERE us.is_active = 1 AND us.created_at >= NOW() - INTERVAL '7 days'
+            ORDER BY us.created_at DESC
             LIMIT 100
         `)
         res.json(result.rows)
     } catch (error) {
+        console.error('Sessions error:', error)
         res.status(500).json({ message: 'Erro ao carregar sessões' })
+    }
+})
+
+/**
+ * GET /api/admin/logs/:id
+ * Um registro completo, com segredos e dados pessoais antigos escondidos
+ */
+router.get('/logs/:id', async (req, res) => {
+    try {
+        const id = toUserId(req.params.id)
+        if (!id) return res.status(400).json({ message: 'Registro inválido.' })
+        const { rows: [row] } = await pool.query(`
+            SELECT al.*, u.name AS user_name, u.email AS user_email, t.name AS target_name
+            FROM audit_logs al
+            LEFT JOIN users u ON al.user_id = u.id
+            ${TARGET_JOIN}
+            WHERE al.id = $1
+        `, [id])
+        if (!row) return res.status(404).json({ message: 'Registro não encontrado.' })
+        const detail = detailOf(row)
+        // Plano aparece pelo nome, não pelo número interno
+        const sides = [detail.old_value, detail.new_value].filter((v) => v && typeof v === 'object' && 'planId' in v)
+        if (sides.length) {
+            const { rows: plans } = await pool.query('SELECT id, name FROM plans')
+            const names = new Map(plans.map((p) => [String(p.id), p.name]))
+            for (const v of sides) v.planId = v.planId == null ? 'Gratuito' : (names.get(String(v.planId)) || `Plano excluído (${v.planId})`)
+        }
+        res.json(detail)
+    } catch (error) {
+        console.error('Log detail error:', error)
+        res.status(500).json({ message: 'Erro ao carregar o registro' })
     }
 })
 

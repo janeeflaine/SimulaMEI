@@ -1,582 +1,476 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Search, RotateCw, X, AlertTriangle, ChevronLeft, ChevronRight, ShieldAlert, ScrollText, LogIn } from 'lucide-react'
+import Select from '../../components/ui/Select'
+import { showToast } from '../../utils/toast'
+import { EVENTS, EVENT_GROUPS, describeEvent, eventLabel, when, todayBR, TZ } from './auditEvents'
+// AdminPages.css segue importado: as outras páginas do admin ainda usam as classes dele
 import './AdminPages.css'
+import './AdminLogs.css'
 
-// ─── Event type labels (PT-BR) ────────────────────────────────────────────────
-const EVENT_LABELS = {
-  USER_LOGIN_SUCCESS:          'Login realizado',
-  USER_LOGIN_FAILED:           'Falha no login',
-  USER_LOGIN_BLOCKED:          'Login bloqueado',
-  USER_REGISTER:               'Novo cadastro',
-  USER_BLOCKED:                'Usuário bloqueado',
-  USER_UNBLOCKED:              'Usuário desbloqueado',
-  USER_UPDATED:                'Usuário atualizado',
-  USER_PLAN_CHANGED:           'Plano alterado',
-  USER_ROLE_CHANGED:           'Papel alterado',
-  CONCURRENT_LOGIN_PREVENTED:  'Sessão duplicada detectada',
-  PASSWORD_RESET_REQUESTED:    'Reset de senha solicitado',
-  PASSWORD_RESET_COMPLETED:    'Senha redefinida',
-  RULES_UPDATED:               'Regras de cálculo alteradas',
-  LIMITS_UPDATED:              'Limites MEI alterados',
-  SETTINGS_UPDATED:            'Configuração do sistema alterada',
-  PLAN_CREATED:                'Plano criado',
-  PLAN_UPDATED:                'Plano atualizado',
+const PAGE_SIZE = 50
+const AUTO_MS = 15000
+const num = (v) => new Intl.NumberFormat('pt-BR').format(Number(v) || 0)
+const auth = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
+const WARN_LEVELS = ['WARN', 'ERROR', 'CRITICAL']
+const LEVELS = { INFO: 'Informação', WARN: 'Atenção', ERROR: 'Erro', CRITICAL: 'Crítico' }
+
+const LEVEL_OPTIONS = [
+    { value: '', label: 'Níveis' },
+    { value: 'WARN', label: 'Atenção' },
+    { value: 'ERROR', label: 'Erro' },
+    { value: 'CRITICAL', label: 'Crítico' },
+    { value: 'INFO', label: 'Informação' },
+]
+const EVENT_OPTIONS = [
+    { value: '', label: 'Eventos' },
+    ...EVENT_GROUPS.map((g) => ({
+        group: g.name,
+        options: Object.entries(EVENTS).filter(([, e]) => e.group === g.key).map(([k, e]) => ({ value: k, label: e.label })),
+    })),
+]
+const WHEN_OPTIONS = [
+    { value: '', label: 'Datas' },
+    { value: 'today', label: 'Hoje' },
+    { value: '7d', label: 'Últimos 7 dias' },
+    { value: '30d', label: 'Últimos 30 dias' },
+    { value: 'custom', label: 'Escolher datas' },
+]
+
+// AAAA-MM-DD menos n dias (conta no meio-dia UTC: não muda de dia por fuso)
+const minusDays = (day, n) => {
+    const d = new Date(`${day}T12:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - n)
+    return d.toISOString().slice(0, 10)
+}
+function rangeOf(whenKey, from, to) {
+    const today = todayBR()
+    if (whenKey === 'today') return { from: today, to: today }
+    if (whenKey === '7d') return { from: minusDays(today, 6), to: today }
+    if (whenKey === '30d') return { from: minusDays(today, 29), to: today }
+    if (whenKey === 'custom') return { from, to }
+    return { from: '', to: '' }
 }
 
-const LEVEL_CONFIG = {
-  INFO:     { label: 'Info',     bg: 'rgba(37,99,235,0.18)',   color: '#93c5fd', dot: '#3b82f6' },
-  WARN:     { label: 'Alerta',   bg: 'rgba(245,158,11,0.18)',  color: '#fcd34d', dot: '#f59e0b' },
-  ERROR:    { label: 'Erro',     bg: 'rgba(239,68,68,0.18)',   color: '#fca5a5', dot: '#ef4444' },
-  CRITICAL: { label: 'Crítico', bg: 'rgba(239,68,68,0.28)',   color: '#f87171', dot: '#dc2626' },
+const fullDate = (value) => {
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return ''
+    const day = new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
+    const hour = new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(d)
+    return `${day} às ${hour}`
 }
 
-const SUSPICIOUS_TYPES = new Set([
-  'USER_LOGIN_FAILED',
-  'USER_LOGIN_BLOCKED',
-  'CONCURRENT_LOGIN_PREVENTED',
-  'USER_BLOCKED',
-])
-
-function LevelBadge({ level }) {
-  const cfg = LEVEL_CONFIG[level] || LEVEL_CONFIG.INFO
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-      background: cfg.bg, color: cfg.color,
-    }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.dot, display: 'inline-block' }} />
-      {cfg.label}
-    </span>
-  )
+// "Chrome no Windows", "Safari no iPhone"... (o texto completo fica nos dados técnicos)
+function browserOf(ua) {
+    if (!ua) return null
+    const b = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera/.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet'
+        : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : null
+    const s = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+        : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : null
+    if (b && s) return `${b} no ${s}`
+    return b || s || 'Outro'
 }
 
-function EventBadge({ type }) {
-  const isSuspicious = SUSPICIOUS_TYPES.has(type)
-  return (
-    <span style={{
-      display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11,
-      fontWeight: 500, maxWidth: 220,
-      background: isSuspicious ? 'rgba(245,158,11,0.1)' : 'rgba(255,255,255,0.06)',
-      color: isSuspicious ? '#fcd34d' : '#cbd5e1',
-      border: `1px solid ${isSuspicious ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.08)'}`,
-    }}>
-      {EVENT_LABELS[type] || type}
-    </span>
-  )
+// Nomes dos campos que aparecem em "O que mudou"
+const FIELD_LABELS = {
+    name: 'Nome', email: 'E-mail', planId: 'Plano', role: 'Acesso', isBlocked: 'Bloqueada', price: 'Preço',
+    features: 'Recursos', isActive: 'Ativo', stripePriceId: 'Código do preço no Stripe', inssPercentage: 'INSS (%)',
+    icmsValue: 'ICMS (R$)', issValue: 'ISS (R$)', minimumWage: 'Salário mínimo', employeeCost: 'Custo do funcionário',
+    annualLimit: 'Limite anual', warningPercentage: 'Aviso amarelo (%)', dangerPercentage: 'Aviso vermelho (%)', year: 'Ano',
+    subscriptionStatus: 'Situação da assinatura', planExpiresAt: 'Plano vale até',
 }
-
-function formatDate(ts) {
-  if (!ts) return '—'
-  return new Date(ts).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })
+const META_LABELS = {
+    email: 'E-mail digitado', reason: 'Motivo', previous_ip: 'IP anterior', new_ip: 'IP novo',
+    previous_fingerprint: 'Aparelho anterior', new_fingerprint: 'Aparelho novo', sent: 'Enviados', failed: 'Falharam',
+    email_sha256: 'Código do e-mail', attempts: 'Tentativas',
 }
-
-function truncate(str, n = 30) {
-  if (!str) return '—'
-  return str.length > n ? str.substring(0, n) + '…' : str
+function show(v) {
+    if (v === null || v === undefined || v === '') return '–'
+    if (typeof v === 'boolean') return v ? 'Sim' : 'Não'
+    if (typeof v === 'object') return JSON.stringify(v)
+    return String(v)
 }
-
-// ─── Log Detail Modal ─────────────────────────────────────────────────────────
-function LogDetail({ log, onClose }) {
-  if (!log) return null
-  let meta = {}
-  try { meta = JSON.parse(log.metadata || '{}') } catch { }
-  let oldVal = null, newVal = null
-  try { if (log.old_value) oldVal = JSON.parse(log.old_value) } catch { }
-  try { if (log.new_value) newVal = JSON.parse(log.new_value) } catch { }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 600, width: '95%' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 18, color: '#e2e8f0' }}>Detalhes do Evento</h2>
-            <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: 13 }}>{formatDate(log.timestamp)}</p>
-          </div>
-          <LevelBadge level={log.level} />
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-          {[
-            ['Tipo de Evento', <EventBadge type={log.event_type} />],
-            ['Usuário', log.user_name ? `${log.user_name} (${log.user_email})` : `ID ${log.user_id || '—'}`],
-            ['Papel', log.user_role || '—'],
-            ['IP', log.ip_address || '—'],
-            ['Device FP', truncate(log.device_fingerprint, 24)],
-            ['Recurso', log.resource_type ? `${log.resource_type} #${log.resource_id || ''}` : '—'],
-          ].map(([label, value]) => (
-            <div key={label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '10px 14px' }}>
-              <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>{label}</div>
-              <div style={{ color: '#e2e8f0', fontSize: 13 }}>{value}</div>
-            </div>
-          ))}
-        </div>
-
-        {Object.keys(meta).length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Metadados</div>
-            <pre style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: 12, fontSize: 12, color: '#94a3b8', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
-              {JSON.stringify(meta, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {(oldVal || newVal) && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {oldVal && (
-              <div>
-                <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Valor Anterior</div>
-                <pre style={{ background: 'rgba(239,68,68,0.06)', borderRadius: 8, padding: 12, fontSize: 12, color: '#fca5a5', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
-                  {JSON.stringify(oldVal, null, 2)}
-                </pre>
-              </div>
-            )}
-            {newVal && (
-              <div>
-                <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Novo Valor</div>
-                <pre style={{ background: 'rgba(37,99,235,0.06)', borderRadius: 8, padding: 12, fontSize: 12, color: '#93c5fd', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
-                  {JSON.stringify(newVal, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        )}
-
-        {log.user_agent && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}>User-Agent</div>
-            <div style={{ color: '#64748b', fontSize: 11, wordBreak: 'break-all' }}>{log.user_agent}</div>
-          </div>
-        )}
-
-        <div className="modal-actions" style={{ marginTop: 20 }}>
-          <button className="btn btn-secondary" onClick={onClose}>Fechar</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Sessions Panel ───────────────────────────────────────────────────────────
-function SessionsPanel() {
-  const [sessions, setSessions] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    fetch('/api/admin/logs/sessions', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(setSessions)
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Carregando sessões...</div>
-
-  return (
-    <div>
-      <p style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>
-        {sessions.length} sessão(ões) ativa(s) no momento
-      </p>
-      {sessions.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: '#475569' }}>Nenhuma sessão ativa</div>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Usuário</th>
-                <th>IP</th>
-                <th>Device</th>
-                <th>Início</th>
-                <th>Última Atividade</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map(s => (
-                <tr key={s.id}>
-                  <td>
-                    <div style={{ fontWeight: 500, color: '#e2e8f0' }}>{s.user_name || '—'}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{s.user_email}</div>
-                  </td>
-                  <td><code style={{ color: '#93c5fd', fontSize: 12 }}>{s.ip_address || '—'}</code></td>
-                  <td><code style={{ color: '#94a3b8', fontSize: 11 }}>{truncate(s.device_fingerprint, 16)}</code></td>
-                  <td style={{ color: '#94a3b8', fontSize: 12 }}>{formatDate(s.created_at)}</td>
-                  <td style={{ color: '#94a3b8', fontSize: 12 }}>{formatDate(s.last_activity)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-export default function AdminLogs() {
-  const [activeTab, setActiveTab] = useState('all') // all | suspicious | sessions
-  const [logs, setLogs] = useState([])
-  const [total, setTotal] = useState(0)
-  const [pages, setPages] = useState(1)
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [selectedLog, setSelectedLog] = useState(null)
-  const [autoRefresh, setAutoRefresh] = useState(false)
-  const [suspiciousCount, setSuspiciousCount] = useState(0)
-
-  const [filters, setFilters] = useState({
-    level: '',
-    event_type: '',
-    search: '',
-    from: '',
-    to: '',
-  })
-
-  const timerRef = useRef(null)
-
-  const fetchLogs = useCallback(async (p = 1, currentFilters = filters, tab = activeTab) => {
-    setLoading(true)
-    try {
-      const token = localStorage.getItem('token')
-      const params = new URLSearchParams({
-        page: p,
-        limit: 50,
-        ...(currentFilters.level      && { level:      currentFilters.level }),
-        ...(currentFilters.event_type && { event_type: currentFilters.event_type }),
-        ...(currentFilters.search     && { search:     currentFilters.search }),
-        ...(currentFilters.from       && { from:       currentFilters.from }),
-        ...(currentFilters.to         && { to:         currentFilters.to }),
-        ...(tab === 'suspicious'      && { suspicious: 'true' }),
-      })
-
-      const res = await fetch(`/api/admin/logs?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      const data = await res.json()
-      setLogs(data.logs || [])
-      setTotal(data.total || 0)
-      setPages(data.pages || 1)
-    } catch (err) {
-      console.error('Erro ao carregar logs:', err)
-    } finally {
-      setLoading(false)
+function changeRows(oldV, newV) {
+    const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v)
+    if (isObj(oldV) || isObj(newV)) {
+        const keys = [...new Set([...Object.keys(isObj(oldV) ? oldV : {}), ...Object.keys(isObj(newV) ? newV : {})])]
+        return keys.map((k) => ({ key: FIELD_LABELS[k] || k, before: show(isObj(oldV) ? oldV[k] : undefined), after: show(isObj(newV) ? newV[k] : undefined) }))
     }
-  }, [filters, activeTab])
+    if (oldV == null && newV == null) return []
+    return [{ key: 'Valor', before: show(oldV), after: show(newV) }]
+}
 
-  // Fetch suspicious count for badge
-  const fetchSuspiciousCount = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/admin/logs?suspicious=true&limit=1', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      const data = await res.json()
-      setSuspiciousCount(data.total || 0)
-    } catch { }
-  }, [])
+function LevelTag({ level }) {
+    if (!WARN_LEVELS.includes(level)) return null
+    return <span className={`alg-tag alg-tag--${level.toLowerCase()}`}>{LEVELS[level]}</span>
+}
 
-  useEffect(() => {
-    fetchLogs(1, filters, activeTab)
-    fetchSuspiciousCount()
-  }, [activeTab])
+// Janela de detalhes: foco preso, Esc fecha, volta o foco para a linha
+function LogDetail({ id, onClose }) {
+    const [log, setLog] = useState(null)
+    const [state, setState] = useState('loading')
+    const boxRef = useRef(null)
 
-  // Auto-refresh
-  useEffect(() => {
-    if (autoRefresh) {
-      timerRef.current = setInterval(() => {
-        fetchLogs(page, filters, activeTab)
-        fetchSuspiciousCount()
-      }, 15000)
-    }
-    return () => clearInterval(timerRef.current)
-  }, [autoRefresh, page, filters, activeTab])
+    useEffect(() => {
+        let alive = true
+        fetch(`/api/admin/logs/${encodeURIComponent(id)}`, { headers: auth() })
+            .then(async (r) => {
+                const body = await r.json().catch(() => null)
+                if (!r.ok || !body || typeof body !== 'object' || !body.event_type) throw new Error('resposta inesperada')
+                if (alive) { setLog(body); setState('ready') }
+            })
+            .catch(() => alive && setState('error'))
+        return () => { alive = false }
+    }, [id])
 
-  const applyFilters = () => {
-    setPage(1)
-    fetchLogs(1, filters, activeTab)
-  }
-
-  const clearFilters = () => {
-    const empty = { level: '', event_type: '', search: '', from: '', to: '' }
-    setFilters(empty)
-    setPage(1)
-    fetchLogs(1, empty, activeTab)
-  }
-
-  const handleTabChange = (tab) => {
-    setActiveTab(tab)
-    setPage(1)
-    setFilters({ level: '', event_type: '', search: '', from: '', to: '' })
-  }
-
-  const inputStyle = {
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8,
-    color: '#f1f5f9',
-    padding: '8px 12px',
-    fontSize: 13,
-    outline: 'none',
-  }
-
-  const selectStyle = {
-    ...inputStyle,
-    appearance: 'none',
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2393c5fd' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'right 10px center',
-    paddingRight: 30,
-    cursor: 'pointer',
-  }
-
-  return (
-    <div className="admin-page">
-      <style>{`
-        .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .admin-table th {
-          text-align: left; padding: 10px 14px; font-size: 11px; text-transform: uppercase;
-          letter-spacing: 0.5px; color: #64748b; font-weight: 600;
-          border-bottom: 1px solid rgba(255,255,255,0.07);
+    useEffect(() => {
+        const prev = document.activeElement
+        const { overflow } = document.body.style
+        document.body.style.overflow = 'hidden'
+        boxRef.current?.querySelector('button')?.focus()
+        const onKey = (e) => {
+            if (e.key === 'Escape') onClose()
+            if (e.key === 'Tab' && boxRef.current) {
+                const items = [...boxRef.current.querySelectorAll('button, summary, [tabindex="0"]')]
+                if (!items.length) return
+                const a = items[0]; const z = items[items.length - 1]
+                if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus() }
+                else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus() }
+            }
         }
-        .admin-table td {
-          padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.04);
-          color: #cbd5e1; vertical-align: middle;
+        document.addEventListener('keydown', onKey)
+        return () => {
+            document.removeEventListener('keydown', onKey)
+            document.body.style.overflow = overflow
+            prev?.focus?.()
         }
-        .admin-table tr:hover td { background: rgba(255,255,255,0.025); cursor: pointer; }
-        .logs-tab { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
-          border: none; cursor: pointer; transition: all 0.2s; }
-        .logs-tab.active { background: rgba(37,99,235,0.2); color: #93c5fd;
-          box-shadow: 0 0 0 1px rgba(37,99,235,0.4); }
-        .logs-tab:not(.active) { background: rgba(255,255,255,0.04); color: #64748b; }
-        .logs-tab:not(.active):hover { background: rgba(255,255,255,0.07); color: #94a3b8; }
-        .pagination-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(255,255,255,0.04); color: #94a3b8; cursor: pointer; font-size: 13px; }
-        .pagination-btn:hover:not(:disabled) { background: rgba(37,99,235,0.15); color: #93c5fd; }
-        .pagination-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-        .log-row-suspicious td { background: rgba(245,158,11,0.04) !important; }
-      `}</style>
+    }, [onClose])
 
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1>Logs de Auditoria</h1>
-          <p className="text-secondary">Rastreamento completo de atividades e segurança</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#94a3b8', fontSize: 13 }}>
-            <div
-              className={`admin-toggle ${autoRefresh ? 'active' : ''}`}
-              onClick={() => setAutoRefresh(v => !v)}
-              style={{ transform: 'scale(0.85)' }}
-            />
-            Auto-atualizar (15s)
-          </label>
-        </div>
-      </div>
+    const d = log ? describeEvent(log) : null
+    const changes = log ? changeRows(log.old_value, log.new_value) : []
+    const meta = log && log.metadata && typeof log.metadata === 'object' && !Array.isArray(log.metadata) ? Object.entries(log.metadata) : []
+    const isUserTarget = log?.resource_type === 'USER'
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        <button className={`logs-tab ${activeTab === 'all' ? 'active' : ''}`} onClick={() => handleTabChange('all')}>
-          Todos os Eventos
-          <span style={{ marginLeft: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: '1px 7px', fontSize: 11 }}>
-            {activeTab === 'all' ? total : ''}
-          </span>
-        </button>
-        <button className={`logs-tab ${activeTab === 'suspicious' ? 'active' : ''}`} onClick={() => handleTabChange('suspicious')}>
-          Atividade Suspeita
-          {suspiciousCount > 0 && (
-            <span style={{ marginLeft: 8, background: 'rgba(245,158,11,0.25)', color: '#fcd34d', borderRadius: 10, padding: '1px 7px', fontSize: 11 }}>
-              {suspiciousCount}
-            </span>
-          )}
-        </button>
-        <button className={`logs-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => handleTabChange('sessions')}>
-          Sessões Ativas
-        </button>
-      </div>
+    return (
+        <div className="cd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+            <div ref={boxRef} className="cd-box alg-box" role="dialog" aria-modal="true" aria-labelledby="alg-detail-title">
+                <button type="button" className="alg-close" onClick={onClose} aria-label="Fechar"><X size={20} aria-hidden="true" /></button>
+                {state === 'loading' && <p className="alg-box__state" role="status"><span className="alg-spinner" aria-hidden="true" />Carregando o registro…</p>}
+                {state === 'error' && (
+                    <>
+                        <h2 id="alg-detail-title" className="cd-title">Não deu para abrir o registro</h2>
+                        <p className="alg-box__state">Feche e tente de novo em alguns segundos.</p>
+                    </>
+                )}
+                {state === 'ready' && (
+                    <>
+                        <h2 id="alg-detail-title" className="cd-title">{eventLabel(log.event_type)}</h2>
+                        <p className="alg-box__when">{fullDate(log.timestamp)} <LevelTag level={log.level} /></p>
+                        <p className="alg-box__sentence"><strong>{d.who}</strong> {d.text}{d.target && <> <strong>{d.target}</strong></>}</p>
 
-      {activeTab === 'sessions' ? (
-        <div className="plan-admin-card" style={{ background: 'linear-gradient(145deg, #1e2537 0%, #1a2035 100%)' }}>
-          <SessionsPanel />
-        </div>
-      ) : (
-        <>
-          {/* Filters */}
-          <div className="plan-admin-card" style={{ background: 'linear-gradient(145deg, #1e2537 0%, #1a2035 100%)', marginBottom: 16, padding: '16px 20px' }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Nível</label>
-                <select
-                  value={filters.level}
-                  onChange={e => setFilters(f => ({ ...f, level: e.target.value }))}
-                  style={{ ...selectStyle, minWidth: 120 }}
-                >
-                  <option value="">Todos</option>
-                  <option value="INFO">Info</option>
-                  <option value="WARN">Alerta</option>
-                  <option value="ERROR">Erro</option>
-                  <option value="CRITICAL">Crítico</option>
-                </select>
-              </div>
+                        <dl className="alg-facts">
+                            <div><dt>Quem fez</dt><dd>{log.user_name ? <>{log.user_name}{log.user_email && <small>{log.user_email}</small>}</> : d.who}{log.user_role === 'ADMIN' && <small>Administrador</small>}</dd></div>
+                            {isUserTarget && <div><dt>Conta afetada</dt><dd>{log.target_name || 'Conta já excluída'}</dd></div>}
+                            {log.resource_type === 'SYSTEM_SETTINGS' && log.resource_id && <div><dt>Configuração</dt><dd><code>{log.resource_id}</code></dd></div>}
+                            <div><dt>IP</dt><dd>{log.ip_address || '–'}</dd></div>
+                            <div><dt>Navegador</dt><dd>{browserOf(log.user_agent) || '–'}</dd></div>
+                        </dl>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Tipo de Evento</label>
-                <select
-                  value={filters.event_type}
-                  onChange={e => setFilters(f => ({ ...f, event_type: e.target.value }))}
-                  style={{ ...selectStyle, minWidth: 200 }}
-                >
-                  <option value="">Todos</option>
-                  {Object.entries(EVENT_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
-              </div>
+                        {changes.length > 0 && (
+                            <section className="alg-sec" aria-labelledby="alg-ch-t">
+                                <h3 id="alg-ch-t">O que mudou</h3>
+                                <div className="alg-changes" role="table" aria-label="O que mudou">
+                                    <div role="row" className="alg-changes__head"><span role="columnheader">Campo</span><span role="columnheader">Antes</span><span role="columnheader">Depois</span></div>
+                                    {changes.map((c) => (
+                                        <div role="row" key={c.key} className={c.before !== c.after ? 'is-diff' : ''}>
+                                            <span role="rowheader">{c.key}</span><span role="cell">{c.before}</span><span role="cell">{c.after}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {changes.some((c) => c.before === '(alterado)' || c.after === '(alterado)') && (
+                                    <p className="alg-hint">Nome e e-mail não ficam guardados nos registros, só que foram alterados.</p>
+                                )}
+                            </section>
+                        )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 180 }}>
-                <label style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Busca (usuário/IP)</label>
-                <input
-                  type="text"
-                  placeholder="Nome, e-mail ou IP..."
-                  value={filters.search}
-                  onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-                  onKeyDown={e => e.key === 'Enter' && applyFilters()}
-                  style={{ ...inputStyle, minWidth: 180 }}
-                />
-              </div>
+                        {meta.length > 0 && (
+                            <section className="alg-sec" aria-labelledby="alg-meta-t">
+                                <h3 id="alg-meta-t">Detalhes</h3>
+                                <dl className="alg-meta">
+                                    {meta.map(([k, v]) => <div key={k}><dt>{META_LABELS[k] || k}</dt><dd>{show(v)}</dd></div>)}
+                                </dl>
+                            </section>
+                        )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>De</label>
-                <input
-                  type="datetime-local"
-                  value={filters.from}
-                  onChange={e => setFilters(f => ({ ...f, from: e.target.value }))}
-                  style={{ ...inputStyle, colorScheme: 'dark' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Até</label>
-                <input
-                  type="datetime-local"
-                  value={filters.to}
-                  onChange={e => setFilters(f => ({ ...f, to: e.target.value }))}
-                  style={{ ...inputStyle, colorScheme: 'dark' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary btn-sm" onClick={applyFilters}>Filtrar</button>
-                <button className="btn btn-secondary btn-sm" onClick={clearFilters}>Limpar</button>
-              </div>
-            </div>
-          </div>
-
-          {/* Alert banner for suspicious tab */}
-          {activeTab === 'suspicious' && suspiciousCount > 0 && (
-            <div style={{
-              background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
-              borderRadius: 10, padding: '12px 16px', marginBottom: 16,
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <span style={{ fontSize: 18 }}>⚠️</span>
-              <div>
-                <span style={{ color: '#fcd34d', fontWeight: 600 }}>
-                  {suspiciousCount} evento(s) suspeito(s) detectado(s)
-                </span>
-                <span style={{ color: '#94a3b8', fontSize: 13, marginLeft: 8 }}>
-                  Verifique as tentativas de login falhas, sessões duplicadas e bloqueios.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Logs table */}
-          <div className="plan-admin-card" style={{ background: 'linear-gradient(145deg, #1e2537 0%, #1a2035 100%)', padding: 0 }}>
-            {loading ? (
-              <div style={{ padding: 60, textAlign: 'center' }}>
-                <div className="loader" />
-              </div>
-            ) : logs.length === 0 ? (
-              <div style={{ padding: 60, textAlign: 'center', color: '#475569' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
-                <div>Nenhum evento encontrado</div>
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Data/Hora</th>
-                      <th>Nível</th>
-                      <th>Evento</th>
-                      <th>Usuário</th>
-                      <th>IP</th>
-                      <th>Recurso</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logs.map(log => (
-                      <tr
-                        key={log.id}
-                        className={SUSPICIOUS_TYPES.has(log.event_type) || log.level === 'WARN' ? 'log-row-suspicious' : ''}
-                        onClick={() => setSelectedLog(log)}
-                      >
-                        <td style={{ whiteSpace: 'nowrap', fontSize: 12, color: '#94a3b8' }}>
-                          {formatDate(log.timestamp)}
-                        </td>
-                        <td><LevelBadge level={log.level} /></td>
-                        <td><EventBadge type={log.event_type} /></td>
-                        <td>
-                          {log.user_name ? (
-                            <div>
-                              <div style={{ fontWeight: 500, color: '#e2e8f0', fontSize: 13 }}>{log.user_name}</div>
-                              <div style={{ fontSize: 11, color: '#64748b' }}>{log.user_email}</div>
-                            </div>
-                          ) : (
-                            <span style={{ color: '#475569', fontSize: 12 }}>Visitante</span>
-                          )}
-                        </td>
-                        <td>
-                          <code style={{ color: '#93c5fd', fontSize: 12 }}>{log.ip_address || '—'}</code>
-                        </td>
-                        <td style={{ fontSize: 12, color: '#64748b' }}>
-                          {log.resource_type ? `${log.resource_type} #${log.resource_id || ''}` : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Pagination */}
-            {pages > 1 && (
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.06)'
-              }}>
-                <span style={{ color: '#64748b', fontSize: 13 }}>
-                  {total} evento(s) total — página {page} de {pages}
-                </span>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    className="pagination-btn"
-                    disabled={page <= 1}
-                    onClick={() => { setPage(p => p - 1); fetchLogs(page - 1) }}
-                  >← Anterior</button>
-                  <button
-                    className="pagination-btn"
-                    disabled={page >= pages}
-                    onClick={() => { setPage(p => p + 1); fetchLogs(page + 1) }}
-                  >Próxima →</button>
+                        <details className="alg-tech">
+                            <summary>Dados técnicos</summary>
+                            <dl className="alg-meta">
+                                <div><dt>Evento</dt><dd><code>{log.event_type}</code></dd></div>
+                                <div><dt>Registro</dt><dd>{log.id}</dd></div>
+                                {log.resource_type && <div><dt>Recurso</dt><dd><code>{log.resource_type}{log.resource_id ? ` ${log.resource_id}` : ''}</code></dd></div>}
+                                <div><dt>Navegador completo</dt><dd>{log.user_agent || '–'}</dd></div>
+                                <div><dt>Aparelho</dt><dd>{log.device_fingerprint ? <code>{log.device_fingerprint.slice(0, 16)}</code> : '–'}</dd></div>
+                            </dl>
+                        </details>
+                    </>
+                )}
+                <div className="cd-actions alg-box__actions">
+                    <button type="button" className="alg-btn" onClick={onClose}>Fechar</button>
                 </div>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+            </div>
+        </div>
+    )
+}
 
-      {selectedLog && <LogDetail log={selectedLog} onClose={() => setSelectedLog(null)} />}
-    </div>
-  )
+function Sessions() {
+    const [rows, setRows] = useState(null)
+    const [failed, setFailed] = useState(false)
+    const load = useCallback(() => {
+        setFailed(false)
+        fetch('/api/admin/logs/sessions', { headers: auth() })
+            .then(async (r) => {
+                const body = await r.json().catch(() => null)
+                if (!r.ok || !Array.isArray(body)) throw new Error('resposta inesperada')
+                setRows(body)
+            })
+            .catch(() => setFailed(true))
+    }, [])
+    useEffect(() => { load() }, [load])
+
+    if (failed) return <ErrorBox title="Não deu para carregar as entradas" onRetry={load} />
+    if (!rows) return <div className="alg-state" role="status"><span className="alg-spinner" aria-hidden="true" />Carregando…</div>
+    return (
+        <section className="alg-card">
+            <p className="alg-card__lead">
+                A última entrada de cada conta nos últimos 7 dias (o tempo que um login vale).
+                {rows.length > 0 && <> {num(rows.length)} {rows.length === 1 ? 'conta' : 'contas'}.</>}
+            </p>
+            {rows.length === 0 ? (
+                <p className="alg-empty">Ninguém entrou nos últimos 7 dias.</p>
+            ) : (
+                <ul className="alg-list">
+                    {rows.map((s) => (
+                        <li key={s.id} className="alg-row alg-row--static">
+                            <span className="alg-row__icon" aria-hidden="true"><LogIn size={16} /></span>
+                            <span className="alg-row__body">
+                                <span className="alg-row__text"><strong>{s.user_name || 'Conta'}</strong> <span className="alg-muted">{s.user_email}</span></span>
+                                <span className="alg-row__sub">
+                                    <span>{when(s.created_at)}</span>
+                                    {s.ip_address && <span>IP {s.ip_address}</span>}
+                                    {s.user_agent && <span>{browserOf(s.user_agent)}</span>}
+                                </span>
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
+    )
+}
+
+function ErrorBox({ title, onRetry }) {
+    return (
+        <div className="alg-state alg-state--error" role="alert">
+            <span className="alg-state__icon" aria-hidden="true"><AlertTriangle size={22} /></span>
+            <h2>{title}</h2>
+            <p>O servidor não respondeu direito. Tente de novo em alguns segundos.</p>
+            <button type="button" className="alg-btn alg-btn--primary" onClick={onRetry}><RotateCw size={16} aria-hidden="true" />Tentar de novo</button>
+        </div>
+    )
+}
+
+const EMPTY = { search: '', level: '', event: '', when: '', from: '', to: '' }
+const isLogs = (d) => d && Array.isArray(d.logs) && Number.isFinite(Number(d.total))
+
+export default function AdminLogs() {
+    const [tab, setTab] = useState('all') // all | suspicious | sessions
+    const [filters, setFilters] = useState(EMPTY)
+    const [search, setSearch] = useState('') // texto digitado (vai para o filtro 400 ms depois)
+    const [page, setPage] = useState(1)
+    const [data, setData] = useState(null)
+    const [status, setStatus] = useState('loading') // loading | ready | error
+    const [suspicious, setSuspicious] = useState(0)
+    const [auto, setAuto] = useState(false)
+    const [updatedAt, setUpdatedAt] = useState(null)
+    const [openId, setOpenId] = useState(null)
+    const reqId = useRef(0)
+
+    useEffect(() => {
+        const t = setTimeout(() => setFilters((f) => (f.search === search.trim() ? f : { ...f, search: search.trim() })), 400)
+        return () => clearTimeout(t)
+    }, [search])
+    useEffect(() => { setPage(1) }, [filters, tab])
+
+    const range = rangeOf(filters.when, filters.from, filters.to)
+    const badRange = filters.when === 'custom' && range.from && range.to && range.from > range.to
+    const query = useMemo(() => {
+        const p = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+        if (filters.level) p.set('level', filters.level)
+        if (filters.event) p.set('event_type', filters.event)
+        if (filters.search) p.set('search', filters.search)
+        if (range.from) p.set('from', range.from)
+        if (range.to) p.set('to', range.to)
+        if (tab === 'suspicious') p.set('suspicious', 'true')
+        return p.toString()
+    }, [page, filters, tab, range.from, range.to])
+
+    const load = useCallback(async ({ quiet = false } = {}) => {
+        if (tab === 'sessions' || badRange) return
+        const id = ++reqId.current
+        if (!quiet) setStatus((s) => (s === 'ready' ? 'refreshing' : 'loading'))
+        try {
+            const [res, susp] = await Promise.all([
+                fetch(`/api/admin/logs?${query}`, { headers: auth() }),
+                fetch('/api/admin/logs?suspicious=true&limit=1', { headers: auth() }),
+            ])
+            const body = await res.json().catch(() => null)
+            const sBody = await susp.json().catch(() => null)
+            if (id !== reqId.current) return
+            if (!res.ok) {
+                // Filtro recusado pelo servidor (data inválida etc.): mostra o motivo
+                if (res.status === 400 && body?.message) { showToast(body.message, 'error'); setStatus((s) => (s === 'loading' ? 'error' : 'ready')); return }
+                throw new Error('resposta inesperada')
+            }
+            if (!isLogs(body)) throw new Error('resposta inesperada')
+            setData(body)
+            if (susp.ok && sBody && Number.isFinite(Number(sBody.total))) setSuspicious(Number(sBody.total))
+            setUpdatedAt(new Date())
+            setStatus('ready')
+        } catch (err) {
+            if (id !== reqId.current) return
+            console.error('Logs:', err)
+            if (quiet) return
+            setStatus((s) => (s === 'refreshing' ? 'ready' : 'error'))
+            if (data) showToast('Não deu para atualizar os registros. Tente de novo.', 'error')
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [query, tab, badRange])
+    useEffect(() => { load() }, [load])
+
+    useEffect(() => {
+        if (!auto || tab === 'sessions') return undefined
+        const t = setInterval(() => { if (!document.hidden && !openId) load({ quiet: true }) }, AUTO_MS)
+        return () => clearInterval(t)
+    }, [auto, tab, load, openId])
+
+    const set = (key) => (value) => setFilters((f) => ({ ...f, [key]: value }))
+    const active = filters.level || filters.event || filters.search || filters.when
+    const clear = () => { setSearch(''); setFilters(EMPTY) }
+    const closeDetail = useCallback(() => setOpenId(null), [])
+
+    const total = data ? Number(data.total) : 0
+    const pages = data ? Math.max(1, Number(data.pages) || 1) : 1
+    const first = total ? (page - 1) * PAGE_SIZE + 1 : 0
+    const last = Math.min(total, page * PAGE_SIZE)
+    const clock = updatedAt ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(updatedAt) : null
+
+    return (
+        <div className={`alg adm-light${status === 'refreshing' ? ' is-refreshing' : ''}`}>
+            <header className="alg-head">
+                <div>
+                    <h1>Logs de auditoria</h1>
+                    <p>Quem fez o quê e quando: entradas, contas, planos e configurações.</p>
+                </div>
+                {tab !== 'sessions' && (
+                    <div className="alg-head__side">
+                        {clock && <span className="alg-updated">Atualizado às {clock}</span>}
+                        <label className="alg-switch">
+                            <button type="button" role="switch" aria-checked={auto} onClick={() => setAuto((v) => !v)}><span /></button>
+                            Atualizar sozinho
+                        </label>
+                        <button type="button" className="alg-btn alg-refresh" aria-label="Atualizar agora" onClick={() => load()} disabled={status === 'loading' || status === 'refreshing'}>
+                            <RotateCw size={16} aria-hidden="true" className={status === 'refreshing' ? 'alg-spin' : ''} /><span className="alg-btn__label">Atualizar</span>
+                        </button>
+                    </div>
+                )}
+            </header>
+
+            <div className="alg-tabs" role="tablist" aria-label="Registros">
+                {[
+                    { key: 'all', label: 'Todos', icon: ScrollText },
+                    { key: 'suspicious', label: 'Suspeitos', icon: ShieldAlert, count: suspicious },
+                    { key: 'sessions', label: 'Entradas', icon: LogIn },
+                ].map((t) => (
+                    <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`alg-tab${tab === t.key ? ' is-active' : ''}`} onClick={() => setTab(t.key)}>
+                        <t.icon size={16} aria-hidden="true" />{t.label}
+                        {t.count > 0 && <span className="alg-count" aria-label={`${t.count} registros`}>{num(t.count)}</span>}
+                    </button>
+                ))}
+            </div>
+
+            {tab === 'sessions' ? <Sessions /> : (
+                <>
+                    <div className="alg-filters">
+                        <label className="alg-search">
+                            <Search size={18} aria-hidden="true" />
+                            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} maxLength={100}
+                                placeholder="Nome, e-mail ou IP" aria-label="Buscar por nome, e-mail ou IP" />
+                        </label>
+                        <Select variant="pill" ariaLabel="Evento" value={filters.event} onChange={set('event')} options={EVENT_OPTIONS} active={!!filters.event} />
+                        <Select variant="pill" ariaLabel="Nível" value={filters.level} onChange={set('level')} options={LEVEL_OPTIONS} active={!!filters.level} />
+                        <Select variant="pill" ariaLabel="Quando" value={filters.when} onChange={set('when')} options={WHEN_OPTIONS} active={!!filters.when} />
+                        {active && <button type="button" className="alg-clear" onClick={clear}>Limpar filtros</button>}
+                    </div>
+                    {filters.when === 'custom' && (
+                        <div className="alg-dates">
+                            <label>De<input type="date" value={filters.from} max={filters.to || todayBR()} onChange={(e) => set('from')(e.target.value)} /></label>
+                            <label>Até<input type="date" value={filters.to} min={filters.from || undefined} max={todayBR()} onChange={(e) => set('to')(e.target.value)} /></label>
+                            {badRange && <span className="alg-dates__err" role="alert">A data inicial é depois da final.</span>}
+                        </div>
+                    )}
+
+                    {tab === 'suspicious' && (
+                        <p className="alg-note"><ShieldAlert size={18} aria-hidden="true" />
+                            Senhas erradas, travas por tentativas, contas bloqueadas, entradas em outro aparelho e qualquer registro de atenção ou erro.
+                        </p>
+                    )}
+
+                    {status === 'loading' && <div className="alg-state" role="status"><span className="alg-spinner" aria-hidden="true" />Carregando os registros…</div>}
+                    {status === 'error' && <ErrorBox title="Não deu para carregar os registros" onRetry={() => load()} />}
+                    {(status === 'ready' || status === 'refreshing') && data && (
+                        <section className="alg-card" aria-busy={status === 'refreshing'}>
+                            {data.logs.length === 0 ? (
+                                <p className="alg-empty">{active ? 'Nenhum registro com esses filtros.' : tab === 'suspicious' ? 'Nenhum registro suspeito.' : 'Nenhum registro ainda.'}</p>
+                            ) : (
+                                <ul className="alg-list">
+                                    {data.logs.map((log) => {
+                                        const d = describeEvent(log)
+                                        const warn = WARN_LEVELS.includes(log.level)
+                                        return (
+                                            <li key={log.id}>
+                                                <button type="button" className={`alg-row${warn ? ' is-warn' : ''}`} onClick={() => setOpenId(log.id)}>
+                                                    <span className="alg-row__icon" aria-hidden="true"><d.icon size={16} /></span>
+                                                    <span className="alg-row__body">
+                                                        <span className="alg-row__text"><strong>{d.who}</strong> {d.text}{d.target && <> <strong>{d.target}</strong></>}</span>
+                                                        <span className="alg-row__sub">
+                                                            <span>{when(log.timestamp)}</span>
+                                                            {log.ip_address && <span>IP {log.ip_address}</span>}
+                                                            <LevelTag level={log.level} />
+                                                        </span>
+                                                    </span>
+                                                    <ChevronRight size={18} aria-hidden="true" className="alg-row__go" />
+                                                </button>
+                                            </li>
+                                        )
+                                    })}
+                                </ul>
+                            )}
+                            {total > 0 && (
+                                <footer className="alg-pager">
+                                    <span>{num(first)}–{num(last)} de {num(total)}</span>
+                                    {pages > 1 && (
+                                        <span className="alg-pager__btns">
+                                            <button type="button" className="alg-btn" onClick={() => setPage((p) => p - 1)} disabled={page <= 1}><ChevronLeft size={16} aria-hidden="true" />Mais novos</button>
+                                            <button type="button" className="alg-btn" onClick={() => setPage((p) => p + 1)} disabled={page >= pages}>Mais antigos<ChevronRight size={16} aria-hidden="true" /></button>
+                                        </span>
+                                    )}
+                                </footer>
+                            )}
+                        </section>
+                    )}
+                </>
+            )}
+
+            {openId !== null && <LogDetail id={openId} onClose={closeDetail} />}
+        </div>
+    )
 }
