@@ -558,69 +558,243 @@ router.put('/limits', async (req, res) => {
 })
 
 // ========== PLANS ==========
+const { FEATURE_KEYS } = require('../utils/planFeatures')
+const billing = require('../utils/billing')
+
+class PlanError extends Error {
+    constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra }
+}
+const parseFeatures = (raw) => { try { const f = JSON.parse(raw || '{}'); return f && typeof f === 'object' ? f : {} } catch { return {} } }
+const cents = (v) => Math.round(Number(v) * 100)
+const brlText = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`
+
+// Dados do plano conferidos; só o que veio (edição parcial)
+function planInput(body) {
+    const out = {}
+    if (body.name !== undefined) {
+        // eslint-disable-next-line no-control-regex
+        const n = typeof body.name === 'string' ? body.name.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim() : ''
+        if (n.length < 2 || n.length > 30) throw new PlanError(400, 'O nome do plano precisa ter de 2 a 30 letras.', { field: 'name' })
+        out.name = n
+    }
+    if (body.price !== undefined) {
+        const v = typeof body.price === 'string' ? Number(body.price.replace(',', '.')) : body.price
+        if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 10000) throw new PlanError(400, 'O preço precisa ser de R$ 0 a R$ 10.000 por mês.', { field: 'price' })
+        out.price = Math.round(v * 100) / 100
+    }
+    if (body.stripePriceId !== undefined) {
+        const id = body.stripePriceId === null ? '' : String(body.stripePriceId).trim()
+        if (id && !/^price_[A-Za-z0-9]{6,80}$/.test(id)) throw new PlanError(400, 'O código do preço no Stripe começa com "price_".', { field: 'stripePriceId' })
+        out.stripePriceId = id || null
+    }
+    if (body.isActive !== undefined) {
+        if (typeof body.isActive !== 'boolean') throw new PlanError(400, 'Situação inválida.', { field: 'isActive' })
+        out.isActive = body.isActive
+    }
+    if (body.features !== undefined) {
+        const f = body.features
+        if (!f || typeof f !== 'object' || Array.isArray(f)) throw new PlanError(400, 'Recursos inválidos.', { field: 'features' })
+        const clean = {}
+        const unknown = {}
+        for (const [k, v] of Object.entries(f)) {
+            if (Object.keys(clean).length + Object.keys(unknown).length >= 60) throw new PlanError(400, 'Recursos demais.', { field: 'features' })
+            if (FEATURE_KEYS.includes(k)) {
+                if (typeof v !== 'boolean') throw new PlanError(400, 'Cada recurso é ligado ou desligado.', { field: 'features' })
+                clean[k] = v
+            } else {
+                unknown[k] = v
+            }
+        }
+        out.features = clean
+        // Chave fora da lista: só passa se já estava no plano com o mesmo valor (savePlan confere)
+        out.unknownFeatures = unknown
+    }
+    return out
+}
+
+// Preço do plano no Stripe: o que o cliente paga de verdade
+async function stripePriceInfo(stripe, priceId) {
+    if (!priceId) return { status: 'missing' }
+    if (!stripe) return { status: 'unconfigured', priceId }
+    try {
+        const p = await stripe.prices.retrieve(priceId)
+        return {
+            status: 'ok',
+            priceId,
+            amount: typeof p.unit_amount === 'number' ? p.unit_amount / 100 : null,
+            currency: p.currency,
+            interval: p.recurring ? p.recurring.interval : null,
+            intervalCount: p.recurring ? p.recurring.interval_count : null,
+            active: !!p.active,
+        }
+    } catch (err) {
+        return { status: err && err.code === 'resource_missing' ? 'not_found' : 'error', priceId }
+    }
+}
+
+// O que o site mostra tem de ser o que o Stripe cobra (Código de Defesa do Consumidor)
+function stripeMismatch(info, price) {
+    if (info.status === 'missing') return 'Plano pago precisa do código do preço no Stripe (price_...).'
+    if (info.status === 'not_found') return 'Esse código de preço não existe no Stripe. Confira se é do mesmo modo (teste ou real) das chaves do site.'
+    if (info.status === 'error') return 'Não deu para conferir o preço no Stripe agora. Tente de novo em alguns minutos.'
+    if (info.status !== 'ok') return null
+    if (!info.active) return 'Esse preço está arquivado no Stripe. Use um preço ativo.'
+    if (info.currency !== 'brl') return 'Esse preço do Stripe não está em reais (BRL).'
+    if (info.interval !== 'month' || info.intervalCount !== 1) return 'Esse preço do Stripe não é mensal. O site cobra por mês.'
+    if (cents(info.amount) !== cents(price)) return `No Stripe esse preço é ${brlText(info.amount)} por mês, e o site mostraria ${brlText(price)}. Use o mesmo valor ou crie um preço novo no Stripe.`
+    return null
+}
+
 router.get('/plans', async (req, res) => {
     try {
-        const plansResult = await db.query('SELECT * FROM plans ORDER BY price ASC')
-        res.json(plansResult.rows.map(p => ({ ...p, features: JSON.parse(p.features || '{}') })))
+        const [plansResult, countsResult] = await Promise.all([
+            db.query('SELECT * FROM plans ORDER BY price ASC, id ASC'),
+            db.query(`
+                SELECT COALESCE(u."planId", 0) AS "planId", COUNT(*)::int AS accounts,
+                       COUNT(*) FILTER (WHERE u."stripeSubscriptionId" IS NOT NULL AND u."subscriptionStatus" IN ('active', 'canceling'))::int AS paying
+                FROM users u WHERE u.role = 'USER' AND u."deletedAt" IS NULL
+                GROUP BY COALESCE(u."planId", 0)
+            `),
+        ])
+        const counts = Object.fromEntries(countsResult.rows.map(r => [Number(r.planId), r]))
+        const stripe = billing.getStripe()
+        const plans = await Promise.all(plansResult.rows.map(async (p) => {
+            const price = Math.round(Number(p.price) * 100) / 100
+            const priceId = billing.resolvePriceId(p)
+            const isFree = price === 0
+            return {
+                id: p.id,
+                name: p.name,
+                price,
+                isActive: Number(p.isActive) === 1 || p.isActive === true,
+                features: parseFeatures(p.features),
+                stripePriceId: p.stripePriceId || null,
+                priceSource: p.stripePriceId ? 'plano' : (priceId ? 'variavel' : null),
+                stripe: isFree ? { status: 'free' } : await stripePriceInfo(stripe, priceId),
+                accounts: (counts[p.id]?.accounts || 0) + (isFree ? (counts[0]?.accounts || 0) : 0),
+                paying: counts[p.id]?.paying || 0,
+            }
+        }))
+        res.json(plans)
     } catch (error) {
         console.error('Get plans error:', error)
         res.status(500).json({ message: 'Erro ao carregar planos' })
     }
 })
 
-router.post('/plans', async (req, res) => {
-    try {
-        const { name, price, features, isActive } = req.body
+// Regras comuns a criar e editar. `old` é o plano antes (null ao criar).
+async function checkPlan(next, old, client, priceTouched = true) {
+    const others = (await client.query('SELECT id, name, price FROM plans WHERE id <> $1', [old ? old.id : 0])).rows
+    if (others.some(o => String(o.name).trim().toLowerCase() === next.name.toLowerCase())) {
+        throw new PlanError(409, 'Já existe um plano com esse nome.', { field: 'name' })
+    }
+    const wasFree = old && Number(old.price) === 0
+    if (next.price === 0 && others.some(o => Number(o.price) === 0)) {
+        throw new PlanError(409, 'Já existe um plano gratuito. O site usa um só (é para ele que volta quem para de pagar).', { field: 'price' })
+    }
+    if (wasFree && next.price !== 0) {
+        throw new PlanError(409, 'O plano gratuito não pode passar a ser pago: é para ele que volta quem para de pagar. Crie um plano novo.', { field: 'price' })
+    }
+    if (wasFree && !next.isActive) {
+        throw new PlanError(409, 'O plano gratuito não pode ser desativado: é para ele que volta quem para de pagar.', { field: 'isActive' })
+    }
+    if (old && Number(old.price) > 0 && next.price === 0) {
+        const paying = await client.query(
+            `SELECT COUNT(*)::int AS n FROM users WHERE "planId" = $1 AND "stripeSubscriptionId" IS NOT NULL AND "subscriptionStatus" IN ('active', 'canceling') AND "deletedAt" IS NULL`, [old.id])
+        if (paying.rows[0].n > 0) throw new PlanError(409, 'Há assinaturas pagando este plano no Stripe: ele não pode virar gratuito.', { field: 'price' })
+    }
+    if (next.price > 0 && priceTouched) {
+        const priceId = billing.resolvePriceId({ name: next.name, stripePriceId: next.stripePriceId })
+        const stripe = billing.getStripe()
+        const info = await stripePriceInfo(stripe, priceId)
+        // Sem Stripe no servidor (desenvolvimento local) não dá para conferir: segue
+        if (info.status !== 'unconfigured') {
+            const problem = stripeMismatch(info, next.price)
+            if (problem) throw new PlanError(409, problem, { field: info.status === 'missing' || info.status === 'not_found' ? 'stripePriceId' : 'price', stripe: info })
+        }
+    }
+}
 
-        const result = await db.query(`
-            INSERT INTO plans (name, price, features, "isActive")
-            VALUES ($1, $2, $3, $4)
-            RETURNING id
-        `, [name, price || 0, JSON.stringify(features || {}), isActive ? 1 : 0])
+async function savePlan(req, res, id) {
+    let client
+    try {
+        const input = planInput(req.body && typeof req.body === 'object' ? req.body : {})
+        client = await pool.connect()
+        await client.query('BEGIN')
+        await client.query('SELECT pg_advisory_xact_lock(7304)')
+
+        let old = null
+        if (id) {
+            old = (await client.query('SELECT * FROM plans WHERE id = $1 FOR UPDATE', [id])).rows[0]
+            if (!old) throw new PlanError(404, 'Plano não encontrado.')
+        } else if (input.name === undefined || input.price === undefined) {
+            throw new PlanError(400, 'Informe o nome e o preço do plano.')
+        }
+
+        const oldFeatures = old ? parseFeatures(old.features) : {}
+        for (const [k, v] of Object.entries(input.unknownFeatures || {})) {
+            if (!(k in oldFeatures) || JSON.stringify(oldFeatures[k]) !== JSON.stringify(v)) {
+                throw new PlanError(400, `Recurso desconhecido: ${String(k).slice(0, 40)}.`, { field: 'features' })
+            }
+        }
+        const next = {
+            name: input.name ?? old.name,
+            price: input.price ?? Math.round(Number(old.price) * 100) / 100,
+            stripePriceId: input.stripePriceId !== undefined ? input.stripePriceId : (old ? old.stripePriceId || null : null),
+            isActive: input.isActive ?? (old ? Number(old.isActive) === 1 || old.isActive === true : true),
+            // Recursos que o painel não conhece continuam como estavam
+            features: { ...oldFeatures, ...(input.features || {}) },
+        }
+        // O Stripe só é consultado quando algo do preço muda (ligar um recurso não depende dele)
+        const oldActive = old ? Number(old.isActive) === 1 || old.isActive === true : false
+        const priceTouched = !old
+            || cents(next.price) !== cents(old.price)
+            || (next.stripePriceId || null) !== (old.stripePriceId || null)
+            || next.name !== old.name
+            || (next.isActive && !oldActive)
+        await checkPlan(next, old, client, priceTouched)
+
+        let planId = id
+        if (old) {
+            await client.query(`
+                UPDATE plans SET name = $1, price = $2, features = $3, "isActive" = $4, "stripePriceId" = $5, "updatedAt" = CURRENT_TIMESTAMP
+                WHERE id = $6
+            `, [next.name, next.price, JSON.stringify(next.features), next.isActive ? 1 : 0, next.stripePriceId, id])
+        } else {
+            const r = await client.query(`
+                INSERT INTO plans (name, price, features, "isActive", "stripePriceId") VALUES ($1, $2, $3, $4, $5) RETURNING id
+            `, [next.name, next.price, JSON.stringify(next.features), next.isActive ? 1 : 0, next.stripePriceId])
+            planId = r.rows[0].id
+        }
+        await client.query('COMMIT')
 
         await auditLogger.log({
             level: 'INFO',
-            event_type: 'PLAN_CREATED',
+            event_type: old ? 'PLAN_UPDATED' : 'PLAN_CREATED',
             actor: { user_id: req.user.id, role: req.user.role },
             context: req.context || {},
-            target: { resource_type: 'PLAN', resource_id: result.rows[0].id },
-            changes: { new_value: req.body }
+            target: { resource_type: 'PLAN', resource_id: planId },
+            changes: {
+                old_value: old ? { name: old.name, price: Number(old.price), isActive: Number(old.isActive) === 1, stripePriceId: old.stripePriceId || null, features: oldFeatures } : undefined,
+                new_value: next,
+            }
         })
-
-        res.json({ id: result.rows[0].id, message: 'Plano criado com sucesso' })
+        res.json({ id: planId, message: old ? 'Plano atualizado.' : 'Plano criado.' })
     } catch (error) {
-        console.error('Create plan error:', error)
-        res.status(500).json({ message: 'Erro ao criar plano' })
+        if (client) await client.query('ROLLBACK').catch(() => {})
+        if (error instanceof PlanError) return res.status(error.status).json({ message: error.message, ...error.extra })
+        console.error('Save plan error:', error)
+        res.status(500).json({ message: 'Erro ao salvar o plano' })
+    } finally {
+        if (client) client.release()
     }
-})
+}
 
-router.put('/plans/:id', async (req, res) => {
-    try {
-        const { id } = req.params
-        const { name, price, features, isActive } = req.body
-
-        const oldResult = await db.query('SELECT * FROM plans WHERE id = $1', [id])
-
-        await db.query(`
-            UPDATE plans
-            SET name = $1, price = $2, features = $3, "isActive" = $4, "updatedAt" = CURRENT_TIMESTAMP
-            WHERE id = $5
-        `, [name, price || 0, JSON.stringify(features || {}), isActive ? 1 : 0, id])
-
-        await auditLogger.log({
-            level: 'INFO',
-            event_type: 'PLAN_UPDATED',
-            actor: { user_id: req.user.id, role: req.user.role },
-            context: req.context || {},
-            target: { resource_type: 'PLAN', resource_id: id },
-            changes: { old_value: oldResult.rows[0] || {}, new_value: req.body }
-        })
-
-        res.json({ message: 'Plano atualizado com sucesso' })
-    } catch (error) {
-        console.error('Update plan error:', error)
-        res.status(500).json({ message: 'Erro ao atualizar plano' })
-    }
+router.post('/plans', (req, res) => savePlan(req, res, null))
+router.put('/plans/:id', (req, res) => {
+    const id = toUserId(req.params.id)
+    if (!id) return res.status(404).json({ message: 'Plano não encontrado.' })
+    return savePlan(req, res, id)
 })
 
 // ========== SETTINGS ==========
