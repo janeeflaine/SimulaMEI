@@ -11,6 +11,11 @@ const { getClientIp } = require('../middleware/requestContext')
 
 const router = express.Router()
 
+// IP para contar tentativas: IPv6 vira a rede /64 (o aparelho troca o fim do endereço sozinho)
+const ipKey = (ip) => {
+    try { return ipKeyGenerator(String(ip), 64) } catch (_) { return String(ip) }
+}
+
 // Limite por endereço de internet (IP real do visitante; na Vercel vem do cabeçalho
 // que ela mesma escreve). Cada servidor da Vercel conta à parte, por isso as
 // tentativas de senha também são contadas no banco (auth_attempts, abaixo).
@@ -20,7 +25,7 @@ const authLimiter = rateLimit({
     message: { message: 'Muitas tentativas. Espere 15 minutos e tente de novo.' },
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => ipKeyGenerator(getClientIp(req)),
+    keyGenerator: (req) => ipKey(getClientIp(req)),
     validate: { xForwardedForHeader: false, trustProxy: false }
 })
 
@@ -57,9 +62,11 @@ const DUMMY_HASH = bcrypt.hashSync('senha-que-nao-existe', 10)
 
 // Como nos serviços de login conhecidos (ex.: Auth0, OWASP): a trava principal é por
 // e-mail + IP, então quem erra de outro lugar não tranca o dono da conta; um teto por
-// e-mail pega ataque espalhado em muitos IPs; um teto por IP pega quem testa senhas
+// e-mail (10 em 15 min, 20 em 1 hora) pega ataque espalhado em muitos IPs e quem troca
+// de IP (celular que alterna IPv4 e IPv6, Wi-Fi e 4G); um teto por IP pega quem testa senhas
 // em muitas contas. Entrar com a senha certa (ou criar senha nova) zera o e-mail.
 const LOGIN_MAX_PER_EMAIL_IP = 5   // erros no mesmo e-mail, do mesmo IP, em 15 min
+const LOGIN_MAX_PER_EMAIL_15 = 10  // erros no mesmo e-mail, de qualquer IP, em 15 min
 const LOGIN_MAX_PER_EMAIL = 20     // erros no mesmo e-mail, de qualquer IP, em 1 hora
 const LOGIN_MAX_PER_IP = 30        // erros do mesmo IP, em qualquer e-mail, em 15 min
 const RESET_MAX_PER_EMAIL = 3      // e-mails de "Esqueci a senha" por hora
@@ -85,6 +92,19 @@ async function countAttempt(kind, key, minutes, ids) {
     } catch (err) {
         // Sem a tabela (banco ainda sendo preparado): não trava ninguém; o limite por IP continua
         console.error('auth_attempts:', err.message)
+        return 0
+    }
+}
+
+async function countRecent(kind, key, minutes) {
+    try {
+        const { rows } = await db.query(
+            `SELECT COUNT(*)::int AS n FROM auth_attempts
+             WHERE kind = $1 AND key = $2 AND created_at > NOW() - make_interval(mins => $3)`,
+            [kind, String(key).slice(0, 254), minutes]
+        )
+        return rows[0] ? rows[0].n : 0
+    } catch (_) {
         return 0
     }
 }
@@ -349,20 +369,23 @@ router.post('/login', authLimiter, async (req, res) => {
         }
 
         // Tentativas no banco: por e-mail (protege a conta) e por IP (protege o site)
-        const ip = getClientIp(req)
+        // IPv6: conta a rede (/64), não o endereço, que o aparelho troca sozinho
+        const ip = ipKey(getClientIp(req))
         const attemptIds = []
         const [byEmailIp, byEmail, byIp] = await Promise.all([
             countAttempt('login', `${email}|${ip}`, 15, attemptIds),
             countAttempt('login-email', email, 60, attemptIds),
             countAttempt('login-ip', ip, 15, attemptIds)
         ])
-        if (byEmailIp > LOGIN_MAX_PER_EMAIL_IP || byEmail > LOGIN_MAX_PER_EMAIL || byIp > LOGIN_MAX_PER_IP) {
+        // Mesmo e-mail nos últimos 15 min (o registro desta tentativa já foi gravado acima)
+        const byEmail15 = await countRecent('login-email', email, 15)
+        if (byEmailIp > LOGIN_MAX_PER_EMAIL_IP || byEmail15 > LOGIN_MAX_PER_EMAIL_15 || byEmail > LOGIN_MAX_PER_EMAIL || byIp > LOGIN_MAX_PER_IP) {
             await auditLogger.log({
                 level: 'WARN',
                 event_type: 'USER_LOGIN_THROTTLED',
                 actor: {},
                 context: req.context || {},
-                metadata: { email, byEmailIp, byEmail, byIp }
+                metadata: { email, ip, byEmailIp, byEmail15, byEmail, byIp }
             })
             return res.status(429).json({ message: byIp > LOGIN_MAX_PER_IP && byEmailIp <= LOGIN_MAX_PER_EMAIL_IP ? BUSY_IP : LOCKED_LOGIN })
         }

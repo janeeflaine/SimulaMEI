@@ -18,15 +18,24 @@ function firstIp(value) {
   return first && first.length < 50 ? first : null
 }
 
+// Na Vercel: variável VERCEL/VERCEL_ENV (quando o projeto expõe as variáveis do sistema)
+// ou o cabeçalho x-vercel-id, que a Vercel põe em todo pedido. Antes só a variável era
+// olhada; sem ela, valia o endereço interno da conexão, que muda de servidor para
+// servidor, e a trava de senha por IP podia não segurar.
+const onVercel = (req) => !!(process.env.VERCEL || process.env.VERCEL_ENV || req.headers['x-vercel-id'])
+
+// IPv4 dentro de IPv6 (::ffff:1.2.3.4) vira o IPv4
+const tidy = (ip) => (typeof ip === 'string' && ip.startsWith('::ffff:') && ip.includes('.') ? ip.slice(7) : ip)
+
 function getClientIp(req) {
-  if (process.env.VERCEL) {
+  if (onVercel(req)) {
     const fromEdge =
       firstIp(req.headers['x-vercel-forwarded-for']) ||
       firstIp(req.headers['x-real-ip']) ||
       firstIp(req.headers['x-forwarded-for'])
-    if (fromEdge) return fromEdge
+    if (fromEdge) return tidy(fromEdge)
   }
-  return req.socket?.remoteAddress || req.ip || 'unknown'
+  return tidy(req.socket?.remoteAddress || req.ip || 'unknown')
 }
 
 function requestContext(req, res, next) {

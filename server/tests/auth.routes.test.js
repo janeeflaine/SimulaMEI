@@ -212,6 +212,13 @@ describe('Entrar', () => {
         expect(sql.some(s => s.q.includes('WHERE LOWER(u.email) = $1'))).toBe(false)
     })
 
+    test('décimo primeiro erro no e-mail em 15 min, vindo de outro IP (Wi-Fi, 4G, IPv6): 429', async () => {
+        state.preset['login-email'] = 10
+        const res = await login({ email: 'joana@teste.com', password: 'senha-certa-1' })
+        expect(res.statusCode).toBe(429)
+        expect(res.body.message).toMatch(/este e-mail/)
+    })
+
     test('vigésimo primeiro erro no e-mail vindo de vários IPs, em 1 hora: 429', async () => {
         state.preset['login-email'] = 20
         expect((await login({ email: 'joana@teste.com', password: 'senha-certa-1' })).statusCode).toBe(429)
@@ -341,5 +348,27 @@ describe('Senha nova', () => {
         const res = await request(app).post('/api/auth/reset-password').send({ token: TOKEN, newPassword: 'nova-senha-123' })
         expect(res.statusCode).toBe(400)
         expect(ran('UPDATE users')).toHaveLength(0)
+    })
+})
+
+describe('IP de quem pede', () => {
+    const { getClientIp } = require('../middleware/requestContext')
+    const req = (headers, remote = '10.9.9.9') => ({ headers, socket: { remoteAddress: remote } })
+    const env = { ...process.env }
+    afterEach(() => { process.env = { ...env } })
+
+    test('na Vercel pelo cabeçalho x-vercel-id, mesmo sem a variável VERCEL', () => {
+        delete process.env.VERCEL; delete process.env.VERCEL_ENV
+        expect(getClientIp(req({ 'x-vercel-id': 'gru1::abc', 'x-vercel-forwarded-for': '189.10.20.30' }))).toBe('189.10.20.30')
+    })
+
+    test('fora da Vercel, cabeçalho inventado não vale', () => {
+        delete process.env.VERCEL; delete process.env.VERCEL_ENV
+        expect(getClientIp(req({ 'x-forwarded-for': '1.2.3.4' }))).toBe('10.9.9.9')
+    })
+
+    test('IPv4 dentro de IPv6 vira IPv4', () => {
+        delete process.env.VERCEL; delete process.env.VERCEL_ENV
+        expect(getClientIp(req({}, '::ffff:127.0.0.1'))).toBe('127.0.0.1')
     })
 })
