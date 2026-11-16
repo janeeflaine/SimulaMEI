@@ -91,6 +91,9 @@ function route(sql, params = []) {
         return { rows: [{ id: 501 }] }
     }
     if (q.startsWith('SELECT * FROM whatsapp_links WHERE phone')) return { rows: state.link ? [state.link] : [] }
+    if (q.startsWith('SELECT "pendingAction", "pendingNonce" FROM whatsapp_links')) {
+        return { rows: state.pending ? [{ pendingAction: state.pending.action, pendingNonce: state.pending.nonce }] : [] }
+    }
     if (q.includes('FROM users u LEFT JOIN plans p')) return { rows: state.user ? [state.user] : [] }
     if (q.startsWith('UPDATE whatsapp_links SET "pendingNonce" = $2')) {
         state.pending = { nonce: params[1], action: params[2] }
@@ -132,6 +135,9 @@ const listMsg = (replyId) => ({ from: PHONE, id: `wamid.${Math.random()}`, type:
 const lastButtons = () => mockWa.sendButtons.mock.calls.at(-1)[2]
 const lastButtonsBody = () => mockWa.sendButtons.mock.calls.at(-1)[1]
 const buttonByTitle = (title) => lastButtons().find(b => b.title === title)
+const lastListRows = () => mockWa.sendList.mock.calls.at(-1)[3]
+const lastListBody = () => mockWa.sendList.mock.calls.at(-1)[1]
+const rowByTitle = (title) => lastListRows().find(r => r.title === title)
 const sqlCalls = (prefix) => mockDb.query.mock.calls.filter(([sql]) => sql.replace(/\s+/g, ' ').trim().startsWith(prefix))
 
 describe('whatsappBot - mensagens recebidas', () => {
@@ -431,6 +437,110 @@ describe('whatsappBot - carteiras, forma de pagamento e categoria', () => {
         await bot.handleIncomingMessage(textMsg('gastei 10 no teste no pix'))
         expect(lastButtons().map(b => b.title)).toEqual(['Confirmar', 'Cancelar'])
         expect(lastButtonsBody()).not.toContain('Categoria')
+    })
+
+    test('Sem categoria informada: sugere categoria compatível e usuário confirma com Usar', async () => {
+        state.categories = [
+            { id: 88, name: 'Mercado', type: 'DESPESA_PESSOAL' },
+            { id: 89, name: 'Lanches', type: 'DESPESA_PESSOAL' }
+        ]
+        mockInterpret.mockResolvedValue({
+            action: 'registrar_lancamento',
+            args: { tipo: 'DESPESA', valor: 55, descricao: 'Verduras na feira', destino: 'PESSOAL', forma_pagamento: 'Dinheiro' }
+        })
+        await bot.handleIncomingMessage(textMsg('comprei verduras na feira 55 reais no dinheiro'))
+        expect(lastButtons().map(b => b.title)).toEqual(['Usar Mercado', 'Escolher outra', 'Criar nova'])
+        expect(lastButtonsBody()).toContain('Sugestão de categoria: *Mercado*')
+
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Usar Mercado').id))
+        expect(lastButtons().map(b => b.title)).toEqual(['Confirmar', 'Cancelar'])
+        expect(lastButtonsBody()).toContain('Categoria: Mercado')
+
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Confirmar').id))
+        expect(state.inserted[0][5]).toBe(88)
+    })
+
+    test('Sem categoria informada: clica em Criar nova, digita o nome por texto e confirma', async () => {
+        state.categories = [{ id: 88, name: 'Mercado', type: 'DESPESA_PESSOAL' }]
+        mockInterpret.mockResolvedValue({
+            action: 'registrar_lancamento',
+            args: { tipo: 'DESPESA', valor: 55, descricao: 'Verduras na feira', destino: 'PESSOAL', forma_pagamento: 'Dinheiro' }
+        })
+        await bot.handleIncomingMessage(textMsg('comprei verduras na feira 55'))
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Criar nova').id))
+
+        const lastText = mockWa.sendText.mock.calls.at(-1)[1]
+        expect(lastText).toContain('Qual o nome da nova categoria?')
+
+        // Responde em texto com o nome da categoria
+        await bot.handleIncomingMessage(textMsg('Feira'))
+        expect(lastButtons().map(b => b.title)).toEqual(['Confirmar', 'Cancelar'])
+        expect(lastButtonsBody()).toContain('Categoria: Feira (nova)')
+
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Confirmar').id))
+        expect(state.createdCategories[0]).toEqual([42, 'Feira', 'DESPESA_PESSOAL'])
+        expect(state.inserted[0][5]).toBe(501)
+    })
+
+    test('Sem categoria informada: clica em Escolher outra e escolhe da lista', async () => {
+        state.categories = [
+            { id: 88, name: 'Mercado', type: 'DESPESA_PESSOAL' },
+            { id: 89, name: 'Lanches', type: 'DESPESA_PESSOAL' }
+        ]
+        mockInterpret.mockResolvedValue({
+            action: 'registrar_lancamento',
+            args: { tipo: 'DESPESA', valor: 55, descricao: 'Verduras na feira', destino: 'PESSOAL', forma_pagamento: 'Dinheiro' }
+        })
+        await bot.handleIncomingMessage(textMsg('comprei verduras na feira 55'))
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Escolher outra').id))
+
+        expect(lastListRows().some(r => r.title === 'Lanches')).toBe(true)
+        expect(lastListRows().some(r => r.title === 'Sem categoria')).toBe(true)
+
+        await bot.handleIncomingMessage(listMsg(rowByTitle('Lanches').id))
+        expect(lastButtons().map(b => b.title)).toEqual(['Confirmar', 'Cancelar'])
+        expect(lastButtonsBody()).toContain('Categoria: Lanches')
+
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Confirmar').id))
+        expect(state.inserted[0][5]).toBe(89)
+    })
+
+    test('Sem categoria informada: clica em Escolher outra e escolhe Sem categoria', async () => {
+        state.categories = [{ id: 88, name: 'Mercado', type: 'DESPESA_PESSOAL' }]
+        mockInterpret.mockResolvedValue({
+            action: 'registrar_lancamento',
+            args: { tipo: 'DESPESA', valor: 55, descricao: 'Verduras na feira', destino: 'PESSOAL', forma_pagamento: 'Dinheiro' }
+        })
+        await bot.handleIncomingMessage(textMsg('comprei verduras na feira 55'))
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Escolher outra').id))
+
+        await bot.handleIncomingMessage(listMsg(rowByTitle('Sem categoria').id))
+        expect(lastButtons().map(b => b.title)).toEqual(['Confirmar', 'Cancelar'])
+        expect(lastButtonsBody()).not.toContain('Categoria')
+
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Confirmar').id))
+        expect(state.inserted[0][5]).toBeNull()
+    })
+
+    test('Sem categoria informada: clica em Escolher outra e responde por texto com categoria existente', async () => {
+        state.categories = [
+            { id: 88, name: 'Mercado', type: 'DESPESA_PESSOAL' },
+            { id: 95, name: 'Aluguel', type: 'DESPESA_PESSOAL' }
+        ]
+        mockInterpret.mockResolvedValue({
+            action: 'registrar_lancamento',
+            args: { tipo: 'DESPESA', valor: 55, descricao: 'Verduras na feira', destino: 'PESSOAL', forma_pagamento: 'Dinheiro' }
+        })
+        await bot.handleIncomingMessage(textMsg('comprei verduras na feira 55'))
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Escolher outra').id))
+
+        // Usuário responde em texto com o nome de uma categoria existente
+        await bot.handleIncomingMessage(textMsg('Aluguel'))
+        expect(lastButtons().map(b => b.title)).toEqual(['Confirmar', 'Cancelar'])
+        expect(lastButtonsBody()).toContain('Categoria: Aluguel')
+
+        await bot.handleIncomingMessage(buttonMsg(buttonByTitle('Confirmar').id))
+        expect(state.inserted[0][5]).toBe(95)
     })
 })
 

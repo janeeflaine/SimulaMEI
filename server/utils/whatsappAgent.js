@@ -114,6 +114,9 @@ REGRAS:
 11. Não dê recomendação de investimento nem orientação jurídica ou contábil individual.
 12. Forma de pagamento: só preencha se a pessoa disse. Não deduza pelo tipo de compra; na dúvida use INDEFINIDO.
 13. Carteira: preencha só se a pessoa citou uma carteira ou o nome de alguém. Quando citar, use destino MEI ou PESSOAL só se ela disser claramente (mei, empresa, loja, pessoal, casa); senão INDEFINIDO, que o sistema pergunta.
+14. Categoria:
+- Se o usuário disse explicitamente qual categoria usar (ex: "categoria Mercado", "na categoria Viagem"), preencha categoria com o que ele disse e defina categoria_pedida = true.
+- Se o usuário NÃO citou categoria explicitamente, analise o gasto e compare com as CATEGORIAS DO USUÁRIO cadastradas para aquele tipo e destino. Se houver uma categoria claramente compatível por afinidade ou similaridade (ex: "verduras na feira" -> "Mercado"; "abasteci o carro" -> "Gasolina"; "remédio" -> "Saúde"; etc.), preencha categoria com o NOME EXATO dessa categoria da lista e defina categoria_pedida = false. Se nenhuma categoria da lista servir ou na dúvida, omita categoria.
 
 CATEGORIAS DO USUÁRIO:
 - Receitas: ${byType('RECEITA')}

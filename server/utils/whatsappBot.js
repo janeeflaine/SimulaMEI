@@ -18,6 +18,7 @@ const { db } = require('../db')
 const wa = require('./whatsappClient')
 const agent = require('./whatsappAgent')
 const fa = require('./financeActions')
+const { matchCategory } = require('./categoryMatcher')
 
 const RATE_LIMIT_PER_HOUR = 30
 const PENDING_TTL_MINUTES = 30
@@ -310,20 +311,54 @@ async function advanceTransaction(ctx, link, phone, tx) {
             PAYMENT_OPTIONS.map(o => ({ id: `pm:${o.code}:${nonce}`, title: o.title })), 'Formas de pagamento')
     }
 
-    // 5. Categoria citada: usa a existente; se a pessoa pediu uma que não existe, oferece criar
-    if (tx.categoryName && !tx.categoryChecked) {
-        const found = await fa.findCategory(ctx.id, tx.categoryName, tx.type, tx.target)
-        if (found) {
-            tx.categoryName = found.name
-            tx.categoryChecked = true
-        } else if (tx.categoryRequested && fa.hasFeature(ctx, 'categorias')) {
-            const nonce = await savePending(link.id, { kind: 'CREATE', tx })
-            return wa.sendButtons(phone,
-                `${describeTransaction({ ...tx, categoryName: null })}\n\nA categoria *${tx.categoryName}* ainda não existe. Quer criar?`, [
-                    { id: `cat:new:${nonce}`, title: 'Criar categoria' },
-                    { id: `cat:none:${nonce}`, title: 'Sem categoria' },
-                    { id: `no:${nonce}`, title: 'Cancelar' }
-                ])
+    // 5. Categoria:
+    // Se o usuário pediu explicitamente, honra ou pergunta se quer criar.
+    // Se NÃO pediu explicitamente, sugere categoria compatível se houver;
+    // o usuário pode confirmar a sugestão, escolher outra da lista ou criar nova.
+    if (!tx.categoryChecked) {
+        if (tx.categoryRequested) {
+            const found = tx.categoryName ? await fa.findCategory(ctx.id, tx.categoryName, tx.type, tx.target) : null
+            if (found) {
+                tx.categoryName = found.name
+                tx.categoryChecked = true
+            } else if (tx.categoryName && fa.hasFeature(ctx, 'categorias')) {
+                const nonce = await savePending(link.id, { kind: 'CREATE', tx })
+                return wa.sendButtons(phone,
+                    `${describeTransaction({ ...tx, categoryName: null })}\n\nA categoria *${tx.categoryName}* ainda não existe. Quer criar?`, [
+                        { id: `cat:new:${nonce}`, title: 'Criar categoria' },
+                        { id: `cat:none:${nonce}`, title: 'Sem categoria' },
+                        { id: `no:${nonce}`, title: 'Cancelar' }
+                    ])
+            } else {
+                tx.categoryName = null
+                tx.categoryChecked = true
+            }
+        } else if (fa.hasFeature(ctx, 'categorias')) {
+            let suggested = null
+            if (tx.categoryName) {
+                const found = await fa.findCategory(ctx.id, tx.categoryName, tx.type, tx.target)
+                if (found) suggested = found.name
+            }
+            if (!suggested) {
+                const expectedType = fa.categoryTypeFor(tx.type, tx.target)
+                const userCategories = (await fa.listCategories(ctx.id)).filter(c => c.type === expectedType)
+                const matched = matchCategory(tx.description, userCategories)
+                if (matched) suggested = matched.name
+            }
+
+            if (suggested) {
+                const nonce = await savePending(link.id, { kind: 'CREATE', tx, suggestedCategory: suggested })
+                const useTitle = `Usar ${suggested}`.length <= 20 ? `Usar ${suggested}` : 'Usar sugestão'
+                return wa.sendButtons(phone,
+                    `${describeTransaction({ ...tx, categoryName: null })}\n\nSugestão de categoria: *${suggested}*\n\nDeseja classificar como *${suggested}*?`, [
+                        { id: `catsug:use:${nonce}`, title: useTitle },
+                        { id: `catsug:other:${nonce}`, title: 'Escolher outra' },
+                        { id: `catsug:new:${nonce}`, title: 'Criar nova' }
+                    ])
+            } else {
+                tx.categoryName = null
+                tx.categoryChecked = true
+            }
         } else {
             tx.categoryName = null
             tx.categoryChecked = true
@@ -482,6 +517,52 @@ async function handleReply(ctx, link, phone, replyId) {
             if (rest[0] === 'new') tx.createCategory = true
             else tx.categoryName = null
             tx.categoryChecked = true
+        } else if (kind === 'catsug') {
+            const action = rest[0]
+            if (action === 'use') {
+                tx.categoryName = pending.suggestedCategory || tx.categoryName
+                tx.categoryChecked = true
+            } else if (action === 'new') {
+                await savePending(link.id, { kind: 'CREATE', tx, awaitingCategoryName: true })
+                return wa.sendText(phone, 'Qual o nome da nova categoria?\n\nResponda com o nome (ex: Feira):')
+            } else if (action === 'other') {
+                const expectedType = fa.categoryTypeFor(tx.type, tx.target)
+                const categories = (await fa.listCategories(ctx.id)).filter(c => c.type === expectedType)
+                const otherCats = categories.filter(c => c.name.toLowerCase() !== (pending.suggestedCategory || '').toLowerCase())
+                const nonceOther = await savePending(link.id, {
+                    kind: 'CREATE',
+                    tx,
+                    awaitingCategoryChoice: true,
+                    categoryOptions: categories.map(c => c.id)
+                })
+                const rows = [
+                    ...otherCats.slice(0, 9).map(c => ({
+                        id: `catpick:${c.id}:${nonceOther}`,
+                        title: c.name.slice(0, 24)
+                    })),
+                    {
+                        id: `catpick:none:${nonceOther}`,
+                        title: 'Sem categoria',
+                        description: 'Registrar sem categoria'
+                    }
+                ]
+                const extraNote = otherCats.length > 9 ? '\n\n(Ou responda com o nome de outra categoria sua)' : ''
+                return wa.sendList(phone, `Escolha uma categoria para este lançamento:${extraNote}`, 'Categorias', rows, 'Suas categorias')
+            } else {
+                return wa.sendText(phone, 'Não entendi a resposta. Pode mandar de novo?')
+            }
+        } else if (kind === 'catpick') {
+            const choice = rest[0]
+            if (choice === 'none') {
+                tx.categoryName = null
+                tx.categoryChecked = true
+            } else {
+                const catId = parseInt(choice, 10)
+                const categories = await fa.listCategories(ctx.id)
+                const found = categories.find(c => c.id === catId)
+                if (found) tx.categoryName = found.name
+                tx.categoryChecked = true
+            }
         } else {
             return wa.sendText(phone, 'Não entendi a resposta. Pode mandar de novo?')
         }
@@ -633,6 +714,53 @@ async function handleIncomingMessage(msg) {
 
     // 5. Botões e listas
     if (replyId) return handleReply(ctx, link, phone, replyId)
+
+    // Se havia uma pergunta aguardando resposta em texto (nome ou escolha de categoria)
+    const { rows: [pendingRow] } = await db.query(
+        `SELECT "pendingAction", "pendingNonce" FROM whatsapp_links
+         WHERE id = $1 AND "pendingExpiresAt" > NOW() AND "pendingAction" IS NOT NULL`,
+        [link.id]
+    )
+    if (pendingRow && pendingRow.pendingAction && text) {
+        let pending = null
+        try { pending = JSON.parse(pendingRow.pendingAction) } catch (_) {}
+        if (pending && pending.kind === 'CREATE') {
+            if (pending.awaitingCategoryName) {
+                await consumePending(link.id, pendingRow.pendingNonce)
+                const lower = text.toLowerCase()
+                if (['cancelar', 'sair', 'parar', 'cancela'].includes(lower)) {
+                    return wa.sendText(phone, 'Cancelado. Nada foi registrado.')
+                }
+                const catName = text.slice(0, 60).trim()
+                const tx = { ...pending.tx, categoryName: catName, createCategory: true, categoryChecked: true }
+                return advanceTransaction(ctx, link, phone, tx)
+            }
+            if (pending.awaitingCategoryChoice) {
+                await consumePending(link.id, pendingRow.pendingNonce)
+                const lower = text.toLowerCase()
+                if (['cancelar', 'sair', 'parar', 'cancela'].includes(lower)) {
+                    return wa.sendText(phone, 'Cancelado. Nada foi registrado.')
+                }
+                if (['nenhum', 'nenhuma', 'sem categoria', 'sem'].includes(lower)) {
+                    const tx = { ...pending.tx, categoryName: null, categoryChecked: true }
+                    return advanceTransaction(ctx, link, phone, tx)
+                }
+                const found = await fa.findCategory(ctx.id, text.trim(), pending.tx.type, pending.tx.target)
+                if (found) {
+                    const tx = { ...pending.tx, categoryName: found.name, categoryChecked: true }
+                    return advanceTransaction(ctx, link, phone, tx)
+                }
+                const tx = { ...pending.tx, categoryName: text.trim().slice(0, 60), categoryRequested: true }
+                const nonce = await savePending(link.id, { kind: 'CREATE', tx })
+                return wa.sendButtons(phone,
+                    `${describeTransaction({ ...tx, categoryName: null })}\n\nA categoria *${tx.categoryName}* ainda não existe. Quer criar?`, [
+                        { id: `cat:new:${nonce}`, title: 'Criar categoria' },
+                        { id: `cat:none:${nonce}`, title: 'Sem categoria' },
+                        { id: `no:${nonce}`, title: 'Cancelar' }
+                    ])
+            }
+        }
+    }
 
     // Comandos fixos
     const command = text.toLowerCase()

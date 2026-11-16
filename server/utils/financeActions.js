@@ -369,6 +369,7 @@ module.exports = {
     maxWhatsappNumbers,
     checkTransactionLimit,
     listCategories,
+    categoryTypeFor,
     findCategory,
     listWallets,
     getWallet,
