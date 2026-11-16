@@ -15,6 +15,7 @@ const uploadFaturasGuard = featureGuard('upload_faturas')
 const { calculateBillingDate } = require('../utils/billingDate')
 const multer = require('multer')
 const { parseInvoice, validateFile, SUPPORTED_MIME_TYPES, MAX_FILE_SIZE } = require('../utils/geminiService')
+const { applyInvoiceKeywordRules } = require('../utils/invoiceKeywords')
 
 // Multer config — store in memory (no disk), limit 10MB
 const upload = multer({
@@ -406,13 +407,34 @@ router.post('/:id/items', authMiddleware, cartoesGuard, validateReferenceOwnersh
 
     try {
         const invoiceId = toId(req.params.id)
-        const { transactionDate, categoryId, aiCategory, aiConfidence, installment } = req.body
+        let { transactionDate, categoryId, aiCategory, aiConfidence, installment } = req.body
         const isConfirmed = req.body.isConfirmed === true
 
         const newItem = await withTransaction(async (client) => {
             // Check invoice exists and belongs to user
             const { rows: [cardInfo] } = await client.query(`${INVOICE_CARD_SQL} FOR UPDATE OF ci`, [invoiceId, req.user.id])
             if (!cardInfo) throw new HttpError(404, 'Fatura não encontrada')
+
+            let categoryName = null
+            if (!categoryId) {
+                const singleItem = [{
+                    description: req.body.description.trim(),
+                    amount: Number(req.body.amount),
+                    category: aiCategory || null
+                }]
+                await applyInvoiceKeywordRules({
+                    items: singleItem,
+                    userId: req.user.id,
+                    categoryType: categoryTypeFor(cardInfo.account_type),
+                    client
+                })
+                if (singleItem[0].categoryId) {
+                    categoryId = singleItem[0].categoryId
+                    aiCategory = singleItem[0].aiCategory
+                    categoryName = singleItem[0].categoryName
+                    aiConfidence = 1.0
+                }
+            }
 
             const { rows: [item] } = await client.query(
                 `INSERT INTO invoice_items ("invoiceId", "userId", description, amount, "transactionDate", "categoryId", "aiCategory", "aiConfidence", installment, "isConfirmed")
@@ -426,7 +448,7 @@ router.post('/:id/items', authMiddleware, cartoesGuard, validateReferenceOwnersh
             // Item lançado à mão já confirmado vai direto para o Extrato
             await syncItemToStatement(client, req.user.id, item, cardInfo)
             await recalcInvoiceTotal(client, invoiceId)
-            return item
+            return { ...item, categoryName: categoryName || undefined }
         })
 
         res.status(201).json(newItem)
@@ -862,6 +884,14 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
         await client.query('BEGIN')
 
         try {
+            // Aplica regras de classificação automática por palavras-chave (IOF, Multa, Juros)
+            await applyInvoiceKeywordRules({
+                items,
+                userId: req.user.id,
+                categoryType: categoryTypeFor(card.account_type),
+                client
+            })
+
             const meta = aiResult.metadata || {}
             const dueDate = isValidDate(meta.dueDate) ? meta.dueDate : null
             const closingDate = isValidDate(meta.closingDate) ? meta.closingDate : null
@@ -939,13 +969,17 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
             const insertedItems = []
             for (const item of items) {
                 const { rows: [inserted] } = await client.query(
-                    `INSERT INTO invoice_items ("invoiceId", "userId", description, amount, "transactionDate", "aiCategory", "aiConfidence", installment, "isConfirmed")
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
+                    `INSERT INTO invoice_items ("invoiceId", "userId", description, amount, "transactionDate", "aiCategory", "aiConfidence", installment, "isConfirmed", "categoryId")
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, $9)
                      RETURNING *`,
-                    [invoiceId, req.user.id, item.description, item.amount, item.transactionDate, item.category, item.confidence, item.installment]
+                    [invoiceId, req.user.id, item.description, item.amount, item.transactionDate, item.category, item.confidence, item.installment, item.categoryId || null]
                 )
                 const repeated = takeExisting(item)
-                insertedItems.push({ ...inserted, alreadyInInvoice: repeated })
+                insertedItems.push({
+                    ...inserted,
+                    categoryName: item.categoryName || item.category || null,
+                    alreadyInInvoice: repeated
+                })
             }
 
             // Recalculate invoice total
@@ -966,6 +1000,12 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                 [invoiceId, JSON.stringify(aiResult), uploadRecord.id]
             )
 
+            // Categorias do usuário para sincronização imediata no frontend
+            const { rows: allCats } = await client.query(
+                'SELECT * FROM finance_categories WHERE "userId" = $1 ORDER BY name ASC',
+                [req.user.id]
+            )
+
             res.status(201).json({
                 message: 'Fatura processada com sucesso. Revise os itens antes de confirmar.',
                 uploadId: uploadRecord.id,
@@ -975,7 +1015,8 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                 alreadyConfirmedCount: alreadyConfirmed.length,
                 items: insertedItems,
                 totalItems: insertedItems.length,
-                totalAmount: parseFloat(totals?.totalAmount) || 0
+                totalAmount: parseFloat(totals?.totalAmount) || 0,
+                categories: allCats
             })
         } catch (txErr) {
             await client.query('ROLLBACK').catch(() => {})

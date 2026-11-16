@@ -183,6 +183,9 @@ export default function InvoiceUpload() {
                     ? `O arquivo passa de ${MAX_SIZE_MB} MB.`
                     : data.message || 'Não deu para ler a fatura agora. Tente de novo em alguns minutos.')
             }
+            if (Array.isArray(data.categories)) {
+                setCategories(data.categories)
+            }
             startReview({
                 invoiceId: data.invoiceId,
                 metadata: data.metadata || {},

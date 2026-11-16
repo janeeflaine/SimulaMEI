@@ -47,9 +47,11 @@ Para CADA item extraído, retorne:
 - description: texto exato da descrição do gasto (como aparece na fatura)
 - amount: valor numérico em reais (ex: 25.90, sem "R$"). Compras, tarifas, juros e IOF são positivos. Estornos, créditos e devoluções são NEGATIVOS (ex: -45.00).
 - transactionDate: data da compra no formato YYYY-MM-DD (se disponível)
-- category: categoria sugerida entre: Alimentação, Transporte, Moradia, Saúde, Educação, Lazer, Vestuário, Assinaturas, Mercado, Restaurante, Combustível, Farmácia, Pets, Serviços, Outros
+- category: categoria sugerida entre: Alimentação, Transporte, Moradia, Saúde, Educação, Lazer, Vestuário, Assinaturas, Mercado, Restaurante, Combustível, Farmácia, Pets, Serviços, Juros e Multas, Outros
 - confidence: sua confiança na categorização de 0.0 a 1.0
 - installment: se for parcela, formato "X/Y" (ex: "3/12"), senão null
+
+Para cobranças de IOF, multas, juros e encargos por atraso, classifique sempre na categoria "Juros e Multas" (ou categoria similar fornecida nas categorias do usuário).
 
 NÃO inclua como item: o pagamento da fatura anterior ("PAGAMENTO EFETUADO", "PAGTO", "PAGAMENTO RECEBIDO"), o saldo anterior nem linhas de total ou subtotal.
 
