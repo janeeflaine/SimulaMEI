@@ -16,6 +16,7 @@ const { calculateBillingDate } = require('../utils/billingDate')
 const multer = require('multer')
 const { parseInvoice, validateFile, SUPPORTED_MIME_TYPES, MAX_FILE_SIZE } = require('../utils/geminiService')
 const { applyInvoiceKeywordRules } = require('../utils/invoiceKeywords')
+const { applyInstallmentCategoryMemory } = require('../utils/installmentMemory')
 
 // Multer config — store in memory (no disk), limit 10MB
 const upload = multer({
@@ -420,6 +421,7 @@ router.post('/:id/items', authMiddleware, cartoesGuard, validateReferenceOwnersh
                 const singleItem = [{
                     description: req.body.description.trim(),
                     amount: Number(req.body.amount),
+                    installment: typeof installment === 'string' ? installment.slice(0, 20) : null,
                     category: aiCategory || null
                 }]
                 await applyInvoiceKeywordRules({
@@ -428,6 +430,16 @@ router.post('/:id/items', authMiddleware, cartoesGuard, validateReferenceOwnersh
                     categoryType: categoryTypeFor(cardInfo.account_type),
                     client
                 })
+                if (!singleItem[0].categoryId) {
+                    await applyInstallmentCategoryMemory({
+                        items: singleItem,
+                        userId: req.user.id,
+                        cardId: cardInfo.cardId,
+                        categoryType: categoryTypeFor(cardInfo.account_type),
+                        client,
+                        currentInvoiceId: invoiceId
+                    })
+                }
                 if (singleItem[0].categoryId) {
                     categoryId = singleItem[0].categoryId
                     aiCategory = singleItem[0].aiCategory
@@ -965,6 +977,16 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                 return !!found
             }
 
+            // Aplica memória de compras parceladas (reaproveita a categoria da fatura anterior / primeira fatura)
+            await applyInstallmentCategoryMemory({
+                items,
+                userId: req.user.id,
+                cardId,
+                categoryType: categoryTypeFor(card.account_type),
+                client,
+                currentInvoiceId: invoiceId
+            })
+
             // Insert all items
             const insertedItems = []
             for (const item of items) {
@@ -978,6 +1000,7 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
                 insertedItems.push({
                     ...inserted,
                     categoryName: item.categoryName || item.category || null,
+                    memorizedFromInstallment: !!item.memorizedFromInstallment,
                     alreadyInInvoice: repeated
                 })
             }

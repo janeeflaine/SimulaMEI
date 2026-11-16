@@ -549,6 +549,7 @@ export default function InvoiceUpload() {
                                                 <th scope="row" className="ef-table__desc">
                                                     <span>{item.description}</span>
                                                     {item.installment && <span className="ef-tag">parcela {item.installment}</span>}
+                                                    {item.memorizedFromInstallment && <span className="ef-tag ef-tag--done" title="Categoria copiada da fatura anterior desta compra parcelada">da fatura anterior</span>}
                                                     {item.alreadyInInvoice && <span className="ef-tag ef-tag--done">já lançada</span>}
                                                 </th>
                                                 <td className="ef-table__cat">
