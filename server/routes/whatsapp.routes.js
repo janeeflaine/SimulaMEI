@@ -21,7 +21,7 @@ const { verifySignature } = require('../utils/whatsappClient')
 const bot = require('../utils/whatsappBot')
 const { runInBackground } = require('../utils/background')
 
-const businessNumber = () => String(process.env.WHATSAPP_PUBLIC_NUMBER || '').replace(/\D/g, '')
+const businessNumber = () => String(process.env.WHATSAPP_PUBLIC_NUMBER || '553398109245').replace(/\D/g, '')
 
 const maskPhone = (phone) => {
     const digits = String(phone || '').replace(/\D/g, '')

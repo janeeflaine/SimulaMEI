@@ -311,33 +311,47 @@ export default function WhatsAppSection() {
                 </div>
             )}
 
-            {!loading && status?.available && linkCode && (
-                <div className="whatsapp-code-box">
-                    <p>Envie esta mensagem, do celular que vai usar, para o WhatsApp do EuSempreMEI:</p>
-                    <div className="whatsapp-code">{linkCode.message}</div>
-                    <div className="whatsapp-code-actions">
-                        {linkCode.waLink && (
-                            <a href={linkCode.waLink} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
-                                Abrir o WhatsApp
+            {!loading && status?.available && linkCode && (() => {
+                const waUrl = linkCode.waLink || (status?.businessNumber
+                    ? `https://wa.me/${status.businessNumber}?text=${encodeURIComponent(linkCode.message)}`
+                    : `https://wa.me/553398109245?text=${encodeURIComponent(linkCode.message)}`)
+                return (
+                    <div className="whatsapp-code-box">
+                        <p>
+                            Envie esta mensagem, do celular que vai usar, para o WhatsApp do EuSempreMEI: (33) 9810-9245 ou clique no botão azul{' '}
+                            <a
+                                href={waUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="whatsapp-link-shortcut"
+                                style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline' }}
+                            >
+                                "Abrir Whatsapp"
                             </a>
+                        </p>
+                        <div className="whatsapp-code">{linkCode.message}</div>
+                        <div className="whatsapp-code-actions">
+                            <a href={waUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
+                                Abrir Whatsapp
+                            </a>
+                            <button type="button" className="btn btn-secondary" onClick={copyMessage}>
+                                {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                                {copied ? 'Copiado' : 'Copiar mensagem'}
+                            </button>
+                        </div>
+                        {!linkCode.waLink && status.businessNumber && (
+                            <p className="whatsapp-muted">Número do EuSempreMEI: +{status.businessNumber}</p>
                         )}
-                        <button type="button" className="btn btn-secondary" onClick={copyMessage}>
-                            {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-                            {copied ? 'Copiado' : 'Copiar mensagem'}
-                        </button>
+                        <p className="whatsapp-muted" aria-live="polite">
+                            O código vale por {minutes}:{seconds}. Esta tela atualiza sozinha quando a conexão for confirmada.
+                        </p>
+                        <p className="whatsapp-muted">
+                            Ao enviar, você autoriza o EuSempreMEI a te mandar mensagens sobre a sua conta.
+                            Para parar os lembretes, responda PARAR. <Link to="/politica-de-privacidade">Política de Privacidade</Link>.
+                        </p>
                     </div>
-                    {!linkCode.waLink && status.businessNumber && (
-                        <p className="whatsapp-muted">Número do EuSempreMEI: +{status.businessNumber}</p>
-                    )}
-                    <p className="whatsapp-muted" aria-live="polite">
-                        O código vale por {minutes}:{seconds}. Esta tela atualiza sozinha quando a conexão for confirmada.
-                    </p>
-                    <p className="whatsapp-muted">
-                        Ao enviar, você autoriza o EuSempreMEI a te mandar mensagens sobre a sua conta.
-                        Para parar os lembretes, responda PARAR. <Link to="/politica-de-privacidade">Política de Privacidade</Link>.
-                    </p>
-                </div>
-            )}
+                )
+            })()}
         </div>
     )
 }
