@@ -344,6 +344,10 @@
     color: var(--ini-green);
 }
 
+.ini-wa__actions {
+    margin-top: 28px;
+}
+
 .ini-chat {
     display: grid;
     gap: 10px;

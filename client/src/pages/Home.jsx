@@ -173,6 +173,12 @@ export default function Home() {
                             <li><Check size={18} aria-hidden="true" /> "contas de hoje"</li>
                             <li><Check size={18} aria-hidden="true" /> Lembrete das contas que vencem, às 8h</li>
                         </ul>
+                        <div className="ini-wa__actions">
+                            <Link to={user ? "/conta" : "/cadastro"} className="ini-btn ini-btn--primary">
+                                <MessageCircle size={18} style={{ marginRight: '8px' }} />
+                                {user ? 'Vincular WhatsApp' : 'Começar no WhatsApp'}
+                            </Link>
+                        </div>
                     </div>
                     <div className="ini-chat" aria-hidden="true">
                         <div className="ini-chat__head"><MessageCircle size={16} /> Eu Sempre MEI</div>
