@@ -274,6 +274,13 @@ describe('Revisão: confirmar e descartar de uma vez', () => {
         expect(ran('SELECT id FROM finance_categories WHERE name = $1')[0].params).toEqual(['Mercado', 1, 'DESPESA_MEI'])
     })
 
+    test('permite alterar a descrição do item na revisão', async () => {
+        const res = await review({ confirm: [{ id: 901, description: 'Aliexpress Fone Bluetooth' }], discard: [] })
+        expect(res.status).toBe(200)
+        const update = ran('UPDATE invoice_items')[0]
+        expect(update.params[4]).toBe('Aliexpress Fone Bluetooth')
+    })
+
     test('compra de outra fatura (ou já confirmada) faz desfazer tudo', async () => {
         state.reviewFound = 1
         const res = await review({ confirm: [{ id: 901 }], discard: [999] })

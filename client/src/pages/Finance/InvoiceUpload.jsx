@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
     ChevronLeft, Upload, FileText, Image as ImageIcon, FileSpreadsheet, CheckCircle2, AlertTriangle,
-    ReceiptText, CalendarClock, ListChecks, Scale, Search, X, Sparkles, CreditCard, RotateCcw
+    ReceiptText, CalendarClock, ListChecks, Scale, Search, X, Sparkles, CreditCard, RotateCcw,
+    Pencil, Check
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import FeatureLock from '../../components/FeatureLock'
@@ -83,6 +84,9 @@ export default function InvoiceUpload() {
     const [newCat, setNewCat] = useState(null) // { itemId, name }
     const [creatingCat, setCreatingCat] = useState(false)
     const [newCatError, setNewCatError] = useState('')
+    const [customDescriptions, setCustomDescriptions] = useState({})
+    const [editingDescId, setEditingDescId] = useState(null)
+    const [editingDescValue, setEditingDescValue] = useState('')
 
     // ── Dados de apoio ──────────────────────────────────────────────────
     useEffect(() => {
@@ -156,6 +160,9 @@ export default function InvoiceUpload() {
         }
         setChoices(initialChoices)
         setSelected(initialSelected)
+        setCustomDescriptions({})
+        setEditingDescId(null)
+        setEditingDescValue('')
         setSearch('')
         setSaveError('')
         setReview(data)
@@ -233,6 +240,9 @@ export default function InvoiceUpload() {
         setReview(null)
         setSelected(new Set())
         setChoices({})
+        setCustomDescriptions({})
+        setEditingDescId(null)
+        setEditingDescValue('')
         fetchPending()
     }
 
@@ -241,8 +251,11 @@ export default function InvoiceUpload() {
     const visibleItems = useMemo(() => {
         const q = search.trim().toLowerCase()
         if (!q) return items
-        return items.filter(i => `${i.description} ${i.aiCategory || ''}`.toLowerCase().includes(q))
-    }, [items, search])
+        return items.filter(i => {
+            const desc = (customDescriptions[i.id] !== undefined ? customDescriptions[i.id] : i.description) || ''
+            return `${desc} ${i.aiCategory || ''}`.toLowerCase().includes(q)
+        })
+    }, [items, search, customDescriptions])
     const selectedItems = items.filter(i => selected.has(i.id))
     const selectedTotal = selectedItems.reduce((s, i) => s + (Number(i.amount) || 0), 0)
     const printedTotal = Number(review?.metadata?.totalAmount) || 0
@@ -271,6 +284,52 @@ export default function InvoiceUpload() {
         else visibleItems.forEach(i => next.add(i.id))
         return next
     })
+
+    const startEditDesc = (item) => {
+        const current = customDescriptions[item.id] !== undefined ? customDescriptions[item.id] : (item.description || '')
+        setEditingDescId(item.id)
+        setEditingDescValue(current)
+    }
+
+    const cancelDescEdit = () => {
+        setEditingDescId(null)
+        setEditingDescValue('')
+    }
+
+    const saveDescEdit = (itemId) => {
+        const trimmed = editingDescValue.trim()
+        if (!trimmed) {
+            cancelDescEdit()
+            return
+        }
+        setCustomDescriptions(prev => ({ ...prev, [itemId]: trimmed }))
+        setReview(prev => {
+            if (!prev?.items) return prev
+            return {
+                ...prev,
+                items: prev.items.map(i => i.id === itemId ? { ...i, description: trimmed } : i)
+            }
+        })
+        setEditingDescId(null)
+        setEditingDescValue('')
+
+        // Persiste imediatamente no item pendente caso a página seja recarregada
+        fetch(`/api/finance/invoices/items/${itemId}`, {
+            method: 'PATCH',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: trimmed })
+        }).catch(() => {})
+    }
+
+    const handleDescKeyDown = (e, itemId) => {
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            saveDescEdit(itemId)
+        } else if (e.key === 'Escape') {
+            e.preventDefault()
+            cancelDescEdit()
+        }
+    }
 
     const optionsFor = (item) => {
         const options = [{ value: '', label: 'Sem categoria' }]
@@ -373,9 +432,12 @@ export default function InvoiceUpload() {
         try {
             const confirmItems = selectedItems.map(i => {
                 const value = choices[i.id] || ''
-                if (value.startsWith('id:')) return { id: i.id, categoryId: Number(value.slice(3)) }
-                if (value.startsWith('ai:')) return { id: i.id, categoryName: value.slice(3) }
-                return { id: i.id, categoryId: null }
+                const currentDesc = (customDescriptions[i.id] !== undefined ? customDescriptions[i.id] : (i.description || '')).trim()
+                const payload = { id: i.id, description: currentDesc }
+                if (value.startsWith('id:')) payload.categoryId = Number(value.slice(3))
+                else if (value.startsWith('ai:')) payload.categoryName = value.slice(3)
+                else payload.categoryId = null
+                return payload
             })
             await sendReview(confirmItems, items.filter(i => !selected.has(i.id)).map(i => i.id))
             navigate(`/financas/cartoes/${cardId}`)
@@ -547,10 +609,66 @@ export default function InvoiceUpload() {
                                                 </td>
                                                 <td className="ef-table__date">{shortDate(item.transactionDate)}</td>
                                                 <th scope="row" className="ef-table__desc">
-                                                    <span>{item.description}</span>
-                                                    {item.installment && <span className="ef-tag">parcela {item.installment}</span>}
-                                                    {item.memorizedFromInstallment && <span className="ef-tag ef-tag--done" title="Categoria copiada da fatura anterior desta compra parcelada">da fatura anterior</span>}
-                                                    {item.alreadyInInvoice && <span className="ef-tag ef-tag--done">já lançada</span>}
+                                                    {editingDescId === item.id ? (
+                                                        <div className="ef-desc-edit-form">
+                                                            <input
+                                                                type="text"
+                                                                className="ef-desc-input"
+                                                                value={editingDescValue}
+                                                                onChange={e => setEditingDescValue(e.target.value)}
+                                                                onKeyDown={e => handleDescKeyDown(e, item.id)}
+                                                                autoFocus
+                                                                maxLength={255}
+                                                                aria-label={`Editar descrição de ${item.description}`}
+                                                            />
+                                                            <div className="ef-desc-edit-actions">
+                                                                <button
+                                                                    type="button"
+                                                                    className="ef-desc-btn ef-desc-btn--save"
+                                                                    onClick={() => saveDescEdit(item.id)}
+                                                                    title="Salvar descrição (Enter)"
+                                                                    aria-label="Salvar descrição"
+                                                                >
+                                                                    <Check size={14} aria-hidden="true" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="ef-desc-btn ef-desc-btn--cancel"
+                                                                    onClick={cancelDescEdit}
+                                                                    title="Cancelar edição (Esc)"
+                                                                    aria-label="Cancelar edição"
+                                                                >
+                                                                    <X size={14} aria-hidden="true" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="ef-desc-display">
+                                                            <span
+                                                                className={`ef-desc-text ${isOn ? 'is-editable' : ''}`}
+                                                                onClick={() => isOn && startEditDesc(item)}
+                                                                title={isOn ? "Clique para editar a descrição" : undefined}
+                                                            >
+                                                                {customDescriptions[item.id] !== undefined ? customDescriptions[item.id] : item.description}
+                                                            </span>
+                                                            {isOn && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="ef-desc-edit-btn"
+                                                                    onClick={() => startEditDesc(item)}
+                                                                    title="Editar descrição"
+                                                                    aria-label={`Editar descrição de ${item.description}`}
+                                                                >
+                                                                    <Pencil size={13} aria-hidden="true" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    <div className="ef-desc-tags">
+                                                        {item.installment && <span className="ef-tag">parcela {item.installment}</span>}
+                                                        {item.memorizedFromInstallment && <span className="ef-tag ef-tag--done" title="Categoria copiada da fatura anterior desta compra parcelada">da fatura anterior</span>}
+                                                        {item.alreadyInInvoice && <span className="ef-tag ef-tag--done">já lançada</span>}
+                                                    </div>
                                                 </th>
                                                 <td className="ef-table__cat">
                                                     <Select

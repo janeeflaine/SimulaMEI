@@ -1082,6 +1082,9 @@ router.post('/:id/review', authMiddleware, cartoesGuard, async (req, res) => {
         if (c.categoryName !== undefined && c.categoryName !== null && typeof c.categoryName !== 'string') {
             return res.status(400).json({ message: 'Categoria inválida.' })
         }
+        if (c.description !== undefined && c.description !== null && typeof c.description !== 'string') {
+            return res.status(400).json({ message: 'Descrição inválida.' })
+        }
     }
 
     try {
@@ -1123,12 +1126,13 @@ router.post('/:id/review', authMiddleware, cartoesGuard, async (req, res) => {
                     categoryId = nameCache.get(name)
                     if (!categoryId) aiCategory = name
                 }
+                const newDesc = typeof c.description === 'string' && c.description.trim() ? c.description.trim().slice(0, 255) : null
                 const { rows: [item] } = await client.query(
                     `UPDATE invoice_items
-                     SET "isConfirmed" = TRUE, "categoryId" = $1, "aiCategory" = COALESCE($2, "aiCategory")
+                     SET "isConfirmed" = TRUE, "categoryId" = $1, "aiCategory" = COALESCE($2, "aiCategory"), description = COALESCE($5, description)
                      WHERE id = $3 AND "userId" = $4
                      RETURNING *`,
-                    [categoryId || null, aiCategory || null, toId(c.id), req.user.id]
+                    [categoryId || null, aiCategory || null, toId(c.id), req.user.id, newDesc]
                 )
                 await syncItemToStatement(client, req.user.id, item, cardInfo)
             }

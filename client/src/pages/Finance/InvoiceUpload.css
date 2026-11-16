@@ -499,7 +499,8 @@
     color: #94a3b8;
 }
 
-.ef-table tr.is-off .ef-table__desc > span:first-child {
+.ef-table tr.is-off .ef-table__desc > span:first-child,
+.ef-table tr.is-off .ef-table__desc .ef-desc-text {
     text-decoration: line-through;
     text-decoration-color: #cbd5e1;
 }
@@ -528,6 +529,120 @@
 .ef-table__desc {
     font-weight: 600;
     overflow-wrap: anywhere;
+}
+
+/* Edição da descrição da compra */
+.ef-desc-display {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+}
+
+.ef-desc-text {
+    color: var(--ef-ink);
+    font-weight: 600;
+}
+
+.ef-desc-text.is-editable {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ef-desc-text.is-editable:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--primary, #0ea5e9);
+}
+
+.ef-desc-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    color: var(--ef-muted);
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+    padding: 0;
+}
+
+.ef-desc-edit-btn:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.08);
+    color: var(--ef-ink);
+}
+
+.ef-desc-edit-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: 380px;
+}
+
+.ef-desc-input {
+    flex: 1;
+    min-width: 160px;
+    height: 32px;
+    padding: 4px 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--ef-ink);
+    background: #ffffff;
+    border: 1.5px solid var(--primary, #0ea5e9);
+    border-radius: 6px;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
+}
+
+.ef-desc-edit-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.ef-desc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--ef-line);
+    border-radius: 6px;
+    background: #ffffff;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.ef-desc-btn--save {
+    background: #10b981;
+    border-color: #059669;
+    color: #ffffff;
+}
+
+.ef-desc-btn--save:hover {
+    background: #059669;
+}
+
+.ef-desc-btn--cancel {
+    color: var(--ef-muted);
+}
+
+.ef-desc-btn--cancel:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--ef-ink);
+}
+
+.ef-desc-tags {
+    display: inline;
 }
 
 .ef-tag {
@@ -875,8 +990,20 @@
         margin: 4px 6px 0 0;
     }
 
-    .ef-table__desc > span:first-child {
+    .ef-table__desc > span:first-child,
+    .ef-desc-display {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .ef-desc-tags {
         display: block;
+        margin-top: 2px;
+    }
+
+    .ef-desc-edit-form {
+        max-width: 100%;
     }
 
     .ef-search {
