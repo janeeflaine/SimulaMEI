@@ -804,6 +804,38 @@ router.put('/plans/:id', (req, res) => {
     return savePlan(req, res, id)
 })
 
+router.get('/features-order', async (req, res) => {
+    try {
+        const { rows } = await db.query("SELECT value FROM system_settings WHERE key = 'features_order'")
+        let order = null
+        if (rows[0]?.value) {
+            try { order = JSON.parse(rows[0].value) } catch (_) {}
+        }
+        res.json({ order })
+    } catch (err) {
+        console.error('Get features order error:', err)
+        res.status(500).json({ message: 'Erro ao buscar ordem das funcionalidades' })
+    }
+})
+
+router.put('/features-order', async (req, res) => {
+    try {
+        const { order } = req.body || {}
+        if (!Array.isArray(order)) {
+            return res.status(400).json({ message: 'Ordem inválida.' })
+        }
+        const safeOrder = order.map(k => String(k).trim()).filter(k => /^[a-z0-9_]+$/.test(k))
+        await db.query(`
+            INSERT INTO system_settings (key, value, "updatedAt") VALUES ('features_order', $1, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = $1, "updatedAt" = NOW()
+        `, [JSON.stringify(safeOrder)])
+        res.json({ success: true, order: safeOrder })
+    } catch (err) {
+        console.error('Update features order error:', err)
+        res.status(500).json({ message: 'Erro ao salvar ordem das funcionalidades' })
+    }
+})
+
 // ========== LIMITES DE USO POR PLANO ==========
 const planLimits = require('../utils/planLimits')
 

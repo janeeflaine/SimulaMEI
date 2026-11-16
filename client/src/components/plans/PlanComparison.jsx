@@ -1,4 +1,4 @@
-import { FEATURE_LABELS, formatBRL } from './planFeatures'
+import { useFeatureOrder, formatBRL } from './planFeatures'
 import './PlanComparison.css'
 
 function Check({ on }) {
@@ -23,7 +23,8 @@ function Check({ on }) {
  *                colunas) e mostra um por linha abaixo da tabela (stacked = true)
  */
 export default function PlanComparison({ plans, currentPlanId, currentLabel = 'Seu plano', renderAction, stackActionsOnMobile = false }) {
-    const rows = FEATURE_LABELS.filter(([key]) => plans.some(p => p.features && key in p.features))
+    const { features } = useFeatureOrder()
+    const rows = features.filter(([key]) => plans.some(p => p.features && key in p.features))
     const isCurrent = (plan) => currentPlanId != null && Number(currentPlanId) === Number(plan.id)
 
     const stacked = stackActionsOnMobile && renderAction

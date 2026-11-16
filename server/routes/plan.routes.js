@@ -16,6 +16,21 @@ router.get('/', async (req, res) => {
     }
 })
 
+// Get features order (public)
+router.get('/features-order', async (req, res) => {
+    try {
+        const { rows } = await db.query("SELECT value FROM system_settings WHERE key = 'features_order'")
+        let order = null
+        if (rows[0]?.value) {
+            try { order = JSON.parse(rows[0].value) } catch (_) {}
+        }
+        res.json({ order })
+    } catch (error) {
+        console.error('Get features order error:', error)
+        res.status(500).json({ message: 'Erro ao carregar ordem das funcionalidades' })
+    }
+})
+
 const moveToFreePlan = (freePlanId, userId) => db.query(`
     UPDATE users
     SET "planId" = $1, "subscriptionStatus" = 'canceled', "planExpiresAt" = NULL, "updatedAt" = CURRENT_TIMESTAMP

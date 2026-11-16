@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import MemberCard from '../components/plans/MemberCard'
 import PlanComparison, { PlanTableButton } from '../components/plans/PlanComparison'
-import { FEATURE_LABELS, tierOf, formatBRL, sortPlans } from '../components/plans/planFeatures'
+import { useFeatureOrder, tierOf, formatBRL, sortPlans } from '../components/plans/planFeatures'
 import usePlanActions from '../hooks/usePlanActions'
 import './Plans.css'
 
@@ -151,12 +151,13 @@ export default function Plans() {
     const mostComplete = plans.length > 1 ? plans[plans.length - 1] : null
     const mediaPlan = plans.find(p => p.features?.whatsapp_midia)
     const hasWhatsapp = plans.some(p => p.features?.whatsapp)
+    const { features } = useFeatureOrder()
 
     /** O que o plano tem a mais que o plano anterior (o mais barato mostra o que já inclui). */
     const highlightsOf = (plan, index) => {
         const has = (p, key) => !!p?.features?.[key]
         const previous = index > 0 ? plans[index - 1] : null
-        const keys = FEATURE_LABELS.filter(([key]) => has(plan, key) && !has(previous, key))
+        const keys = features.filter(([key]) => has(plan, key) && !has(previous, key))
         return { previous, items: keys.map(([, label]) => label) }
     }
 

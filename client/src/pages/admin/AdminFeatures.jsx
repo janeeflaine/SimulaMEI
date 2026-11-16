@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ToggleRight, Gauge, Mail, MessageCircle, AlertTriangle, RotateCw, CircleCheck, CircleAlert, Send } from 'lucide-react'
-import { FEATURE_LABELS } from '../../components/plans/planFeatures'
+import { ToggleRight, Gauge, Mail, MessageCircle, AlertTriangle, RotateCw, CircleCheck, CircleAlert, Send, GripVertical, ArrowUp, ArrowDown } from 'lucide-react'
+import { useFeatureOrder } from '../../components/plans/planFeatures'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { showToast } from '../../utils/toast'
 // AdminPages.css segue importado: as outras páginas do admin ainda usam as classes dele
@@ -80,6 +80,14 @@ function FeatureMatrix() {
     const [plans, setPlans] = useState(null)
     const [error, setError] = useState(false)
     const [busy, setBusy] = useState({})
+    const { features, setFeaturesOrder } = useFeatureOrder()
+    const [orderedFeatures, setOrderedFeatures] = useState(features)
+    const [draggedIdx, setDraggedIdx] = useState(null)
+    const [dragOverIdx, setDragOverIdx] = useState(null)
+
+    useEffect(() => {
+        setOrderedFeatures(features)
+    }, [features])
 
     const load = useCallback(async () => {
         setError(false)
@@ -93,6 +101,68 @@ function FeatureMatrix() {
         }
     }, [])
     useEffect(() => { load() }, [load])
+
+    const saveOrder = async (nextList) => {
+        const newKeyOrder = nextList.map(([k]) => k)
+        setFeaturesOrder(newKeyOrder)
+        try {
+            await api('/api/admin/features-order', {
+                method: 'PUT',
+                headers: authHeaders(true),
+                body: JSON.stringify({ order: newKeyOrder })
+            })
+            showToast('Ordem das funcionalidades salva com sucesso!', 'success')
+        } catch (err) {
+            showToast(err.message || 'Erro ao salvar ordem.', 'error')
+            setOrderedFeatures(features)
+        }
+    }
+
+    const handleDragStart = (e, index) => {
+        setDraggedIdx(index)
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', String(index))
+    }
+
+    const handleDragOver = (e, index) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (dragOverIdx !== index) {
+            setDragOverIdx(index)
+        }
+    }
+
+    const handleDrop = (e, targetIdx) => {
+        e.preventDefault()
+        if (draggedIdx === null || draggedIdx === targetIdx) {
+            setDraggedIdx(null)
+            setDragOverIdx(null)
+            return
+        }
+
+        const next = [...orderedFeatures]
+        const [moved] = next.splice(draggedIdx, 1)
+        next.splice(targetIdx, 0, moved)
+
+        setOrderedFeatures(next)
+        setDraggedIdx(null)
+        setDragOverIdx(null)
+        saveOrder(next)
+    }
+
+    const handleDragEnd = () => {
+        setDraggedIdx(null)
+        setDragOverIdx(null)
+    }
+
+    const moveItem = (fromIdx, toIdx) => {
+        if (toIdx < 0 || toIdx >= orderedFeatures.length) return
+        const next = [...orderedFeatures]
+        const [moved] = next.splice(fromIdx, 1)
+        next.splice(toIdx, 0, moved)
+        setOrderedFeatures(next)
+        saveOrder(next)
+    }
 
     const toggle = async (plan, key, value) => {
         const id = `${plan.id}:${key}`
@@ -114,7 +184,7 @@ function FeatureMatrix() {
             id="afn-feat"
             icon={ToggleRight}
             title="Recursos por plano"
-            intro="Ligou ou desligou, vale na hora para todas as contas do plano. Os nomes são os que o cliente vê em Planos."
+            intro="Clique e arraste uma linha para trocar a ordem das funcionalidades (isso refletirá na tela de Planos dos usuários). Ligou ou desligou o switch, vale na hora para todas as contas do plano."
             aside={<Link to="/admin/planos" className="afn-link">Preços e planos</Link>}
         >
             {error && <Problem text="Não deu para carregar os planos." onRetry={load} />}
@@ -125,13 +195,49 @@ function FeatureMatrix() {
                         <table className="afn-table">
                             <thead>
                                 <tr>
+                                    <th scope="col" style={{ width: '44px' }} title="Arraste para reordenar"></th>
                                     <th scope="col">Recurso</th>
                                     {plans.map((p) => <th key={p.id} scope="col" className="afn-col-plan">{p.name}</th>)}
                                 </tr>
                             </thead>
                             <tbody>
-                                {FEATURE_LABELS.map(([key, label]) => (
-                                    <tr key={key}>
+                                {orderedFeatures.map(([key, label], idx) => (
+                                    <tr
+                                        key={key}
+                                        draggable
+                                        onDragStart={(e) => handleDragStart(e, idx)}
+                                        onDragOver={(e) => handleDragOver(e, idx)}
+                                        onDrop={(e) => handleDrop(e, idx)}
+                                        onDragEnd={handleDragEnd}
+                                        className={`afn-row-draggable ${draggedIdx === idx ? 'is-dragging' : ''} ${dragOverIdx === idx ? 'is-drag-over' : ''}`}
+                                    >
+                                        <td className="afn-col-drag" title="Clique e arraste para reordenar">
+                                            <div className="afn-drag-controls">
+                                                <span className="afn-drag-handle" aria-label="Arrastar para reordenar">
+                                                    <GripVertical size={16} />
+                                                </span>
+                                                <div className="afn-arrow-buttons">
+                                                    <button
+                                                        type="button"
+                                                        className="afn-arrow-btn"
+                                                        disabled={idx === 0}
+                                                        onClick={() => moveItem(idx, idx - 1)}
+                                                        title="Mover para cima"
+                                                    >
+                                                        <ArrowUp size={12} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="afn-arrow-btn"
+                                                        disabled={idx === orderedFeatures.length - 1}
+                                                        onClick={() => moveItem(idx, idx + 1)}
+                                                        title="Mover para baixo"
+                                                    >
+                                                        <ArrowDown size={12} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
                                         <th scope="row">{label}</th>
                                         {plans.map((p) => (
                                             <td key={p.id} className="afn-col-plan">
@@ -149,12 +255,34 @@ function FeatureMatrix() {
                             <details key={p.id} className="afn-plan-card">
                                 <summary>
                                     <span>{p.name}</span>
-                                    <small>{FEATURE_LABELS.filter(([k]) => p.features?.[k]).length} de {FEATURE_LABELS.length} recursos</small>
+                                    <small>{orderedFeatures.filter(([k]) => p.features?.[k]).length} de {orderedFeatures.length} recursos</small>
                                 </summary>
                                 <ul>
-                                    {FEATURE_LABELS.map(([key, label]) => (
+                                    {orderedFeatures.map(([key, label], idx) => (
                                         <li key={key}>
-                                            <span>{label}</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div className="afn-arrow-buttons">
+                                                    <button
+                                                        type="button"
+                                                        className="afn-arrow-btn"
+                                                        disabled={idx === 0}
+                                                        onClick={() => moveItem(idx, idx - 1)}
+                                                        title="Mover para cima"
+                                                    >
+                                                        <ArrowUp size={12} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="afn-arrow-btn"
+                                                        disabled={idx === orderedFeatures.length - 1}
+                                                        onClick={() => moveItem(idx, idx + 1)}
+                                                        title="Mover para baixo"
+                                                    >
+                                                        <ArrowDown size={12} />
+                                                    </button>
+                                                </div>
+                                                <span>{label}</span>
+                                            </div>
                                             <Switch checked={!!p.features?.[key]} label={`${label} no plano ${p.name}`}
                                                 busy={!!busy[`${p.id}:${key}`]} onChange={(v) => toggle(p, key, v)} />
                                         </li>
