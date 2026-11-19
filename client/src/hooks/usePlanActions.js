@@ -215,6 +215,10 @@ export default function usePlanActions({ onChanged } = {}) {
         const status = user.subscriptionStatus
 
         if (isCurrent) {
+            // Em teste grátis: assinar o mesmo plano para continuar com ele depois do teste
+            if (status === 'trialing' && isPaid) {
+                return { label: `Assinar ${plan.name}`, short: 'Assinar', up: true, run: () => checkout(plan) }
+            }
             if (status === 'pending_payment' && isPaid) {
                 return { label: 'Pagar agora', short: 'Pagar', up: true, run: () => checkout(plan) }
             }

@@ -854,11 +854,23 @@ export default function Dashboard() {
                 </header>
 
                 {/* Avisos */}
+                {user?.isInTrial && user?.planExpiresAt && (
+                    <div className="painel-notice" role="status">
+                        <div className="painel-notice__text">
+                            <strong>Teste grátis do {user.plan} até {new Date(user.planExpiresAt).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</strong>
+                            <span>Use tudo à vontade. No fim, a conta volta ao Gratuito sozinha, sem cobrança e com os seus dados.</span>
+                        </div>
+                        <div className="painel-notice__actions">
+                            <Link to="/planos" className="painel-btn">Ver planos</Link>
+                        </div>
+                    </div>
+                )}
+
                 {user?.trialExpired && user?.plan === 'Gratuito' && (
                     <div className="painel-notice" role="status">
                         <div className="painel-notice__text">
                             <strong>Seu teste grátis terminou</strong>
-                            <span>Para continuar com finanças, alertas e gráficos, escolha um plano.</span>
+                            <span>A conta voltou ao Gratuito, sem cobrança, e os seus lançamentos continuam aqui. Para voltar a usar o WhatsApp e os outros recursos pagos, escolha um plano.</span>
                         </div>
                         <div className="painel-notice__actions">
                             <Link to="/planos" className="painel-btn painel-btn--primary">Ver planos</Link>

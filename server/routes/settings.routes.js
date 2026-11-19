@@ -5,6 +5,7 @@ const { authMiddleware, adminMiddleware } = require('../middleware/auth')
 const { encrypt } = require('../utils/encryption')
 const auditLogger = require('../utils/auditLogger')
 const planLimits = require('../utils/planLimits')
+const { TRIAL_MAX_DAYS } = require('../utils/trial')
 
 // Chaves que o próprio sistema grava (estado de rotinas): não se editam por aqui
 const INTERNAL_KEYS = ['whatsapp_last_run', 'whatsapp_resend_at', 'email_last_status']
@@ -12,7 +13,7 @@ const SAFE_KEY = /^[A-Za-z][A-Za-z0-9_]{1,63}$/
 // Só estas chaves mudam por aqui: limites dos planos, teste grátis e o token antigo do
 // Mercado Pago (guardado cifrado). Qualquer outra chave é recusada: antes dava para
 // gravar uma chave nova qualquer, em texto puro e copiada para os registros.
-const OTHER_KEYS = ['trial_enabled', 'trial_days', 'MERCADOPAGO_ACCESS_TOKEN']
+const OTHER_KEYS = ['trial_enabled', 'trial_days', 'trial_plan_id', 'MERCADOPAGO_ACCESS_TOKEN']
 const isEditable = (key) => OTHER_KEYS.includes(key) || !!planLimits.parseLimitKey(key)
 
 
@@ -30,7 +31,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
         })
 
         // Ensure defaults if not present (Virtual rows for UI)
-        const expectedKeys = ['MERCADOPAGO_ACCESS_TOKEN', 'trial_enabled', 'trial_days']
+        const expectedKeys = ['MERCADOPAGO_ACCESS_TOKEN', 'trial_enabled', 'trial_days', 'trial_plan_id']
         const keysPresent = maskedSettings.map(s => s.key)
 
         expectedKeys.forEach(key => {
@@ -68,8 +69,25 @@ router.put('/', authMiddleware, adminMiddleware, async (req, res) => {
             if (clean === null) return res.status(400).json({ message: `${limit.def.label}: valor inválido.` })
             value = clean
         }
-        if (key === 'trial_days' && !(Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= 365)) {
-            return res.status(400).json({ message: 'Dias de teste: de 0 a 365.' })
+        if (key === 'trial_days') {
+            const days = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
+            if (!(typeof days === 'number' && Number.isInteger(days) && days >= 0 && days <= TRIAL_MAX_DAYS)) {
+                return res.status(400).json({ message: `Dias de teste: de 0 a ${TRIAL_MAX_DAYS}.` })
+            }
+            value = String(days)
+        }
+        // Plano do teste: um plano pago e ativo; vazio = o mais caro (utils/trial.js)
+        if (key === 'trial_plan_id') {
+            if (value === undefined || value === null || String(value).trim() === '') {
+                value = ''
+            } else {
+                const id = Number(value)
+                const { rows } = Number.isInteger(id) && id > 0
+                    ? await db.query('SELECT id FROM plans WHERE id = $1 AND "isActive" = 1 AND price > 0', [id])
+                    : { rows: [] }
+                if (!rows.length) return res.status(400).json({ message: 'Escolha um plano pago e ativo para o teste grátis.' })
+                value = String(id)
+            }
         }
         if (key === 'trial_enabled' && !['true', 'false'].includes(String(value))) {
             return res.status(400).json({ message: 'Teste grátis: ligado ou desligado.' })

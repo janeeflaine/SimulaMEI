@@ -113,7 +113,7 @@ const SECTIONS = [
                 <li><strong>Troca de plano:</strong> ao subir de plano, os recursos novos liberam na hora e é cobrada a diferença proporcional até o fim do mês já pago. Ao descer de plano, a troca vale na hora e a diferença vira crédito para as próximas cobranças. O valor exato aparece antes de você confirmar.</li>
                 <li><strong>Cancelamento:</strong> você cancela quando quiser em Minha conta. O plano continua até o fim do período já pago e depois volta ao Gratuito, sem nova cobrança.</li>
                 <li><strong>Pagamento recusado:</strong> o Stripe tenta cobrar de novo por alguns dias e o plano continua enquanto isso. Se não conseguir, a conta volta ao Gratuito, sem perder os seus dados.</li>
-                <li><strong>Teste grátis:</strong> quando oferecido, a duração aparece no cadastro. Ao terminar, a conta volta ao Gratuito, sem cobrança automática.</li>
+                <li><strong>Teste grátis:</strong> quando oferecido, a duração e o plano aparecem no cadastro, e não pedimos cartão. Ao terminar, a conta volta ao Gratuito, sem cobrança automática e sem perder os dados. Cada e-mail tem direito a um teste.</li>
                 <li><strong>Mudança de preço ou de recursos:</strong> avisaremos por e-mail, com antecedência, qualquer aumento de preço ou redução de recursos de um plano pago que você assina. Se não concordar, você pode cancelar antes de a mudança valer.</li>
             </ul>
         ),

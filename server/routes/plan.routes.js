@@ -2,6 +2,7 @@ const express = require('express')
 const { db } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { getStripe, periodEnd, toDate } = require('../utils/billing')
+const { getTrialOffer } = require('../utils/trial')
 
 const router = express.Router()
 
@@ -13,6 +14,17 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('Get plans error:', error)
         res.status(500).json({ message: 'Erro ao carregar planos' })
+    }
+})
+
+// Teste grátis para contas novas (público: a página de campanha e o Criar conta mostram)
+router.get('/trial', async (req, res) => {
+    try {
+        const offer = await getTrialOffer(db)
+        res.json(offer.enabled ? offer : { enabled: false })
+    } catch (error) {
+        console.error('Get trial error:', error.message)
+        res.json({ enabled: false })
     }
 })
 

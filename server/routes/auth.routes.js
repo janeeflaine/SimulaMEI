@@ -9,6 +9,7 @@ const auditLogger = require('../utils/auditLogger')
 const { deleteUserData, cancelStripeSubscriptionIfActive } = require('../utils/userDeletion')
 const { getClientIp } = require('../middleware/requestContext')
 
+const { getTrialOffer, startTrial } = require('../utils/trial')
 const router = express.Router()
 
 // IP para contar tentativas: IPv6 vira a rede /64 (o aparelho troca o fim do endereço sozinho)
@@ -302,6 +303,18 @@ router.post('/register', authLimiter, async (req, res) => {
 
         const userId = insertResult.rows[0].id
 
+        // Teste grátis (Admin > Funcionalidades): só para quem entra pelo Gratuito e
+        // uma vez por e-mail. Se der errado, a conta continua no Gratuito.
+        let trialEndsAt = null
+        if (!requiresPayment) {
+            try {
+                const offer = await getTrialOffer(db)
+                if (offer.enabled) trialEndsAt = await startTrial(db, userId, email, offer)
+            } catch (trialErr) {
+                console.error('Teste grátis não começou:', trialErr.message)
+            }
+        }
+
         const userResult = await db.query(`
             SELECT u.id, u.name, u.email, u.role, u."planId", u."subscriptionStatus", u."sessionVersion",
                    p.name as "planName", p.features as "planFeatures", u."planExpiresAt"
@@ -323,7 +336,8 @@ router.post('/register', authLimiter, async (req, res) => {
             context: req.context || {},
             target: { resource_type: 'USER', resource_id: userId },
             metadata: {
-                name, email, planId: initialPlanId, subscriptionStatus, requiresPayment,
+                name, email, planId: user.planId, subscriptionStatus: user.subscriptionStatus, requiresPayment,
+                trialEndsAt: trialEndsAt ? new Date(trialEndsAt).toISOString() : null,
                 termsAccepted: true,
                 termsVersion: acceptedTermsVersion.trim().substring(0, 32),
                 termsAcceptedAt: new Date().toISOString()
@@ -341,8 +355,8 @@ router.post('/register', authLimiter, async (req, res) => {
                 planId: user.planId,
                 subscriptionStatus: user.subscriptionStatus,
                 requiresPayment,
-                isInTrial: false,
-                planExpiresAt: null,
+                isInTrial: !!trialEndsAt,
+                planExpiresAt: trialEndsAt || null,
                 planFeatures
             }
         })

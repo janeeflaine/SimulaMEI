@@ -559,6 +559,13 @@ const seedDefaults = async () => {
       console.log('Migration note (acesso):', authErr.message)
     }
 
+    // Teste grátis: um por e-mail (utils/trial.js)
+    try {
+      await upgrades.trialClaims((sql, params) => pool.query(sql, params))
+    } catch (trialErr) {
+      console.log('Migration note (teste grátis):', trialErr.message)
+    }
+
     // Default System Settings for Trial
     const trialEnabled = await pool.query("SELECT * FROM system_settings WHERE key = 'trial_enabled'")
     if (trialEnabled.rows.length === 0) {

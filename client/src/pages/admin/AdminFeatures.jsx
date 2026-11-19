@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ToggleRight, Gauge, Mail, MessageCircle, AlertTriangle, RotateCw, CircleCheck, CircleAlert, Send, GripVertical, ArrowUp, ArrowDown } from 'lucide-react'
+import { ToggleRight, Gauge, Mail, MessageCircle, AlertTriangle, RotateCw, CircleCheck, CircleAlert, Send, GripVertical, ArrowUp, ArrowDown, Gift } from 'lucide-react'
 import { useFeatureOrder } from '../../components/plans/planFeatures'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
+import Select from '../../components/ui/Select'
 import { showToast } from '../../utils/toast'
 // AdminPages.css segue importado: as outras páginas do admin ainda usam as classes dele
 import './AdminPages.css'
@@ -443,6 +444,126 @@ function LimitsTable() {
     )
 }
 
+// ── Teste grátis para contas novas (utils/trial.js no servidor) ────────────────────
+const TRIAL_KEYS = ['trial_enabled', 'trial_days', 'trial_plan_id']
+function TrialSettings() {
+    const [saved, setSaved] = useState(null)
+    const [draft, setDraft] = useState(null)
+    const [plans, setPlans] = useState([])
+    const [offer, setOffer] = useState(null)
+    const [error, setError] = useState(false)
+    const [saving, setSaving] = useState(false)
+    const [problem, setProblem] = useState('')
+
+    const load = useCallback(async () => {
+        setError(false)
+        try {
+            const [rows, allPlans, current] = await Promise.all([
+                api('/api/settings', { headers: authHeaders() }),
+                api('/api/plans'),
+                api('/api/plans/trial')
+            ])
+            const map = Object.fromEntries((Array.isArray(rows) ? rows : []).filter(r => TRIAL_KEYS.includes(r.key)).map(r => [r.key, r.value]))
+            const values = {
+                enabled: map.trial_enabled === 'true',
+                days: /^\d+$/.test(String(map.trial_days ?? '')) && Number(map.trial_days) > 0 ? String(map.trial_days) : '7',
+                planId: map.trial_plan_id ? String(map.trial_plan_id) : ''
+            }
+            setSaved(values)
+            setDraft(values)
+            setPlans((Array.isArray(allPlans) ? allPlans : []).filter(p => p.isActive && Number(p.price) > 0).sort((a, b) => Number(b.price) - Number(a.price)))
+            setOffer(current)
+            setProblem('')
+        } catch (err) {
+            console.error('Teste grátis:', err)
+            setError(true)
+        }
+    }, [])
+    useEffect(() => { load() }, [load])
+
+    const dirty = saved && draft && (saved.enabled !== draft.enabled || saved.days !== draft.days || saved.planId !== draft.planId)
+    const daysNumber = Number(draft?.days)
+    const daysOk = Number.isInteger(daysNumber) && daysNumber >= 1 && daysNumber <= 90
+    const set = (field, value) => setDraft(d => ({ ...d, [field]: value }))
+
+    const save = async () => {
+        setProblem('')
+        if (!daysOk) return setProblem('Dias de teste: de 1 a 90.')
+        setSaving(true)
+        try {
+            const put = (key, value) => api('/api/settings', { method: 'PUT', headers: authHeaders(true), body: JSON.stringify({ key, value }) })
+            // Plano e dias antes de ligar: o teste nunca liga com a configuração antiga
+            if (draft.planId !== saved.planId) await put('trial_plan_id', draft.planId)
+            if (draft.days !== saved.days) await put('trial_days', draft.days)
+            if (draft.enabled !== saved.enabled) await put('trial_enabled', draft.enabled ? 'true' : 'false')
+            showToast('Teste grátis salvo.', 'success')
+            await load()
+        } catch (err) {
+            setProblem(err.message)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const auto = plans[0]
+    const options = [
+        { value: '', label: auto ? `Automático: o mais caro (${auto.name})` : 'Automático: o plano pago mais caro' },
+        ...plans.map(p => ({ value: String(p.id), label: p.name }))
+    ]
+
+    return (
+        <Section
+            id="afn-trial"
+            icon={Gift}
+            title="Teste grátis para contas novas"
+            intro="Quem cria a conta pelo Gratuito começa no plano escolhido, sem cartão. No fim, a conta volta ao Gratuito sozinha, sem cobrança. Um teste por e-mail; quem escolhe um plano pago no cadastro vai direto para o pagamento."
+            aside={draft && (
+                <span className="afn-trial__toggle">
+                    {draft.enabled ? 'Ligado' : 'Desligado'}
+                    <Switch checked={draft.enabled} label="Teste grátis ligado" disabled={saving} onChange={(v) => set('enabled', v)} />
+                </span>
+            )}
+        >
+            {error && <Problem text="Não deu para carregar o teste grátis." onRetry={load} />}
+            {!error && !draft && <p className="afn-muted" role="status">Carregando…</p>}
+            {draft && (
+                <>
+                    <div className="afn-trial">
+                        <label className="afn-trial__field" htmlFor="afn-trial-days">
+                            <span>Dias de teste</span>
+                            <input
+                                id="afn-trial-days"
+                                type="text"
+                                inputMode="numeric"
+                                className="afn-num"
+                                value={draft.days}
+                                aria-invalid={!daysOk || undefined}
+                                disabled={saving}
+                                onChange={(e) => set('days', e.target.value.replace(/[^\d]/g, '').slice(0, 2))}
+                            />
+                        </label>
+                        <div className="afn-trial__field afn-trial__plan">
+                            <label htmlFor="afn-trial-plan">Plano do teste</label>
+                            <Select id="afn-trial-plan" variant="field" value={draft.planId} options={options} onChange={(v) => set('planId', String(v))} ariaLabel="Plano do teste" />
+                        </div>
+                    </div>
+                    <p className={`afn-note ${offer?.enabled ? 'afn-note--ok' : ''}`} role="status">
+                        {offer?.enabled
+                            ? `Agora: cada conta nova ganha ${offer.days} dias do plano ${offer.planName}. A página /comecar e o Criar conta já mostram isso.`
+                            : 'Agora: desligado. Contas novas começam no Gratuito.'}
+                    </p>
+                    {problem && <p className="afn-note afn-note--error" role="alert">{problem}</p>}
+                    <div className="afn-actions">
+                        {dirty && <span className="afn-muted">Há mudanças que ainda não foram salvas.</span>}
+                        <button type="button" className="afn-btn" onClick={() => setDraft(saved)} disabled={!dirty || saving}>Desfazer</button>
+                        <button type="button" className="afn-btn afn-btn--primary" onClick={save} disabled={!dirty || saving}>{saving ? 'Salvando…' : 'Salvar teste grátis'}</button>
+                    </div>
+                </>
+            )}
+        </Section>
+    )
+}
+
 // ── E-mail do site ──────────────────────────────────────────────────────────────
 function EmailStatus() {
     const [data, setData] = useState(null)
@@ -639,6 +760,7 @@ export default function AdminFeatures() {
             </header>
             <FeatureMatrix />
             <LimitsTable />
+            <TrialSettings />
             <EmailStatus />
             <WhatsAppReminders confirm={confirm} />
             {dialog}

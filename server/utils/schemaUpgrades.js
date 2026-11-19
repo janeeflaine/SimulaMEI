@@ -69,12 +69,22 @@ const authAttempts = async (q) => {
     try { await q('ALTER TABLE auth_attempts ENABLE ROW LEVEL SECURITY') } catch (_) { /* sem permissão: segue */ }
 }
 
+// Teste grátis: e-mails (só o SHA-256) que já usaram o teste, para não repetir
+// depois de excluir a conta e criar de novo (utils/trial.js)
+const trialClaims = async (q) => {
+    await q(`CREATE TABLE IF NOT EXISTS trial_claims (
+        email_hash TEXT PRIMARY KEY,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`)
+}
+
 const UPGRADES = [
     { table: 'user_alerts', column: 'lastSentKey', run: alertSentKey },
     { table: 'finance_transactions', column: 'transferId', run: transferLinks },
     { table: 'mei_limits', column: 'year', run: meiLimitYear },
     { table: 'calculation_rules', column: 'minimumWage', run: rulesMinimumWage },
-    { table: 'auth_attempts', column: 'key', run: authAttempts }
+    { table: 'auth_attempts', column: 'key', run: authAttempts },
+    { table: 'trial_claims', column: 'email_hash', run: trialClaims }
 ]
 
 // Roda só as que faltam (uma consulta rápida quando já está tudo certo)
@@ -94,4 +104,4 @@ async function applyMissing(q) {
     return ran
 }
 
-module.exports = { alertSentKey, transferLinks, meiLimitYear, rulesMinimumWage, authAttempts, applyMissing, UPGRADES }
+module.exports = { alertSentKey, transferLinks, meiLimitYear, rulesMinimumWage, authAttempts, trialClaims, applyMissing, UPGRADES }
