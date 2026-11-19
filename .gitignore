@@ -26,5 +26,9 @@ yarn-debug.log*
 yarn-error.log*
 server/setupStripe.js
 
+server/certs/*.crt
+server/certs/*.pem
+server/certs/*.key
+
 .vercel
 .env*.local

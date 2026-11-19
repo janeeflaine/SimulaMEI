@@ -1,4 +1,6 @@
 const { Pool, types } = require('pg')
+const fs = require('fs')
+const path = require('path')
 const upgrades = require('./utils/schemaUpgrades')
 // Force pg to return DATE columns as strings (YYYY-MM-DD) instead of JS Date objects
 types.setTypeParser(1082, (stringValue) => stringValue)
@@ -10,9 +12,62 @@ const isProduction = process.env.NODE_ENV === 'production'
 // For now, if no detailed config, it tries to connect via standard env vars
 const connectionString = process.env.DATABASE_URL
 
+/**
+ * Obtém a configuração de SSL para o PostgreSQL.
+ *
+ * Se houver um certificado CA da Supabase (via SUPABASE_CA_CERT, DATABASE_CA_CERT
+ * ou arquivo server/certs/prod-ca-2021.crt), ativa a verificação estrita completa
+ * (rejectUnauthorized: true) validando a autenticidade do servidor contra a CA.
+ *
+ * Caso contrário, em produção ou conexões na nuvem (Supabase pooler), mantém
+ * SSL criptografado com fallback rejectUnauthorized: false para não derrubar
+ * o serviço antes da inclusão do certificado.
+ */
+function getSslConfig() {
+  const envCa = process.env.SUPABASE_CA_CERT || process.env.DATABASE_CA_CERT
+  if (envCa && typeof envCa === 'string' && envCa.trim()) {
+    const raw = envCa.trim()
+    return {
+      rejectUnauthorized: true,
+      ca: raw.includes('BEGIN CERTIFICATE')
+        ? raw.replace(/\\n/g, '\n')
+        : Buffer.from(raw, 'base64').toString('utf8')
+    }
+  }
+
+  const candidatePaths = [
+    path.join(__dirname, 'certs', 'prod-ca-2021.crt'),
+    path.join(__dirname, 'certs', 'supabase-ca.crt'),
+    path.join(__dirname, '..', 'certs', 'prod-ca-2021.crt')
+  ]
+
+  for (const certPath of candidatePaths) {
+    if (fs.existsSync(certPath)) {
+      try {
+        const cert = fs.readFileSync(certPath, 'utf8')
+        if (cert.includes('BEGIN CERTIFICATE')) {
+          return {
+            rejectUnauthorized: true,
+            ca: cert
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  const currentUrl = process.env.DATABASE_URL || connectionString
+  const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL
+  const isCloud = currentUrl && currentUrl.includes('supabase.com')
+  if (isProd || isCloud) {
+    return { rejectUnauthorized: false }
+  }
+
+  return false
+}
+
 const pool = new Pool({
   connectionString: connectionString,
-  ssl: isProduction ? { rejectUnauthorized: false } : false
+  ssl: getSslConfig()
 })
 
 const db = {
@@ -782,5 +837,6 @@ module.exports = {
   db,
   init,
   pool,
-  ensureSchema
+  ensureSchema,
+  getSslConfig
 }
