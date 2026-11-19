@@ -120,12 +120,12 @@ describe('Regression — Module Integrity', () => {
     })
 
     // R05: geminiService rejects oversized files
-    test('R05: geminiService rejects file >10MB', () => {
+    test('R05: geminiService rejects file >4.5MB', () => {
         const { validateFile, MAX_FILE_SIZE } = require('../utils/geminiService')
         const buffer = Buffer.alloc(MAX_FILE_SIZE + 1)
         const result = validateFile(buffer, 'application/pdf')
         expect(result.valid).toBe(false)
-        expect(result.error).toContain('10MB')
+        expect(result.error).toContain('4.5MB')
     })
 
     // R06: geminiService supports CSV, OFX, PDF, PNG, JPG

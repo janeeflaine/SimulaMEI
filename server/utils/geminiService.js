@@ -13,7 +13,7 @@ const { safePromptNames } = require('./promptSafe')
 
 // --- Configuration ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const MAX_FILE_SIZE = Math.floor(4.5 * 1024 * 1024) // 4.5MB (limite Serverless da Vercel)
 const SUPPORTED_MIME_TYPES = [
     'application/pdf',
     'image/png',

@@ -791,7 +791,7 @@ router.post('/upload', authMiddleware, uploadFaturasGuard, (req, res, next) => {
     upload.single('file')(req, res, (err) => {
         if (err) {
             if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(413).json({ message: 'Arquivo excede o limite de 10MB' })
+                return res.status(413).json({ message: 'Arquivo excede o limite de 4,5 MB' })
             }
             return res.status(400).json({ message: err.message || 'Erro no upload do arquivo' })
         }

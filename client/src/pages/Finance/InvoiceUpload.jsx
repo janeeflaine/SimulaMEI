@@ -18,11 +18,60 @@ const ACCEPTED_TYPES = [
     'image/png', 'image/jpeg', 'image/jpg', 'image/webp'
 ]
 const ACCEPT_STRING = ACCEPTED_TYPES.join(',') + ',.ofx,.csv'
-const MAX_SIZE_MB = 10
+const MAX_SIZE_MB = 4.5
+const MAX_SIZE_BYTES = Math.floor(4.5 * 1024 * 1024)
 const REVIEW_BELOW = 0.6
 const NEW_CATEGORY = '__nova__'
 const MONTHS = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 const STAGES = ['Enviando o arquivo', 'A IA está lendo as compras', 'Separando parcelas e estornos', 'Sugerindo as categorias']
+
+// Redimensiona/comprime fotos tiradas no celular que passam de 4,5 MB (limite da Vercel)
+async function compressImageIfNeeded(file, maxBytes = MAX_SIZE_BYTES) {
+    if (!file || !file.type?.startsWith('image/')) return file
+    if (file.size <= maxBytes) return file
+
+    return new Promise((resolve) => {
+        const img = new Image()
+        const url = URL.createObjectURL(file)
+        img.onload = () => {
+            URL.revokeObjectURL(url)
+            let { width, height } = img
+            const maxDim = 2048
+            if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                    height = Math.round((height * maxDim) / width)
+                    width = maxDim
+                } else {
+                    width = Math.round((width * maxDim) / height)
+                    height = maxDim
+                }
+            }
+
+            const canvas = document.createElement('canvas')
+            canvas.width = width
+            canvas.height = height
+            const ctx = canvas.getContext('2d')
+            ctx.drawImage(img, 0, 0, width, height)
+
+            canvas.toBlob((blob) => {
+                if (!blob || blob.size >= file.size) {
+                    resolve(file)
+                } else {
+                    const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                        type: 'image/jpeg',
+                        lastModified: Date.now()
+                    })
+                    resolve(compressedFile)
+                }
+            }, 'image/jpeg', 0.85)
+        }
+        img.onerror = () => {
+            URL.revokeObjectURL(url)
+            resolve(file)
+        }
+        img.src = url
+    })
+}
 
 const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const formatBytes = (b) => (b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`)
@@ -141,7 +190,9 @@ export default function InvoiceUpload() {
         if (!['ofx', 'csv'].includes(ext) && !ACCEPTED_TYPES.includes(f.type)) {
             return 'Esse tipo de arquivo não serve. Envie a fatura em PDF, CSV, OFX ou uma foto (PNG, JPG ou WebP).'
         }
-        if (f.size > MAX_SIZE_MB * 1024 * 1024) return `O arquivo tem ${formatBytes(f.size)}. O limite é ${MAX_SIZE_MB} MB.`
+        if (f.size > MAX_SIZE_BYTES) {
+            return `O arquivo tem ${formatBytes(f.size)}. O limite de envio é de 4,5 MB (limite da plataforma). Para faturas em PDF, tente salvar apenas as páginas com os lançamentos ou exportar em CSV pelo internet banking.`
+        }
         if (f.size === 0) return 'O arquivo está vazio.'
         return null
     }
@@ -171,8 +222,20 @@ export default function InvoiceUpload() {
     }, [categories])
 
     const handleUpload = async (selectedFile) => {
-        const problem = validateFile(selectedFile)
-        setFile(selectedFile || null)
+        if (!selectedFile) return
+        let fileToUpload = selectedFile
+
+        // Fotos de câmera de celular costumam ter 5-15 MB. Otimiza no navegador antes do envio.
+        if (selectedFile.type?.startsWith('image/') && selectedFile.size > MAX_SIZE_BYTES) {
+            try {
+                fileToUpload = await compressImageIfNeeded(selectedFile, MAX_SIZE_BYTES)
+            } catch (_) {
+                fileToUpload = selectedFile
+            }
+        }
+
+        const problem = validateFile(fileToUpload)
+        setFile(fileToUpload || null)
         if (problem) { setError(problem); setPhase('error'); return }
 
         setPhase('processing')
@@ -181,14 +244,18 @@ export default function InvoiceUpload() {
         const timer = setInterval(() => setStage(s => Math.min(s + 1, STAGES.length - 1)), 2600)
         try {
             const form = new FormData()
-            form.append('file', selectedFile)
+            form.append('file', fileToUpload)
             form.append('cardId', cardId)
             const res = await fetch('/api/finance/invoices/upload', { method: 'POST', headers: authHeaders, body: form })
-            const data = await res.json().catch(() => ({}))
+            const text = await res.text().catch(() => '')
+            let data = {}
+            try { data = JSON.parse(text) } catch (_) {}
+
             if (!res.ok) {
-                throw new Error(res.status === 413
-                    ? `O arquivo passa de ${MAX_SIZE_MB} MB.`
-                    : data.message || 'Não deu para ler a fatura agora. Tente de novo em alguns minutos.')
+                if (res.status === 413 || text.includes('FUNCTION_PAYLOAD_TOO_LARGE') || text.includes('maxBodySize')) {
+                    throw new Error('O arquivo excede o limite de 4,5 MB permitido pela plataforma. Envie uma fatura menor ou exporte em CSV.')
+                }
+                throw new Error(data.message || 'Não deu para ler a fatura agora. Tente de novo em alguns minutos.')
             }
             if (Array.isArray(data.categories)) {
                 setCategories(data.categories)
@@ -202,7 +269,12 @@ export default function InvoiceUpload() {
                 cardLastFour: data.card?.lastFour ?? card?.lastFour
             })
         } catch (err) {
-            setError(err?.message && err.message !== 'Failed to fetch' ? err.message : 'Sem conexão. Verifique a internet e tente de novo.')
+            const msg = err?.message || ''
+            if (msg.includes('FUNCTION_PAYLOAD_TOO_LARGE') || msg.includes('413')) {
+                setError('O arquivo excede o limite de 4,5 MB permitido pela plataforma. Envie um arquivo menor ou em CSV.')
+            } else {
+                setError(msg && msg !== 'Failed to fetch' ? msg : 'Sem conexão ou o arquivo excedeu o limite da plataforma (4,5 MB). Verifique a internet e tente de novo.')
+            }
             setPhase('error')
         } finally {
             clearInterval(timer)
@@ -787,7 +859,7 @@ export default function InvoiceUpload() {
                                     tabIndex={-1}
                                     aria-hidden="true"
                                 />
-                                <small>PDF ou CSV do banco funcionam melhor. Também aceita OFX e foto (PNG, JPG, WebP), até {MAX_SIZE_MB} MB.</small>
+                                <small>PDF ou CSV do banco funcionam melhor. Também aceita OFX e foto (PNG, JPG, WebP), até 4,5 MB.</small>
                             </div>
                         )}
 
