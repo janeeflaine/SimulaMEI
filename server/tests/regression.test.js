@@ -120,12 +120,19 @@ describe('Regression — Module Integrity', () => {
     })
 
     // R05: geminiService rejects oversized files
-    test('R05: geminiService rejects file >4.5MB', () => {
+    test('R05: geminiService rejects file >4MB', () => {
         const { validateFile, MAX_FILE_SIZE } = require('../utils/geminiService')
         const buffer = Buffer.alloc(MAX_FILE_SIZE + 1)
         const result = validateFile(buffer, 'application/pdf')
         expect(result.valid).toBe(false)
-        expect(result.error).toContain('4.5MB')
+        expect(result.error).toContain('4MB')
+    })
+
+    // R05b: arquivo no limite + envelope do envio cabem no corte da Vercel (4,5 MB no pedido,
+    // contando 4.500.000 bytes, o pior caso); antes o arquivo podia ter 4.718.592 bytes sozinho
+    test('R05b: limite do arquivo deixa margem para o corte de 4,5 MB da Vercel', () => {
+        const { MAX_FILE_SIZE } = require('../utils/geminiService')
+        expect(MAX_FILE_SIZE + 64 * 1024).toBeLessThanOrEqual(4500000)
     })
 
     // R06: geminiService supports CSV, OFX, PDF, PNG, JPG

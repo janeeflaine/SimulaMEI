@@ -13,7 +13,9 @@ const { safePromptNames } = require('./promptSafe')
 
 // --- Configuration ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-const MAX_FILE_SIZE = Math.floor(4.5 * 1024 * 1024) // 4.5MB (limite Serverless da Vercel)
+// 4 MB por arquivo: a Vercel corta o PEDIDO inteiro em 4,5 MB (arquivo + envelope do envio
+// + campo do cartão). Com 4,5 MB no arquivo, um arquivo perto do limite levava o erro da Vercel.
+const MAX_FILE_SIZE = 4 * 1024 * 1024
 const SUPPORTED_MIME_TYPES = [
     'application/pdf',
     'image/png',

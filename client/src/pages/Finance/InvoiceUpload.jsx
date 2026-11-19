@@ -18,14 +18,14 @@ const ACCEPTED_TYPES = [
     'image/png', 'image/jpeg', 'image/jpg', 'image/webp'
 ]
 const ACCEPT_STRING = ACCEPTED_TYPES.join(',') + ',.ofx,.csv'
-const MAX_SIZE_MB = 4.5
-const MAX_SIZE_BYTES = Math.floor(4.5 * 1024 * 1024)
+// 4 MB: a Vercel corta o pedido inteiro em 4,5 MB (arquivo + envelope do envio)
+const MAX_SIZE_BYTES = 4 * 1024 * 1024
 const REVIEW_BELOW = 0.6
 const NEW_CATEGORY = '__nova__'
 const MONTHS = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 const STAGES = ['Enviando o arquivo', 'A IA está lendo as compras', 'Separando parcelas e estornos', 'Sugerindo as categorias']
 
-// Redimensiona/comprime fotos tiradas no celular que passam de 4,5 MB (limite da Vercel)
+// Redimensiona/comprime fotos tiradas no celular que passam de 4 MB (limite de envio)
 async function compressImageIfNeeded(file, maxBytes = MAX_SIZE_BYTES) {
     if (!file || !file.type?.startsWith('image/')) return file
     if (file.size <= maxBytes) return file
@@ -191,7 +191,7 @@ export default function InvoiceUpload() {
             return 'Esse tipo de arquivo não serve. Envie a fatura em PDF, CSV, OFX ou uma foto (PNG, JPG ou WebP).'
         }
         if (f.size > MAX_SIZE_BYTES) {
-            return `O arquivo tem ${formatBytes(f.size)}. O limite de envio é de 4,5 MB (limite da plataforma). Para faturas em PDF, tente salvar apenas as páginas com os lançamentos ou exportar em CSV pelo internet banking.`
+            return `O arquivo tem ${formatBytes(f.size)}. O limite de envio é de 4 MB. Para faturas em PDF, tente salvar apenas as páginas com os lançamentos ou exportar em CSV pelo internet banking.`
         }
         if (f.size === 0) return 'O arquivo está vazio.'
         return null
@@ -253,7 +253,7 @@ export default function InvoiceUpload() {
 
             if (!res.ok) {
                 if (res.status === 413 || text.includes('FUNCTION_PAYLOAD_TOO_LARGE') || text.includes('maxBodySize')) {
-                    throw new Error('O arquivo excede o limite de 4,5 MB permitido pela plataforma. Envie uma fatura menor ou exporte em CSV.')
+                    throw new Error('O arquivo passa do limite de 4 MB. Envie uma fatura menor ou exporte em CSV.')
                 }
                 throw new Error(data.message || 'Não deu para ler a fatura agora. Tente de novo em alguns minutos.')
             }
@@ -271,9 +271,9 @@ export default function InvoiceUpload() {
         } catch (err) {
             const msg = err?.message || ''
             if (msg.includes('FUNCTION_PAYLOAD_TOO_LARGE') || msg.includes('413')) {
-                setError('O arquivo excede o limite de 4,5 MB permitido pela plataforma. Envie um arquivo menor ou em CSV.')
+                setError('O arquivo passa do limite de 4 MB. Envie um arquivo menor ou em CSV.')
             } else {
-                setError(msg && msg !== 'Failed to fetch' ? msg : 'Sem conexão ou o arquivo excedeu o limite da plataforma (4,5 MB). Verifique a internet e tente de novo.')
+                setError(msg && msg !== 'Failed to fetch' ? msg : 'Sem conexão ou o arquivo passou do limite de 4 MB. Verifique a internet e tente de novo.')
             }
             setPhase('error')
         } finally {
@@ -859,7 +859,7 @@ export default function InvoiceUpload() {
                                     tabIndex={-1}
                                     aria-hidden="true"
                                 />
-                                <small>PDF ou CSV do banco funcionam melhor. Também aceita OFX e foto (PNG, JPG, WebP), até 4,5 MB.</small>
+                                <small>PDF ou CSV do banco funcionam melhor. Também aceita OFX e foto (PNG, JPG, WebP), até 4 MB.</small>
                             </div>
                         )}
 
