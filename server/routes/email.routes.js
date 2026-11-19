@@ -21,8 +21,16 @@
 const express = require('express')
 const { Webhook } = require('svix')
 const { sendMail } = require('../utils/email')
+const { runInBackground } = require('../utils/background')
 
 const router = express.Router()
+
+// Remetente, destinatário e assunto vêm de quem mandou o e-mail: no quadro
+// "De / Para / Assunto" eles entram como texto, nunca como HTML (antes dava para
+// desenhar um "De:" falso no e-mail encaminhado com um assunto montado).
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
 // ─── Rate-limit em memória (por remetente, janela de 1h) ──────────────────────
 const senderHits = new Map()   // email → { count, resetAt }
@@ -79,75 +87,78 @@ const webhookHandler = async (req, res) => {
     // Responder 200 imediatamente (Resend aguarda < 5s)
     res.sendStatus(200)
 
-    // 3. Processar em background para não atrasar a resposta
-    setImmediate(async () => {
-        try {
-            const data   = payload.data || {}
-            const emailId = data.email_id || data.id
+    // 3. Processar em background para não atrasar a resposta. runInBackground mantém a
+    // função da Vercel viva até terminar (com setImmediate ela podia ser congelada antes).
+    runInBackground(forwardReceivedEmail(payload), 'email-receive')
+}
 
-            // 4. Buscar o e-mail completo via Resend Receiving API
-            const apiKey = process.env.RESEND_API_KEY
-            if (!apiKey) {
-                console.error('[email/receive] RESEND_API_KEY não configurado')
-                return
-            }
+async function forwardReceivedEmail(payload) {
+    try {
+        const data   = payload.data || {}
+        const emailId = data.email_id || data.id
 
-            const apiRes = await fetch(`https://api.resend.com/emails/${emailId}`, {
-                headers: { Authorization: `Bearer ${apiKey}` }
-            })
-            if (!apiRes.ok) {
-                console.error(`[email/receive] Falha ao buscar e-mail ${emailId}: ${apiRes.status}`)
-                return
-            }
-            const email = await apiRes.json()
+        // 4. Buscar o e-mail completo via Resend Receiving API
+        const apiKey = process.env.RESEND_API_KEY
+        if (!apiKey) {
+            console.error('[email/receive] RESEND_API_KEY não configurado')
+            return
+        }
 
-            const fromAddr  = Array.isArray(email.from) ? email.from[0] : (email.from || '')
-            const toAddr    = Array.isArray(email.to)   ? email.to[0]   : (email.to   || '')
-            const subject   = email.subject || '(sem assunto)'
-            const bodyHtml  = email.html    || ''
-            const bodyText  = email.text    || bodyHtml.replace(/<[^>]+>/g, '') || ''
+        const apiRes = await fetch(`https://api.resend.com/emails/${emailId}`, {
+            headers: { Authorization: `Bearer ${apiKey}` }
+        })
+        if (!apiRes.ok) {
+            console.error(`[email/receive] Falha ao buscar e-mail ${emailId}: ${apiRes.status}`)
+            return
+        }
+        const email = await apiRes.json()
 
-            // 5. Rate-limit por remetente
-            if (isRateLimited(fromAddr)) {
-                console.warn(`[email/receive] Rate-limit atingido para ${fromAddr} → descartando`)
-                return
-            }
+        const fromAddr  = Array.isArray(email.from) ? email.from[0] : (email.from || '')
+        const toAddr    = Array.isArray(email.to)   ? email.to[0]   : (email.to   || '')
+        const subject   = email.subject || '(sem assunto)'
+        const bodyHtml  = email.html    || ''
+        const bodyText  = email.text    || bodyHtml.replace(/<[^>]+>/g, '') || ''
 
-            // 6. Encaminhar
-            const forwardTo = process.env.CONTACT_FORWARD_TO
-            if (!forwardTo) {
-                console.error('[email/receive] CONTACT_FORWARD_TO não configurado')
-                return
-            }
+        // 5. Rate-limit por remetente
+        if (isRateLimited(fromAddr)) {
+            console.warn(`[email/receive] Rate-limit atingido para ${fromAddr} → descartando`)
+            return
+        }
 
-            const prefix     = prefixFor(toAddr)
-            const fwdSubject = `${prefix} ${subject}`
-            const fwdHtml    = `
+        // 6. Encaminhar
+        const forwardTo = process.env.CONTACT_FORWARD_TO
+        if (!forwardTo) {
+            console.error('[email/receive] CONTACT_FORWARD_TO não configurado')
+            return
+        }
+
+        const prefix     = prefixFor(toAddr)
+        const fwdSubject = `${prefix} ${subject}`
+        const fwdHtml    = `
 <div style="background:#f3f4f6;padding:12px 16px;border-left:4px solid #12284a;margin-bottom:16px;font-family:Arial,sans-serif;font-size:13px;color:#374151">
   <strong>E-mail encaminhado por EuSempreMEI</strong><br>
-  <strong>De:</strong> ${fromAddr}<br>
-  <strong>Para:</strong> ${toAddr}<br>
-  <strong>Assunto original:</strong> ${subject}
+  <strong>De:</strong> ${escapeHtml(fromAddr)}<br>
+  <strong>Para:</strong> ${escapeHtml(toAddr)}<br>
+  <strong>Assunto original:</strong> ${escapeHtml(subject)}
 </div>
-${bodyHtml || `<pre style="font-family:inherit">${bodyText}</pre>`}`
+${bodyHtml || `<pre style="font-family:inherit">${escapeHtml(bodyText)}</pre>`}`
 
-            await sendMail({
-                to:      forwardTo,
-                subject: fwdSubject,
-                html:    fwdHtml,
-                text:    `---- Mensagem encaminhada ----\nDe: ${fromAddr}\nPara: ${toAddr}\nAssunto: ${subject}\n\n${bodyText}`,
-                replyTo: fromAddr,
-                kind:    'recebido',
-            })
+        await sendMail({
+            to:      forwardTo,
+            subject: fwdSubject,
+            html:    fwdHtml,
+            text:    `---- Mensagem encaminhada ----\nDe: ${fromAddr}\nPara: ${toAddr}\nAssunto: ${subject}\n\n${bodyText}`,
+            replyTo: fromAddr,
+            kind:    'recebido',
+        })
 
-            console.log(`[email/receive] Encaminhado: ${fromAddr} → ${toAddr} → ${forwardTo} | "${subject}"`)
-        } catch (err) {
-            console.error('[email/receive] Erro ao processar:', err)
-        }
-    })
+        console.log(`[email/receive] Encaminhado: ${fromAddr} → ${toAddr} → ${forwardTo} | "${subject}"`)
+    } catch (err) {
+        console.error('[email/receive] Erro ao processar:', err)
+    }
 }
 
 // Rota de health (para confirmar que o endpoint existe, sem expor dados)
 router.get('/receive', (req, res) => res.json({ ok: true, endpoint: 'email/receive' }))
 
-module.exports = { router, webhookHandler }
+module.exports = { router, webhookHandler, forwardReceivedEmail, escapeHtml }

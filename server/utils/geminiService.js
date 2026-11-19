@@ -9,6 +9,7 @@
  * Supports both legacy AIza... keys and new AQ.Ab8R... auth keys via @google/genai SDK.
  */
 const { GoogleGenAI } = require('@google/genai')
+const { safePromptNames } = require('./promptSafe')
 
 // --- Configuration ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
@@ -102,29 +103,8 @@ CATEGORIAS_DO_USUARIO (lista JSON de nomes):
 Se as categorias do usuário forem fornecidas acima, priorize-as em vez das categorias padrão.
 `
 
-// Nomes de categoria vão para o pedido à IA como dados. Um nome com quebra de linha,
-// aspas, crase, chaves ou sinais de maior/menor, ou comprido demais, fica de fora
-// (em vez de ser alterado: um nome alterado não casaria mais com a categoria salva).
-// Antes, o nome entrava cru e dava para escrever instruções para a IA dentro dele.
-const MAX_PROMPT_CATEGORIES = 60
-const MAX_PROMPT_CATEGORY_LENGTH = 40
-const UNSAFE_CATEGORY_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029`{}<>"\\]/
-
-const sanitizeCategoryNames = (names) => {
-    const seen = new Set()
-    const out = []
-    for (const raw of Array.isArray(names) ? names : []) {
-        if (typeof raw !== 'string') continue
-        const name = raw.trim()
-        if (!name || name.length > MAX_PROMPT_CATEGORY_LENGTH || UNSAFE_CATEGORY_CHARS.test(name)) continue
-        const key = name.toLowerCase()
-        if (seen.has(key)) continue
-        seen.add(key)
-        out.push(name)
-        if (out.length >= MAX_PROMPT_CATEGORIES) break
-    }
-    return out
-}
+// Nomes de categoria vão para o pedido à IA como dados (ver utils/promptSafe.js)
+const sanitizeCategoryNames = (names) => safePromptNames(names, { max: 60, maxLength: 40 })
 
 /**
  * Erro com uma mensagem que pode ir para a tela (as outras ficam só no log,

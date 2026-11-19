@@ -18,6 +18,14 @@ const financeRoutes = require('../server/routes/finance.routes')
 const invoiceRoutes = require('../server/routes/invoice.routes')
 const stripeRoutes = require('../server/routes/stripe.routes')
 const whatsappRoutes = require('../server/routes/whatsapp.routes')
+// E-mail recebido: protegido para nunca derrubar a API ao iniciar (o svix é um módulo ES;
+// o Node 24 da Vercel carrega, mas se um dia não carregar só esta rota fica desligada)
+let emailRoutes = null
+try {
+    emailRoutes = require('../server/routes/email.routes')
+} catch (err) {
+    console.error('E-mail recebido desligado: não foi possível carregar a rota:', err.message)
+}
 
 const app = express()
 
@@ -37,6 +45,11 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), strip
 
 // WHATSAPP WEBHOOK: também precisa do corpo bruto para validar a assinatura da Meta
 app.post('/api/whatsapp/webhook', express.raw({ type: '*/*', limit: '1mb' }), whatsappRoutes.webhookHandler)
+
+// E-MAIL RECEBIDO (Resend): corpo bruto para validar a assinatura svix.
+// Antes esta rota só existia no servidor local: na Vercel o aviso do Resend dava 404
+// e os e-mails de contato@, suporte@ e privacidade@ não eram encaminhados.
+if (emailRoutes) app.post('/api/email/receive', express.raw({ type: 'application/json', limit: '1mb' }), emailRoutes.webhookHandler)
 
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))
@@ -65,6 +78,7 @@ app.use('/api/finance', financeRoutes)
 app.use('/api/finance/invoices', invoiceRoutes)
 app.use('/api/stripe', stripeRoutes.router)
 app.use('/api/whatsapp', whatsappRoutes.router)
+if (emailRoutes) app.use('/api/email', emailRoutes.router)
 
 // Health check
 app.get('/api/health', (req, res) => {
