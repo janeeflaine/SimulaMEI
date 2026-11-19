@@ -1,0 +1,55 @@
+/* Aviso de cookies (Pixel da Meta). Prefixo .ckc- */
+
+.ckc {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1400;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+}
+.ckc__box {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    max-width: 880px;
+    padding: 16px 20px;
+    border-radius: 16px;
+    background: #fff;
+    border: 1px solid #e3e8ef;
+    box-shadow: 0 20px 40px -20px rgba(18, 40, 74, 0.45);
+    color: #0f172a;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}
+.ckc__icon { flex: none; color: #12284a; }
+.ckc__text { margin: 0; flex: 1; min-width: 0; }
+.ckc__text a { color: #047857; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.ckc__actions { display: flex; gap: 8px; flex: none; }
+/* Os dois botões com o mesmo peso: recusar é tão fácil quanto aceitar */
+.ckc__btn {
+    min-height: 44px;
+    min-width: 108px;
+    padding: 0 20px;
+    border-radius: 999px;
+    border: 1.5px solid #12284a;
+    background: #fff;
+    color: #12284a;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.ckc__btn:focus-visible { outline: 3px solid #10b981; outline-offset: 2px; }
+@media (hover: hover) { .ckc__btn:hover { background: #12284a; color: #fff; } }
+
+@media (max-width: 720px) {
+    .ckc { left: 8px; right: 8px; bottom: 8px; }
+    .ckc__box { flex-wrap: wrap; padding: 14px 16px; gap: 10px 12px; }
+    .ckc__icon { display: none; }
+    .ckc__actions { width: 100%; }
+    .ckc__btn { flex: 1; }
+}

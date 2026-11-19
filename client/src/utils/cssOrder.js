@@ -10,6 +10,8 @@
 // O nome de cada arquivo publicado vem do vite.config.js (css-<caminho>-<hash>.css).
 const ORDER = [
     'pages/Home',
+    'pages/Comecar',
+    'components/CookieConsent',
     'pages/Simulator',
     'pages/Results',
     'pages/Login',

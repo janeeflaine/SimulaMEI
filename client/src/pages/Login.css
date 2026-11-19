@@ -412,6 +412,7 @@
 }
 
 .acs-plan__price small { font-size: 0.875rem; font-weight: 500; color: var(--acs-muted); }
+.acs-plan__note { grid-column: 1 / -1; margin: 0; color: var(--acs-muted); font-size: 0.875rem; line-height: 1.5; }
 .acs-plan .acs-link { grid-column: 1 / -1; justify-self: start; min-height: 32px; display: inline-flex; align-items: center; }
 
 /* Estado final (e-mail enviado, senha salva, link vencido) */

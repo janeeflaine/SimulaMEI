@@ -56,13 +56,34 @@ const SECTIONS = [
                     <li>
                         <strong>Atendimento:</strong> o que você nos escreve por e-mail ou pela página de contato, com o seu nome e e-mail.
                     </li>
+                    <li>
+                        <strong>Teste grátis:</strong> quando a conta nova começa com um teste grátis, guardamos um código irreversível do e-mail (SHA-256, não o e-mail) para que o mesmo e-mail não ganhe outro teste.
+                    </li>
                 </ul>
                 <p>
-                    <strong>Armazenamento no navegador:</strong> não usamos cookies de publicidade nem ferramentas de rastreamento ou análise de terceiros. Usamos o armazenamento do seu navegador apenas para manter você conectado (código de sessão e nome, e-mail e plano para mostrar no topo do site), guardar o identificador técnico do aparelho, o plano escolhido antes do cadastro, preferências de avisos, o resultado da última simulação e o motivo de uma saída automática da conta. Na página de pagamento, o Stripe usa os próprios cookies, conforme a política dele.
+                    <strong>Armazenamento no navegador:</strong> cookies de anúncios só com o seu aceite (veja Cookies e anúncios, logo abaixo). Fora isso, usamos o armazenamento do seu navegador apenas para manter você conectado (código de sessão e nome, e-mail e plano para mostrar no topo do site), guardar o identificador técnico do aparelho, o plano escolhido antes do cadastro, preferências de avisos, o resultado da última simulação, o motivo de uma saída automática da conta e a sua escolha sobre os cookies de anúncios. Na página de pagamento, o Stripe usa os próprios cookies, conforme a política dele.
                 </p>
                 <p>
                     <strong>Dados sensíveis:</strong> não pedimos dados sensíveis (como saúde, religião ou opinião política). Evite escrevê-los nas descrições de lançamentos ou nas mensagens.
                 </p>
+            </>
+        ),
+    },
+    {
+        id: 'cookies',
+        title: 'Cookies e anúncios',
+        content: (
+            <>
+                <p>
+                    Anunciamos o {COMPANY.productName} no Facebook e no Instagram. Para saber quais anúncios trazem pessoas
+                    que criam conta, o site pode usar o <strong>Pixel da Meta</strong>, mas <strong>só se você tocar em Aceitar</strong> no
+                    aviso de cookies. Antes disso, nada da Meta é carregado. Recusar não muda nada no uso do site.
+                </p>
+                <ul>
+                    <li><strong>O que o Pixel registra:</strong> as páginas visitadas, a criação da conta, o início de um teste grátis e a assinatura de um plano, junto com dados técnicos do navegador (como o IP e os cookies da Meta). Não mandamos nome, e-mail, telefone nem dados financeiros.</li>
+                    <li><strong>Quem recebe:</strong> a Meta Platforms, que trata esses dados também conforme a política de privacidade dela.</li>
+                    <li><strong>Mudar de ideia:</strong> toque em Cookies, no rodapé do site, e escolha de novo. Você também pode apagar os cookies no navegador.</li>
+                </ul>
             </>
         ),
     },
@@ -77,12 +98,14 @@ const SECTIONS = [
                     <li><strong>Cobrar as assinaturas pelo Stripe e cumprir obrigações fiscais:</strong> execução de contrato (art. 7º, V) e cumprimento de obrigação legal (art. 7º, II).</li>
                     <li><strong>Ler com inteligência artificial as faturas que você envia:</strong> execução de contrato (art. 7º, V), só quando você envia o arquivo.</li>
                     <li><strong>Atendimento pelo WhatsApp e lembretes e alertas por lá:</strong> consentimento (art. 7º, I), dado quando você vincula o número e que pode ser retirado a qualquer momento.</li>
+                    <li><strong>Medir os nossos anúncios com o Pixel da Meta:</strong> consentimento (art. 7º, I), dado no aviso de cookies e que pode ser retirado a qualquer momento.</li>
+                    <li><strong>Evitar que o mesmo e-mail use o teste grátis mais de uma vez:</strong> legítimo interesse (art. 7º, IX), guardando só um código irreversível do e-mail.</li>
                     <li><strong>Guardar os registros de acesso:</strong> cumprimento de obrigação legal do Marco Civil da Internet (art. 7º, II).</li>
                     <li><strong>Proteger a conta (limite de tentativas de entrar, conferência de senha vazada, controle de aparelhos e registro de eventos) e evitar fraudes:</strong> legítimo interesse (art. 7º, IX), sempre limitado ao necessário para a sua segurança.</li>
                     <li><strong>Responder ao seu contato e defender direitos em processos:</strong> execução de contrato e exercício regular de direitos (art. 7º, V e VI).</li>
                 </ul>
                 <p className="lgl-note">
-                    <strong>Não comercializamos dados:</strong> o {COMPANY.productName} e seu controlador não vendem, alugam ou cedem dados pessoais para fins de marketing ou publicidade de terceiros, e não enviamos propaganda.
+                    <strong>Não comercializamos dados:</strong> o {COMPANY.productName} e seu controlador não vendem, alugam ou cedem dados pessoais para fins de marketing ou publicidade de terceiros, e não enviamos propaganda. A única exceção é o Pixel da Meta, que só funciona se você aceitar os cookies de anúncios.
                 </p>
                 <p>
                     <strong>Inteligência artificial:</strong> a IA lê faturas, sugere categorias e entende os pedidos feitos pelo WhatsApp. Ela não decide nada sozinha: nada é gravado na sua conta sem a sua confirmação, e você pode pedir a revisão de qualquer resultado (art. 20 da LGPD).
@@ -103,6 +126,7 @@ const SECTIONS = [
                     <li><strong>Stripe:</strong> cobrança e pagamento das assinaturas.</li>
                     <li><strong>Resend:</strong> envio dos e-mails do site, como o link para criar uma senha nova.</li>
                     <li><strong>Meta Platforms (WhatsApp Business):</strong> somente se você ativar o canal WhatsApp, para entregar e receber as mensagens.</li>
+                    <li><strong>Meta Platforms (Pixel da Meta):</strong> somente se você aceitar os cookies de anúncios, para medir os nossos anúncios no Facebook e no Instagram.</li>
                     <li><strong>Autoridades públicas:</strong> quando houver requisição legal ou ordem judicial.</li>
                 </ul>
             </>
@@ -120,6 +144,7 @@ const SECTIONS = [
                     <li><strong>Hospedagem (Vercel) e banco de dados (Supabase):</strong> todos os dados da conta, enquanto ela existir.</li>
                     <li><strong>Inteligência artificial (Google):</strong> o arquivo da fatura e as mensagens do WhatsApp, só pelo tempo de processar o pedido.</li>
                     <li><strong>Pagamentos (Stripe), e-mails (Resend) e WhatsApp (Meta):</strong> os dados necessários para cobrar, mandar o e-mail ou entregar a mensagem, pelos prazos de cada um.</li>
+                    <li><strong>Pixel da Meta:</strong> só com o seu aceite, os dados de navegação descritos em Cookies e anúncios, pelos prazos da Meta.</li>
                 </ul>
                 <p>
                     Essas transferências se apoiam nas garantias contratuais de proteção de dados desses fornecedores (art. 33, II, da LGPD) e são necessárias para prestar o serviço que você contratou (art. 33, IX, da LGPD). Todos os seus direitos desta Política valem também para esses dados, e você pode pedir mais informações pelo canal de privacidade.
@@ -141,6 +166,8 @@ const SECTIONS = [
                 <li><strong>Registros de acesso e de segurança (IP, data, hora e evento):</strong> no mínimo 6 meses, como exige o art. 15 do Marco Civil da Internet, inclusive depois da exclusão da conta, quando deixam de estar ligados a ela.</li>
                 <li><strong>Canal WhatsApp:</strong> o número e a data da autorização ficam guardados enquanto o canal estiver ativo e saem ao desconectar o número ou excluir a conta. O conteúdo das mensagens não é armazenado: um pedido entendido fica guardado no máximo 30 minutos, esperando a sua confirmação, e o identificador técnico de cada mensagem recebida, por 30 dias, para evitar processamento em dobro e abusos. Áudios e imagens não ficam guardados como arquivo.</li>
                 <li><strong>Atendimento:</strong> as mensagens que você nos envia ficam guardadas pelo tempo necessário para responder e manter o histórico do seu pedido.</li>
+                <li><strong>Teste grátis (código irreversível do e-mail):</strong> até 2 anos, inclusive depois da exclusão da conta, só para o mesmo e-mail não ganhar outro teste.</li>
+                <li><strong>Escolha sobre os cookies de anúncios:</strong> fica só no seu navegador até você mudar ou apagar.</li>
             </ul>
         ),
     },
@@ -293,7 +320,7 @@ const SUMMARY = {
         {
             icon: Ban,
             title: 'Não vendemos seus dados',
-            text: 'Nada é vendido, alugado ou cedido para publicidade de ninguém.',
+            text: 'Nada é vendido nem alugado. Cookies de anúncios só com o seu aceite.',
         },
         {
             icon: FileCheck2,

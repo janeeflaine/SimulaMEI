@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { LEGAL_VERSION } from '../utils/legalInfo'
+import { track } from '../utils/metaPixel'
 import AuthFrame, { AuthAlert, LimitFact, PasswordField, looksLikeEmail, normalizeEmail, passwordProblem, readJson } from '../components/auth/AuthFrame'
 
 const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -19,6 +20,17 @@ export default function Register() {
     const [loading, setLoading] = useState(false)
     const [loadingStatus, setLoadingStatus] = useState('')
     const [selectedPlan, setSelectedPlan] = useState(null)
+    // Teste grátis para contas novas (Admin > Funcionalidades), só para quem entra pelo Gratuito
+    const [trial, setTrial] = useState(null)
+
+    useEffect(() => {
+        let alive = true
+        fetch('/api/plans/trial')
+            .then(res => (res.ok ? res.json() : null))
+            .then(data => { if (alive && data?.enabled) setTrial(data) })
+            .catch(() => {})
+        return () => { alive = false }
+    }, [])
 
     useEffect(() => {
         if (!planIdParam) return
@@ -57,6 +69,9 @@ export default function Register() {
         try {
             const targetPlanId = selectedPlan ? selectedPlan.id : null
             const user = await register(name, email, form.password, targetPlanId, LEGAL_VERSION)
+            // Pixel da Meta (só com o aceite de cookies): conta criada, sem dados pessoais
+            track('CompleteRegistration')
+            if (user?.isInTrial) track('StartTrial')
 
             // Plano pago: vai direto para o pagamento no Stripe
             if (user?.requiresPayment || (selectedPlan && Number(selectedPlan.price) > 0)) {
@@ -102,7 +117,19 @@ export default function Register() {
                 {isPaidPlan ? 'Depois de criar a conta, você vai para o pagamento no cartão.' : 'Leva menos de um minuto. Não pede cartão.'}
             </p>
 
-            {selectedPlan && (
+            {trial && !isPaidPlan && (
+                <div className="acs-plan is-paid" role="note">
+                    <div>
+                        <span className="acs-plan__label">Teste grátis</span>
+                        <strong>{trial.days} dias do plano {trial.planName}</strong>
+                    </div>
+                    <p className="acs-plan__note">
+                        Sem cartão. No fim, a conta volta ao Gratuito sozinha, sem cobrança e sem perder os dados. Um teste por e-mail.
+                    </p>
+                </div>
+            )}
+
+            {selectedPlan && !(trial && !isPaidPlan) && (
                 <div className={`acs-plan${isPaidPlan ? ' is-paid' : ''}`}>
                     <div>
                         <span className="acs-plan__label">Plano escolhido</span>

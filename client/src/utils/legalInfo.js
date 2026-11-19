@@ -25,5 +25,5 @@ export const CONTACT_EMAILS = {
     privacidade: 'privacidade@eusempremei.com.br',
 }
 
-export const LEGAL_LAST_UPDATED = '15 de novembro de 2026'
-export const LEGAL_VERSION = '2026-11-15'
+export const LEGAL_LAST_UPDATED = '19 de novembro de 2026'
+export const LEGAL_VERSION = '2026-11-19'

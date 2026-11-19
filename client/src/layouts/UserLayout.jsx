@@ -10,6 +10,7 @@ import BrandMark from '../components/ui/BrandMark'
 import PageSuspense from '../components/PageSuspense'
 import { COMPANY, CONTACT_EMAILS } from '../utils/legalInfo'
 import './UserLayout.css'
+import { pixelConfigured, reopenConsent } from '../utils/metaPixel'
 
 // Itens do menu Finanças: caminho, nome e ícone
 const FINANCE_LINKS = [
@@ -310,6 +311,11 @@ export default function UserLayout() {
                                 <li>
                                     <Link to="/contato">Informações de Contato</Link>
                                 </li>
+                                {pixelConfigured && (
+                                    <li>
+                                        <button type="button" className="footer-link-btn" onClick={reopenConsent}>Cookies</button>
+                                    </li>
+                                )}
                             </ul>
                         </div>
 

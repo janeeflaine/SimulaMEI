@@ -714,3 +714,7 @@
 .main-content:has([aria-busy="true"]) + .footer {
     display: none;
 }
+
+/* "Cookies" no rodapé (só com o Pixel da Meta configurado): igual aos links */
+.footer-link-btn { padding: 0; border: 0; background: none; font-family: inherit; font-size: 0.9rem; color: var(--color-text-secondary, #475569); cursor: pointer; text-align: left; }
+.footer-link-btn:hover { color: var(--color-primary-dark, #059669); }

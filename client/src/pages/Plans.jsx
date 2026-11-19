@@ -5,6 +5,7 @@ import MemberCard from '../components/plans/MemberCard'
 import PlanComparison, { PlanTableButton } from '../components/plans/PlanComparison'
 import { useFeatureOrder, tierOf, formatBRL, sortPlans } from '../components/plans/planFeatures'
 import usePlanActions from '../hooks/usePlanActions'
+import { track } from '../utils/metaPixel'
 import './Plans.css'
 
 const FAQ = [
@@ -87,6 +88,7 @@ export default function Plans() {
 
             if (res.ok && data.verified) {
                 await refreshUser()
+                track('Subscribe')
                 setVerificationState({
                     loading: false,
                     success: true,

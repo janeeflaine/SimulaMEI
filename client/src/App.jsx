@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import lazyPage, { registerPreload, preloadPath } from './utils/lazyPage'
 import PageSuspense from './components/PageSuspense'
+// Aviso de cookies e Pixel da Meta: só existe com VITE_META_PIXEL_ID (utils/metaPixel.js)
+import CookieConsent from './components/CookieConsent'
 
 // A Início vem junto com o site (é a primeira página da maioria das visitas).
 // As outras páginas são baixadas só quando alguém entra nelas (utils/lazyPage.js).
@@ -11,6 +13,8 @@ import Home from './pages/Home'
 import './components/FinanceQuickActionModal.css'
 
 // User Pages
+// Página dos anúncios (fora do menu do site)
+const Comecar = lazyPage(() => import('./pages/Comecar'))
 const Simulator = lazyPage(() => import('./pages/Simulator'))
 const Results = lazyPage(() => import('./pages/Results'))
 const Login = lazyPage(() => import('./pages/Login'))
@@ -57,7 +61,7 @@ import AdminRoute from './components/AdminRoute'
 
 // Caminhos dos links que começam a baixar a página antes do clique
 const PRELOAD = [
-    ['/simular', Simulator], ['/resultado', Results], ['/planos', Plans], ['/login', Login],
+    ['/comecar', Comecar], ['/simular', Simulator], ['/resultado', Results], ['/planos', Plans], ['/login', Login],
     ['/cadastro', Register], ['/esqueci-senha', ForgotPassword], ['/redefinir-senha', ResetPassword],
     ['/politica-de-privacidade', PrivacyPolicy], ['/privacidade', PrivacyPolicy],
     ['/termos-de-servico', TermsOfService], ['/termos', TermsOfService], ['/contato', Contact],
@@ -134,6 +138,9 @@ function App() {
                         </Route>
                     </Route>
 
+                    {/* Página dos anúncios: sem o menu e o rodapé do site */}
+                    <Route path="/comecar" element={<Comecar />} />
+
                     {/* Admin Routes */}
                     <Route path="/admin/login" element={<AdminLogin />} />
                     <Route element={<AdminRoute />}>
@@ -151,6 +158,7 @@ function App() {
                     </Route>
                 </Routes>
                 </PageSuspense>
+                <CookieConsent />
             </BrowserRouter>
         </AuthProvider>
     )
