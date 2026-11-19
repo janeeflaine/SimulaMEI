@@ -6,7 +6,7 @@ export default function ProtectedRoute() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center" style={{ minHeight: '50vh' }}>
+            <div className="flex items-center justify-center" style={{ minHeight: '50vh' }} aria-busy="true">
                 <div className="loader"></div>
             </div>
         )

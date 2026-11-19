@@ -707,3 +707,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Enquanto a página carrega (a Início é a única que já vem junto), o rodapé fica escondido:
+   senão ele aparece embaixo do carregando e é empurrado quando a página chega (CLS alto no
+   PageSpeed). Quem aparece depois não conta como deslocamento. */
+.main-content:has([aria-busy="true"]) + .footer {
+    display: none;
+}
