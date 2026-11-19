@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /conta
+Disallow: /alertas
+Disallow: /financas
+Disallow: /resultado
+Disallow: /comparativo
+Disallow: /redefinir-senha
+
+Sitemap: https://www.eusempremei.com.br/sitemap.xml

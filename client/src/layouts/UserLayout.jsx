@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import BrandMark from '../components/ui/BrandMark'
+import PageSuspense from '../components/PageSuspense'
 import { COMPANY, CONTACT_EMAILS } from '../utils/legalInfo'
 import './UserLayout.css'
 
@@ -254,7 +255,9 @@ export default function UserLayout() {
             </header>
 
             <main className="main-content">
-                <Outlet />
+                <PageSuspense boundaryKey={location.pathname}>
+                    <Outlet />
+                </PageSuspense>
             </main>
 
             <footer className="footer">
@@ -278,7 +281,7 @@ export default function UserLayout() {
 
                         {/* Coluna 2: Navegação Rápida */}
                         <div className="footer-col">
-                            <h4 className="footer-col-title">Navegação</h4>
+                            <h2 className="footer-col-title">Navegação</h2>
                             <ul className="footer-links">
                                 <li><Link to="/">Página Inicial</Link></li>
                                 <li><Link to="/simular">Simulador MEI</Link></li>
@@ -293,7 +296,7 @@ export default function UserLayout() {
 
                         {/* Coluna 3: Legal & Regras de Utilização */}
                         <div className="footer-col">
-                            <h4 className="footer-col-title">Termos & Privacidade</h4>
+                            <h2 className="footer-col-title">Termos & Privacidade</h2>
                             <ul className="footer-links">
                                 <li>
                                     <Link to="/politica-de-privacidade">Política de Privacidade</Link>
@@ -312,7 +315,7 @@ export default function UserLayout() {
 
                         {/* Coluna 4: Informações de Contato & Suporte */}
                         <div className="footer-col">
-                            <h4 className="footer-col-title">Atendimento & Contato</h4>
+                            <h2 className="footer-col-title">Atendimento & Contato</h2>
                             <div className="footer-contact-info">
                                 <p className="footer-contact-line">
                                     <Mail size={16} aria-hidden="true" className="contact-icon" />

@@ -1,0 +1,19 @@
+# EuSempreMEI
+
+> Site brasileiro para o Microempreendedor Individual (MEI). Calcula o DAS e quanto do limite de faturamento do ano o MEI já usou, separa o dinheiro do MEI do dinheiro pessoal, organiza contas a pagar, cartões e faturas, avisa dos prazos do MEI e tem um assistente no WhatsApp para lançar receitas e despesas. Há um plano gratuito.
+
+O EuSempreMEI não substitui um contador. As contas do DAS e os limites de faturamento seguem a lei em vigor no ano.
+
+## Páginas principais
+
+- [Início](https://www.eusempremei.com.br/): o que o site faz e uma calculadora de quanto do limite do MEI você usa
+- [Simulador do MEI](https://www.eusempremei.com.br/simular): DAS do ano por atividade (comércio, serviço ou os dois) e uso do limite de faturamento
+- [Planos](https://www.eusempremei.com.br/planos): o que cada plano libera, inclusive o gratuito
+- [Criar conta](https://www.eusempremei.com.br/cadastro): conta gratuita
+- [Contato](https://www.eusempremei.com.br/contato): e-mail, telefone e horário de atendimento
+
+## Regras e privacidade
+
+- [Política de Privacidade](https://www.eusempremei.com.br/politica-de-privacidade)
+- [Termos de Serviço](https://www.eusempremei.com.br/termos-de-servico)
+- [Exclusão de dados](https://www.eusempremei.com.br/exclusao-de-dados): como apagar a conta e os dados
