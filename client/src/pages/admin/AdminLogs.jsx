@@ -4,6 +4,8 @@ import Select from '../../components/ui/Select'
 import { showToast } from '../../utils/toast'
 import { EVENTS, EVENT_GROUPS, describeEvent, eventLabel, when, todayBR, TZ } from './auditEvents'
 // AdminPages.css segue importado: as outras páginas do admin ainda usam as classes dele
+// A janela de detalhes usa .cd-overlay/.cd-box/.cd-actions da janela de confirmação
+import '../../components/ui/ConfirmDialog.css'
 import './AdminPages.css'
 import './AdminLogs.css'
 

@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState } from 'react'
+import { Component, Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard, Users, Gem, Calculator, Gauge, ToggleRight, Settings,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import BrandMark from '../components/ui/BrandMark'
+import { PageLoading } from '../components/PageSuspense'
 import './AdminLayout.css'
 
 // Menu do painel do administrador, em grupos. Prefixo .adm- (o resto do admin
@@ -219,7 +220,9 @@ export default function AdminLayout() {
 
             <main className="admin-main adm-main">
                 <PageBoundary key={location.pathname}>
-                    <Outlet />
+                    <Suspense fallback={<PageLoading />}>
+                        <Outlet />
+                    </Suspense>
                 </PageBoundary>
             </main>
         </div>

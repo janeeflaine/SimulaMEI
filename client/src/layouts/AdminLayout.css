@@ -291,30 +291,3 @@
 @media (prefers-reduced-motion: reduce) {
     .adm-sidebar { transition: none; }
 }
-
-/* ===== Mantidas: outras telas usam estas classes (o CSS do site é carregado todo junto) =====
-   .user-avatar: lista de Usuários do admin e topo do site (UserLayout)
-   .user-name: topo do site (UserLayout) */
-.user-avatar {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 700;
-    font-size: 0.95rem;
-    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);
-    flex-shrink: 0;
-}
-
-.user-name {
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: #f1f5f9;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}

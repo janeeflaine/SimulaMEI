@@ -12,6 +12,8 @@ import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Stat, Block, BarList } from '../../components/cards/CardsSummaryPanel'
 import MonthlyTrendChart from '../../components/cards/charts/MonthlyTrendChart'
 import { buildMonthlyTrend } from '../../utils/cardsDashboard/buildMonthlyTrend'
+// O cartão do topo (.cc-plastic, .cc-tag, .cc-days) e a janela de compra (.cc-box) vêm do CSS de Cartões
+import './CreditCards.css'
 import './CardDashboard.css'
 
 const MONTHS = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']

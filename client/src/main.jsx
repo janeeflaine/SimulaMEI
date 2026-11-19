@@ -1,3 +1,5 @@
+// Primeiro de tudo: mantém a ordem dos CSS quando as páginas chegam sob demanda
+import './utils/cssOrder'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'

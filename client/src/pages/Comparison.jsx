@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Check, X } from 'lucide-react'
+import '../components/cards/CardsSummaryPanel.css' // .csp-loading enquanto carrega
 import './Comparison.css'
 
 const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })

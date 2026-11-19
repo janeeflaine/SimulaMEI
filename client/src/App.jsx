@@ -1,56 +1,104 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import lazyPage, { registerPreload, preloadPath } from './utils/lazyPage'
+import PageSuspense from './components/PageSuspense'
+
+// A Início vem junto com o site (é a primeira página da maioria das visitas).
+// As outras páginas são baixadas só quando alguém entra nelas (utils/lazyPage.js).
+import Home from './pages/Home'
+// Este CSS tem uma regra para todo <h3> do site (ver design-do-site.md): continua valendo em todas as páginas
+import './components/FinanceQuickActionModal.css'
 
 // User Pages
-import Home from './pages/Home'
-import Simulator from './pages/Simulator'
-import Results from './pages/Results'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import ForgotPassword from './pages/ForgotPassword'
-import ResetPassword from './pages/ResetPassword'
-import PrivacyPolicy from './pages/PrivacyPolicy'
-import TermsOfService from './pages/TermsOfService'
-import Contact from './pages/Contact'
-import DataDeletion from './pages/DataDeletion'
-import Dashboard from './pages/Dashboard'
-import Comparison from './pages/Comparison'
-import Account from './pages/Account'
-import Plans from './pages/Plans'
-import Alerts from './pages/Alerts'
-import BillsToPay from './pages/Finance/BillsToPay'
-import CreditCards from './pages/Finance/CreditCards'
-import CardDashboard from './pages/Finance/CardDashboard'
-import InvoiceUpload from './pages/Finance/InvoiceUpload'
-import FinanceCategories from './pages/Finance/FinanceCategories'
-import FinancialStatement from './pages/Finance/FinancialStatement'
-import PixPaymentForm from './pages/Finance/PixPaymentForm'
-import AccountManager from './pages/Finance/AccountManager'
+const Simulator = lazyPage(() => import('./pages/Simulator'))
+const Results = lazyPage(() => import('./pages/Results'))
+const Login = lazyPage(() => import('./pages/Login'))
+const Register = lazyPage(() => import('./pages/Register'))
+const ForgotPassword = lazyPage(() => import('./pages/ForgotPassword'))
+const ResetPassword = lazyPage(() => import('./pages/ResetPassword'))
+const PrivacyPolicy = lazyPage(() => import('./pages/PrivacyPolicy'))
+const TermsOfService = lazyPage(() => import('./pages/TermsOfService'))
+const Contact = lazyPage(() => import('./pages/Contact'))
+const DataDeletion = lazyPage(() => import('./pages/DataDeletion'))
+const Dashboard = lazyPage(() => import('./pages/Dashboard'))
+const Comparison = lazyPage(() => import('./pages/Comparison'))
+const Account = lazyPage(() => import('./pages/Account'))
+const Plans = lazyPage(() => import('./pages/Plans'))
+const Alerts = lazyPage(() => import('./pages/Alerts'))
+const BillsToPay = lazyPage(() => import('./pages/Finance/BillsToPay'))
+const CreditCards = lazyPage(() => import('./pages/Finance/CreditCards'))
+const CardDashboard = lazyPage(() => import('./pages/Finance/CardDashboard'))
+const InvoiceUpload = lazyPage(() => import('./pages/Finance/InvoiceUpload'))
+const FinanceCategories = lazyPage(() => import('./pages/Finance/FinanceCategories'))
+const FinancialStatement = lazyPage(() => import('./pages/Finance/FinancialStatement'))
+const PixPaymentForm = lazyPage(() => import('./pages/Finance/PixPaymentForm'))
+const AccountManager = lazyPage(() => import('./pages/Finance/AccountManager'))
 
 // Admin Pages
-import AdminLogin from './pages/admin/AdminLogin'
-import AdminDashboard from './pages/admin/AdminDashboard'
-import AdminUsers from './pages/admin/AdminUsers'
-import AdminRules from './pages/admin/AdminRules'
-import AdminLimits from './pages/admin/AdminLimits'
-import AdminPlans from './pages/admin/AdminPlans'
-import AdminFeatures from './pages/admin/AdminFeatures'
-import AdminReports from './pages/admin/AdminReports'
-import AdminSettings from './pages/admin/AdminSettings'
-import AdminLogs from './pages/admin/AdminLogs'
+const AdminLogin = lazyPage(() => import('./pages/admin/AdminLogin'))
+const AdminDashboard = lazyPage(() => import('./pages/admin/AdminDashboard'))
+const AdminUsers = lazyPage(() => import('./pages/admin/AdminUsers'))
+const AdminRules = lazyPage(() => import('./pages/admin/AdminRules'))
+const AdminLimits = lazyPage(() => import('./pages/admin/AdminLimits'))
+const AdminPlans = lazyPage(() => import('./pages/admin/AdminPlans'))
+const AdminFeatures = lazyPage(() => import('./pages/admin/AdminFeatures'))
+const AdminReports = lazyPage(() => import('./pages/admin/AdminReports'))
+const AdminSettings = lazyPage(() => import('./pages/admin/AdminSettings'))
+const AdminLogs = lazyPage(() => import('./pages/admin/AdminLogs'))
 
 // Layouts
 import UserLayout from './layouts/UserLayout'
-import AdminLayout from './layouts/AdminLayout'
+const AdminLayout = lazyPage(() => import('./layouts/AdminLayout'))
 
 // Guards
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 
+// Caminhos dos links que começam a baixar a página antes do clique
+const PRELOAD = [
+    ['/simular', Simulator], ['/resultado', Results], ['/planos', Plans], ['/login', Login],
+    ['/cadastro', Register], ['/esqueci-senha', ForgotPassword], ['/redefinir-senha', ResetPassword],
+    ['/politica-de-privacidade', PrivacyPolicy], ['/privacidade', PrivacyPolicy],
+    ['/termos-de-servico', TermsOfService], ['/termos', TermsOfService], ['/contato', Contact],
+    ['/exclusao-de-dados', DataDeletion], ['/dashboard', Dashboard], ['/comparativo', Comparison],
+    ['/conta', Account], ['/alertas', Alerts], ['/financas/contas', BillsToPay],
+    ['/financas/cartoes', CreditCards], ['/financas/cartoes/:id', CardDashboard],
+    ['/financas/cartoes/:id/upload', InvoiceUpload], ['/financas/categorias', FinanceCategories],
+    ['/financas/extrato', FinancialStatement], ['/financas/pix', PixPaymentForm],
+    ['/financas/gerenciar-contas', AccountManager], ['/admin/login', AdminLogin],
+    ['/admin', AdminDashboard], ['/admin/usuarios', AdminUsers], ['/admin/regras', AdminRules],
+    ['/admin/limites', AdminLimits], ['/admin/planos', AdminPlans],
+    ['/admin/funcionalidades', AdminFeatures], ['/admin/relatorios', AdminReports],
+    ['/admin/configuracoes', AdminSettings], ['/admin/logs', AdminLogs],
+]
+PRELOAD.forEach(([path, Page]) => registerPreload(path, Page))
+
+function useLinkPreload() {
+    useEffect(() => {
+        const onIntent = (event) => {
+            const link = event.target.closest?.('a[href]')
+            if (!link || link.origin !== window.location.origin) return
+            preloadPath(link.pathname)
+            if (link.pathname.startsWith('/admin') && link.pathname !== '/admin/login') AdminLayout.preload()
+        }
+        document.addEventListener('pointerover', onIntent, { passive: true })
+        document.addEventListener('touchstart', onIntent, { passive: true })
+        document.addEventListener('focusin', onIntent)
+        return () => {
+            document.removeEventListener('pointerover', onIntent)
+            document.removeEventListener('touchstart', onIntent)
+            document.removeEventListener('focusin', onIntent)
+        }
+    }, [])
+}
+
 function App() {
+    useLinkPreload()
     return (
         <AuthProvider>
             <BrowserRouter>
+                <PageSuspense minHeight="100vh">
                 <Routes>
                     {/* Public User Routes */}
                     <Route element={<UserLayout />}>
@@ -102,6 +150,7 @@ function App() {
                         </Route>
                     </Route>
                 </Routes>
+                </PageSuspense>
             </BrowserRouter>
         </AuthProvider>
     )

@@ -8,8 +8,16 @@ import { Check, CircleCheck, Download, Plus } from 'lucide-react'
 import { useConfirmDialog } from '../../components/ui/ConfirmDialog'
 import Select from '../../components/ui/Select'
 import { walletOptionGroups } from '../../components/ui/WalletDot'
+// A página usa classes que moram no CSS de outras telas (.header-actions, .section,
+// .statement-header, .empty-state, .table-container). Com as páginas sob demanda, esses
+// arquivos vêm junto daqui, na mesma ordem de antes.
+import '../Dashboard.css'
+import '../Account.css'
 import './FinanceCategories.css'
 import './BillsToPay.css'
+import './FinancialStatement.css'
+import './AccountManager.css'
+import '../admin/AdminPages.css'
 
 export default function BillsToPay() {
     const { user } = useAuth()
