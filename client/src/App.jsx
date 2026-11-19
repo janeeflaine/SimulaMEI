@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import lazyPage, { registerPreload, preloadPath } from './utils/lazyPage'
 import PageSuspense from './components/PageSuspense'
+import CanonicalUrl from './components/CanonicalUrl'
 
 // A Início vem junto com o site (é a primeira página da maioria das visitas).
 // As outras páginas são baixadas só quando alguém entra nelas (utils/lazyPage.js).
@@ -98,6 +99,7 @@ function App() {
     return (
         <AuthProvider>
             <BrowserRouter>
+                <CanonicalUrl />
                 <PageSuspense minHeight="100vh">
                 <Routes>
                     {/* Public User Routes */}
