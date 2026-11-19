@@ -1,9 +1,45 @@
 const express = require('express')
 const router = express.Router()
+const crypto = require('crypto')
 const { db } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 const { MercadoPagoConfig, Payment } = require('mercadopago')
 const { getAccessToken, upgradeUser, syncPaymentStatus } = require('../utils/payment.utils')
+
+// Verifica a assinatura HMAC-SHA256 do webhook do Mercado Pago (v2).
+// Protocolo oficial: https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
+// Template: "id:[data.id];request-id:[x-request-id];ts:[ts];"
+// Retorna true se a assinatura for válida ou se o segredo não estiver configurado (modo mock).
+function verifyMercadoPagoSignature(req) {
+    const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
+    if (!secret) return true // Sem segredo configurado: apenas em desenvolvimento/mock
+
+    const xSignature = req.headers['x-signature']
+    const xRequestId = req.headers['x-request-id']
+    if (!xSignature || !xRequestId) return false
+
+    // O cabeçalho x-signature tem o formato "ts=<timestamp>,v1=<hash>"
+    const parts = {}
+    xSignature.split(',').forEach(part => {
+        const [k, v] = part.trim().split('=', 2)
+        if (k && v) parts[k] = v
+    })
+    const { ts, v1 } = parts
+    if (!ts || !v1) return false
+
+    // Proteção de replay: rejeita notificações com mais de 5 minutos
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (Math.abs(nowSec - parseInt(ts, 10)) > 300) {
+        console.warn('[Webhook/MP] Notificação expirada (replay protection), ts=%s', ts)
+        return false
+    }
+
+    const dataId = req.query['data.id'] || (req.body && req.body.data && req.body.data.id) || ''
+    const template = `id:${dataId};request-id:${xRequestId};ts:${ts};`
+    const expected = crypto.createHmac('sha256', secret).update(template).digest('hex')
+
+    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(v1, 'hex'))
+}
 
 // Modo de teste (Pix falso, sem Mercado Pago) só existe em desenvolvimento e com a
 // variável ALLOW_MOCK_PAYMENTS=true. Antes, bastava o token do Mercado Pago não estar
@@ -127,6 +163,13 @@ router.get('/sync-latest', authMiddleware, async (req, res) => {
 
 // Webhook (Public)
 router.post('/webhook', async (req, res) => {
+    // Verificar assinatura antes de processar qualquer dado.
+    // Sempre retornamos 200 para o MP não reenviar; simplesmente não processamos se inválido.
+    if (!verifyMercadoPagoSignature(req)) {
+        console.warn('[Webhook/MP] Assinatura inválida — ignorando notificação')
+        return res.status(200).send('OK')
+    }
+
     // Mercado Pago can send data in query or body
     const topic = req.query.topic || req.query.type || (req.body && req.body.type)
     const id = req.query.id || req.query['data.id'] || (req.body && req.body.data && req.body.data.id)
