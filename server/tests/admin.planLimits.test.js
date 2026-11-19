@@ -91,8 +91,15 @@ test('/api/settings: chave interna, chave estranha e valor objeto são recusados
     expect(writes).toHaveLength(0)
 })
 
-test('/api/settings: segredo não vai para o registro', async () => {
-    const res = await request(app).put('/api/settings').send({ key: 'MERCADOPAGO_ACCESS_TOKEN', value: 'APP_USR-segredo' })
+test('/api/settings: se a chave for marcada como secreta, o valor não vai para o registro', async () => {
+    mockDb.query.mockImplementation(async (raw, params = []) => {
+        const q = norm(raw)
+        if (q.startsWith('SELECT value, "isEncrypted" FROM system_settings')) return { rows: [{ value: 'segredo', isEncrypted: 1 }] }
+        if (q.startsWith('INSERT INTO system_settings')) return { rows: [] }
+        return { rows: [] }
+    })
+    const res = await request(app).put('/api/settings').send({ key: 'trial_days', value: '14' })
     expect(res.status).toBe(200)
-    expect(JSON.stringify(mockAudit.log.mock.calls)).not.toContain('segredo')
+    expect(JSON.stringify(mockAudit.log.mock.calls)).not.toContain('14')
+    expect(JSON.stringify(mockAudit.log.mock.calls)).toContain('(secreto)')
 })

@@ -1,7 +1,7 @@
 const crypto = require('crypto')
 
 const algorithm = 'aes-256-cbc'
-const secret = process.env.JWT_SECRET || 'simulamei-secret-key-change-in-production'
+const secret = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'simulamei-secret-key-change-in-production'
 // Ensure key is 32 bytes
 const key = crypto.createHash('sha256').update(String(secret)).digest()
 
