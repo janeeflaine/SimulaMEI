@@ -34,7 +34,6 @@ const app = express()
 app.post('/api/stripe/webhook', express.raw({ type: '*/*' }), require('../routes/stripe.routes').webhookHandler)
 app.use(express.json())
 app.use('/api/auth', require('../routes/auth.routes'))
-app.use('/api/payments', require('../routes/payment.routes'))
 app.use('/api/stripe', require('../routes/stripe.routes').router)
 app.use('/api/finance', require('../routes/finance.routes'))
 
@@ -59,7 +58,6 @@ function route(sql, params = []) {
     if (q.startsWith('SELECT id FROM plans WHERE price = 0')) return { rows: [PLANS[0]] }
     if (q.startsWith('SELECT name FROM plans WHERE id')) return { rows: PLANS.filter(p => p.id === Number(params[0])) }
     if (q.startsWith('SELECT * FROM plans WHERE id')) return { rows: PLANS.filter(p => p.id === Number(params[0])) }
-    if (q.startsWith("SELECT value, \"isEncrypted\" FROM system_settings WHERE key = 'MERCADOPAGO_ACCESS_TOKEN'")) return { rows: [] }
     if (q.startsWith('SELECT * FROM payments WHERE id = $1 AND "userId" = $2')) {
         return { rows: payments.filter(p => p.id === Number(params[0]) && p.userId === params[1] && p.status === 'pending') }
     }
@@ -81,8 +79,6 @@ beforeEach(() => {
     payments = [{ id: 8, userId: 42, status: 'pending', externalId: 'mock_1', planId: 3 }]
     dbUser = { id: 42, name: 'Ana', email: 'ana@teste.com', role: 'USER', planId: 2, subscriptionStatus: 'active', sessionVersion: 1, isBlocked: 0, deletedAt: null, stripeSubscriptionId: 'sub_1' }
     mockDb.query.mockImplementation(async (sql, params) => route(sql, params))
-    delete process.env.ALLOW_MOCK_PAYMENTS
-    delete process.env.MERCADOPAGO_ACCESS_TOKEN
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     errSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
@@ -138,32 +134,6 @@ describe('Cadastro com plano pago ainda sem pagamento', () => {
         expect(res.body.plan).toBe('Ouro')
         expect(res.body.subscriptionStatus).toBe('pending_payment')
         expect(res.body.planFeatures).toEqual(PLANS[0].features)
-    })
-})
-
-describe('Pagamento de teste (Pix falso)', () => {
-    test('não existe em produção nem sem a variável ALLOW_MOCK_PAYMENTS', async () => {
-        const res = await request(app).post('/api/payments/8/mock-pay').set('Authorization', tokenFor())
-        expect(res.status).toBe(404)
-        expect(updates).toHaveLength(0)
-    })
-
-    test('criar pagamento sem Mercado Pago configurado não cria Pix falso', async () => {
-        const res = await request(app).post('/api/payments/create').set('Authorization', tokenFor()).send({ planId: 3 })
-        expect(res.status).toBe(503)
-        expect(updates).toHaveLength(0)
-    })
-
-    test('em desenvolvimento, só o dono do pagamento consegue usar', async () => {
-        process.env.ALLOW_MOCK_PAYMENTS = 'true'
-        dbUser.id = 7
-        const other = await request(app).post('/api/payments/8/mock-pay').set('Authorization', tokenFor(7))
-        expect(other.status).toBe(404)
-        expect(updates).toHaveLength(0)
-
-        dbUser.id = 42
-        const own = await request(app).post('/api/payments/8/mock-pay').set('Authorization', tokenFor(42))
-        expect(own.status).toBe(200)
     })
 })
 

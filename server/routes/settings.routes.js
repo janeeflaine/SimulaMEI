@@ -2,7 +2,6 @@ const express = require('express')
 const router = express.Router()
 const { db } = require('../db')
 const { authMiddleware, adminMiddleware } = require('../middleware/auth')
-const { encrypt } = require('../utils/encryption')
 const auditLogger = require('../utils/auditLogger')
 const planLimits = require('../utils/planLimits')
 const { TRIAL_MAX_DAYS } = require('../utils/trial')
@@ -10,10 +9,9 @@ const { TRIAL_MAX_DAYS } = require('../utils/trial')
 // Chaves que o próprio sistema grava (estado de rotinas): não se editam por aqui
 const INTERNAL_KEYS = ['whatsapp_last_run', 'whatsapp_resend_at', 'email_last_status']
 const SAFE_KEY = /^[A-Za-z][A-Za-z0-9_]{1,63}$/
-// Só estas chaves mudam por aqui: limites dos planos, teste grátis e o token antigo do
-// Mercado Pago (guardado cifrado). Qualquer outra chave é recusada: antes dava para
-// gravar uma chave nova qualquer, em texto puro e copiada para os registros.
-const OTHER_KEYS = ['trial_enabled', 'trial_days', 'trial_plan_id', 'MERCADOPAGO_ACCESS_TOKEN']
+// Só estas chaves mudam por aqui: limites dos planos e teste grátis.
+// Qualquer outra chave é recusada.
+const OTHER_KEYS = ['trial_enabled', 'trial_days', 'trial_plan_id']
 const isEditable = (key) => OTHER_KEYS.includes(key) || !!planLimits.parseLimitKey(key)
 
 
@@ -31,12 +29,12 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
         })
 
         // Ensure defaults if not present (Virtual rows for UI)
-        const expectedKeys = ['MERCADOPAGO_ACCESS_TOKEN', 'trial_enabled', 'trial_days', 'trial_plan_id']
+        const expectedKeys = ['trial_enabled', 'trial_days', 'trial_plan_id']
         const keysPresent = maskedSettings.map(s => s.key)
 
         expectedKeys.forEach(key => {
             if (!keysPresent.includes(key)) {
-                maskedSettings.push({ key, value: '', isEncrypted: 1 })
+                maskedSettings.push({ key, value: '', isEncrypted: 0 })
             }
         })
 
@@ -96,13 +94,6 @@ router.put('/', authMiddleware, adminMiddleware, async (req, res) => {
 
         let storedValue = value
         let isEncrypted = 0
-
-        // Define sensitive keys
-        if (key === 'MERCADOPAGO_ACCESS_TOKEN') {
-            if (!value || value === '********') return res.json({ success: true }) // Ignore mask
-            isEncrypted = 1
-            storedValue = encrypt(value)
-        }
 
         await db.query(`
             INSERT INTO system_settings (key, value, "isEncrypted", "updatedAt")

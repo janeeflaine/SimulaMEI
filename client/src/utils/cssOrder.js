@@ -38,7 +38,6 @@ const ORDER = [
     'pages/Finance/InvoiceUpload',
     'components/TransferModal',
     'pages/Finance/FinancialStatement',
-    'pages/Finance/PixPaymentForm',
     'components/ImageCropperModal',
     'pages/Finance/AccountManager',
     'pages/admin/AdminLogin',

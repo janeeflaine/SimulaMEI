@@ -13,7 +13,7 @@ jest.mock('../middleware/auth', () => ({
 const mockAudit = { log: jest.fn(async () => {}) }
 jest.mock('../utils/auditLogger', () => mockAudit)
 jest.mock('../utils/userDeletion', () => ({ deleteUserData: jest.fn(), cancelStripeSubscriptionIfActive: jest.fn() }))
-jest.mock('../utils/encryption', () => ({ encrypt: (v) => `enc(${v})` }))
+jest.mock('../utils/encryption', () => ({}))
 
 const express = require('express')
 const request = require('supertest')
@@ -33,7 +33,6 @@ beforeEach(() => {
                 { key: 'wallet_limit_1', value: '2', isEncrypted: 0 },
                 { key: 'plan_migration_v2', value: 'done', isEncrypted: 0 },
                 { key: 'email_last_status', value: '{"to":"pessoa@ex.com"}', isEncrypted: 0 },
-                { key: 'MERCADOPAGO_ACCESS_TOKEN', value: 'cifrado', isEncrypted: 1 },
             ] }
         }
         return { rows: [] }
@@ -64,7 +63,7 @@ test('/api/settings não devolve chaves internas nem marcas de migração', asyn
     expect(keys).toContain('wallet_limit_1')
     expect(keys).not.toContain('plan_migration_v2')
     expect(keys).not.toContain('email_last_status')
-    expect(res.body.find((s) => s.key === 'MERCADOPAGO_ACCESS_TOKEN').value).toBe('********')
+    expect(keys).not.toContain('MERCADOPAGO_ACCESS_TOKEN')
 })
 
 test('situação dos serviços: diz se está configurado, nunca o valor', async () => {

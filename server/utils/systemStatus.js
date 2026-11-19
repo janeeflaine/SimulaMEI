@@ -88,9 +88,6 @@ function systemStatus() {
                 item('admin_pass', 'Senha inicial do admin', ['ADMIN_DEFAULT_PASSWORD'],
                     has('ADMIN_DEFAULT_PASSWORD') ? 'warn' : 'off',
                     has('ADMIN_DEFAULT_PASSWORD') ? 'Só serve para um banco novo. Apague a variável da Vercel.' : 'Não definida (o admin cria a senha por "Esqueci a senha").'),
-                item('mercadopago', 'Mercado Pago (Pix antigo)', ['MERCADOPAGO_ACCESS_TOKEN'],
-                    has('MERCADOPAGO_ACCESS_TOKEN') ? 'warn' : 'off',
-                    has('MERCADOPAGO_ACCESS_TOKEN') ? 'O site não usa mais o Mercado Pago. Dá para apagar a variável.' : 'Não usado: os pagamentos são pelo Stripe.'),
             ]
         },
     ]

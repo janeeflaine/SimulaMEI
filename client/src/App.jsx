@@ -36,7 +36,6 @@ const CardDashboard = lazyPage(() => import('./pages/Finance/CardDashboard'))
 const InvoiceUpload = lazyPage(() => import('./pages/Finance/InvoiceUpload'))
 const FinanceCategories = lazyPage(() => import('./pages/Finance/FinanceCategories'))
 const FinancialStatement = lazyPage(() => import('./pages/Finance/FinancialStatement'))
-const PixPaymentForm = lazyPage(() => import('./pages/Finance/PixPaymentForm'))
 const AccountManager = lazyPage(() => import('./pages/Finance/AccountManager'))
 
 // Admin Pages
@@ -69,7 +68,7 @@ const PRELOAD = [
     ['/conta', Account], ['/alertas', Alerts], ['/financas/contas', BillsToPay],
     ['/financas/cartoes', CreditCards], ['/financas/cartoes/:id', CardDashboard],
     ['/financas/cartoes/:id/upload', InvoiceUpload], ['/financas/categorias', FinanceCategories],
-    ['/financas/extrato', FinancialStatement], ['/financas/pix', PixPaymentForm],
+    ['/financas/extrato', FinancialStatement],
     ['/financas/gerenciar-contas', AccountManager], ['/admin/login', AdminLogin],
     ['/admin', AdminDashboard], ['/admin/usuarios', AdminUsers], ['/admin/regras', AdminRules],
     ['/admin/limites', AdminLimits], ['/admin/planos', AdminPlans],
@@ -133,7 +132,6 @@ function App() {
                             <Route path="/financas/cartoes/:id/upload" element={<InvoiceUpload />} />
                             <Route path="/financas/categorias" element={<FinanceCategories />} />
                             <Route path="/financas/extrato" element={<FinancialStatement />} />
-                            <Route path="/financas/pix" element={<PixPaymentForm />} />
                             <Route path="/financas/gerenciar-contas" element={<AccountManager />} />
                         </Route>
                     </Route>
