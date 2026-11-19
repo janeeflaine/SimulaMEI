@@ -115,6 +115,22 @@ const sendPasswordResetEmail = async (to, token) => {
     return sendMail({ to, subject: 'Criar uma senha nova - EuSempreMEI', html, text, kind: 'senha' })
 }
 
+// Teste grátis: o link confirma o e-mail e começa o teste (utils/trial.js)
+const sendTrialConfirmEmail = async (to, token, { days, planName }) => {
+    const confirmUrl = `${baseUrl()}/confirmar-email?token=${token}`
+    const plan = String(planName || '').replace(/[<>&"']/g, '')
+    const html = layout('Confirme o seu e-mail', `
+    <p style="margin:0 0 16px;font-size:16px;line-height:1.5">Sua conta no EuSempreMEI foi criada. Para começar os ${Number(days) || ''} dias grátis do plano ${plan}, confirme que este e-mail é seu.</p>
+    <p style="margin:24px 0;text-align:center">
+      <a href="${confirmUrl}" style="display:inline-block;background:#12284a;color:#ffffff;text-decoration:none;font-weight:bold;font-size:16px;padding:14px 28px;border-radius:999px">Confirmar e começar o teste</a>
+    </p>
+    <p style="margin:0 0 8px;font-size:14px;color:#5b6b80">Se o botão não abrir, copie este endereço no navegador:</p>
+    <p style="margin:0 0 24px;font-size:13px;word-break:break-all;color:#047857">${confirmUrl}</p>
+    <p style="margin:0;font-size:14px;color:#5b6b80;line-height:1.5">O link vale por 48 horas e só funciona uma vez. Sem cartão: no fim do teste, a conta volta ao Gratuito sozinha, sem cobrança. Se você não criou esta conta, ignore este e-mail.</p>`)
+    const text = `Confirme o seu e-mail no EuSempreMEI\n\nPara começar os ${Number(days) || ''} dias grátis do plano ${plan}, abra este link (vale por 48 horas, uma vez só):\n${confirmUrl}\n\nSe você não criou esta conta, ignore este e-mail.`
+    return sendMail({ to, subject: 'Confirme o seu e-mail e comece o teste grátis - EuSempreMEI', html, text, kind: 'confirmacao' })
+}
+
 const sendTestEmail = async (to) => {
     const html = layout('E-mail de teste', `
     <p style="margin:0;font-size:16px;line-height:1.5">Se você recebeu esta mensagem, o envio de e-mails do EuSempreMEI está funcionando, inclusive o "Esqueci a senha".</p>`)
@@ -122,4 +138,4 @@ const sendTestEmail = async (to) => {
     return sendMail({ to, subject: 'E-mail de teste - EuSempreMEI', html, text, kind: 'teste' })
 }
 
-module.exports = { sendMail, sendPasswordResetEmail, sendTestEmail, smtpConfigured, fromAddress, maskEmail, explainSmtpError }
+module.exports = { sendMail, sendPasswordResetEmail, sendTrialConfirmEmail, sendTestEmail, smtpConfigured, fromAddress, maskEmail, explainSmtpError }

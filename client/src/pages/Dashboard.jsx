@@ -854,6 +854,20 @@ export default function Dashboard() {
                 </header>
 
                 {/* Avisos */}
+                {user?.trialPending && (
+                    <div className="painel-notice" role="status">
+                        <div className="painel-notice__text">
+                            <strong>{user.trialLinkExpired ? 'O link do teste grátis venceu' : 'Confirme o seu e-mail para começar o teste grátis'}</strong>
+                            <span>{user.trialLinkExpired
+                                ? 'Peça outro link de confirmação. Ele vale por 48 horas.'
+                                : `Mandamos um link para ${user.email}. Enquanto isso, a conta funciona no Gratuito.`}</span>
+                        </div>
+                        <div className="painel-notice__actions">
+                            <Link to="/confirmar-email" className="painel-btn painel-btn--primary">{user.trialLinkExpired ? 'Pedir outro link' : 'Ver como confirmar'}</Link>
+                        </div>
+                    </div>
+                )}
+
                 {user?.isInTrial && user?.planExpiresAt && (
                     <div className="painel-notice" role="status">
                         <div className="painel-notice__text">

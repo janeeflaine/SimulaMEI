@@ -64,7 +64,7 @@ const FAQ = [
     {
         q: 'Como funciona o teste grátis?',
         trialOnly: true,
-        a: (note, trial) => `Ao criar a conta, você usa o plano ${trial.planName} por ${trial.days} dias, com o WhatsApp e tudo o que ele libera. Nada é cobrado: no fim, a conta volta ao Gratuito com os seus dados, e você assina só se quiser. É um teste por e-mail.`
+        a: (note, trial) => `Ao criar a conta, você usa o plano ${trial.planName} por ${trial.days} dias, com o WhatsApp e tudo o que ele libera. O teste começa quando você confirma o e-mail. Nada é cobrado: no fim, a conta volta ao Gratuito com os seus dados, e você assina só se quiser. É um teste por e-mail e por aparelho.`
     },
     {
         q: 'O assistente grava alguma coisa sem eu ver?',

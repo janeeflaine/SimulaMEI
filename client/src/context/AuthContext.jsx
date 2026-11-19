@@ -63,7 +63,8 @@ export function AuthProvider({ children }) {
         localStorage.setItem('token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
         setUser(data.user)
-        return data.user
+        // trial: teste grátis esperando a confirmação do e-mail (ou o motivo de não ter)
+        return { user: data.user, trial: data.trial || null }
     }
 
     const logout = () => {

@@ -21,6 +21,7 @@ const Login = lazyPage(() => import('./pages/Login'))
 const Register = lazyPage(() => import('./pages/Register'))
 const ForgotPassword = lazyPage(() => import('./pages/ForgotPassword'))
 const ResetPassword = lazyPage(() => import('./pages/ResetPassword'))
+const ConfirmEmail = lazyPage(() => import('./pages/ConfirmEmail'))
 const PrivacyPolicy = lazyPage(() => import('./pages/PrivacyPolicy'))
 const TermsOfService = lazyPage(() => import('./pages/TermsOfService'))
 const Contact = lazyPage(() => import('./pages/Contact'))
@@ -61,7 +62,7 @@ import AdminRoute from './components/AdminRoute'
 // Caminhos dos links que começam a baixar a página antes do clique
 const PRELOAD = [
     ['/comecar', Comecar], ['/simular', Simulator], ['/resultado', Results], ['/planos', Plans], ['/login', Login],
-    ['/cadastro', Register], ['/esqueci-senha', ForgotPassword], ['/redefinir-senha', ResetPassword],
+    ['/cadastro', Register], ['/esqueci-senha', ForgotPassword], ['/redefinir-senha', ResetPassword], ['/confirmar-email', ConfirmEmail],
     ['/politica-de-privacidade', PrivacyPolicy], ['/privacidade', PrivacyPolicy],
     ['/termos-de-servico', TermsOfService], ['/termos', TermsOfService], ['/contato', Contact],
     ['/exclusao-de-dados', DataDeletion], ['/dashboard', Dashboard], ['/comparativo', Comparison],
@@ -113,6 +114,7 @@ function App() {
                         <Route path="/cadastro" element={<Register />} />
                         <Route path="/esqueci-senha" element={<ForgotPassword />} />
                         <Route path="/redefinir-senha" element={<ResetPassword />} />
+                        <Route path="/confirmar-email" element={<ConfirmEmail />} />
                         <Route path="/politica-de-privacidade" element={<PrivacyPolicy />} />
                         <Route path="/privacidade" element={<PrivacyPolicy />} />
                         <Route path="/termos-de-servico" element={<TermsOfService />} />

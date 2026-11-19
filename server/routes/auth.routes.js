@@ -4,12 +4,12 @@ const crypto = require('crypto')
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit')
 const { db, pool } = require('../db')
 const { generateToken, authMiddleware } = require('../middleware/auth')
-const { sendPasswordResetEmail } = require('../utils/email')
+const { sendPasswordResetEmail, sendTrialConfirmEmail } = require('../utils/email')
 const auditLogger = require('../utils/auditLogger')
 const { deleteUserData, cancelStripeSubscriptionIfActive } = require('../utils/userDeletion')
 const { getClientIp } = require('../middleware/requestContext')
 
-const { getTrialOffer, startTrial } = require('../utils/trial')
+const trial = require('../utils/trial')
 const router = express.Router()
 
 // IP para contar tentativas: IPv6 vira a rede /64 (o aparelho troca o fim do endereço sozinho)
@@ -236,6 +236,98 @@ const parseFeatures = (raw) => {
     try { return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {} } catch (_) { return {} }
 }
 
+// ─── Teste grátis com e-mail confirmado ───────────────────────────────────────
+
+const TRIAL_RESEND_MAX = 3 // links de confirmação por hora, por conta
+
+/**
+ * Oferece o teste a uma conta no Gratuito: confere e-mail e aparelho e manda o link.
+ * Devolve null (teste desligado) ou { status, days, planName, emailSent }:
+ *   'pending' link enviado (ou não: emailSent false); 'email_used' | 'device_used' | 'no_device'.
+ */
+async function offerTrial(user, context) {
+    const offer = await trial.getTrialOffer(db)
+    if (!offer.enabled) return null
+    // De vez em quando, apaga os códigos com mais de 2 anos (Política de Privacidade)
+    if (Math.random() < 0.05) trial.purgeOldClaims(db).catch(() => {})
+    const base = { days: offer.days, planName: offer.planName }
+    const device = trial.deviceHash(context.device_fingerprint)
+    const eligible = await trial.trialEligibility(db, { email: user.email, device })
+    if (!eligible.ok) return { ...base, status: eligible.reason }
+
+    const link = trial.newConfirmToken()
+    await trial.savePendingTrial(db, user.id, link, device)
+    const sent = await sendTrialConfirmEmail(user.email, link.token, offer)
+    return { ...base, status: 'pending', emailSent: !!(sent && sent.sent) }
+}
+
+const TRIAL_NOT_STARTED = {
+    trial_off: 'O teste grátis não está disponível agora. A conta continua no Gratuito.',
+    email_used: 'Este e-mail já usou um teste grátis. A conta continua no Gratuito.',
+    device_used: 'Este aparelho já foi usado em um teste grátis. A conta continua no Gratuito; para usar o plano completo, assine.',
+    no_device: 'Não deu para identificar o aparelho do cadastro. A conta continua no Gratuito.',
+    not_free: 'A sua conta já tem um plano, então o teste não foi necessário.'
+}
+
+// Abre o link do e-mail (público: quem abre pode estar em outro aparelho, sem entrar)
+router.post('/verify-email', authLimiter, async (req, res) => {
+    try {
+        const result = await trial.confirmTrial(pool, (req.body || {}).token)
+        if (result.status === 'invalid') {
+            return res.status(400).json({
+                reason: 'invalid_token',
+                message: 'Este link não vale mais. Ele vale por 48 horas e só uma vez. Entre na sua conta e peça um novo.'
+            })
+        }
+        await auditLogger.log({
+            level: 'INFO',
+            event_type: result.status === 'started' ? 'TRIAL_STARTED' : 'EMAIL_VERIFIED',
+            actor: { user_id: result.userId, role: 'USER' },
+            context: req.context || {},
+            target: { resource_type: 'USER', resource_id: result.userId },
+            metadata: { trialStatus: result.status, trialEndsAt: result.endsAt ? new Date(result.endsAt).toISOString() : null }
+        })
+        if (result.status === 'started') {
+            return res.json({ verified: true, trialStarted: true, trialEndsAt: result.endsAt, planName: result.planName, days: result.days })
+        }
+        res.json({ verified: true, trialStarted: false, reason: result.status, message: TRIAL_NOT_STARTED[result.status] })
+    } catch (error) {
+        console.error('Verify email error:', error)
+        res.status(500).json({ message: 'Não deu para confirmar agora. Abra o link de novo em instantes.' })
+    }
+})
+
+// Manda outro link de confirmação (só para quem já recebeu um no cadastro)
+router.post('/resend-verification', authMiddleware, async (req, res) => {
+    try {
+        const { rows: [user] } = await db.query(
+            'SELECT id, email, "emailVerifyTokenHash", "trialDeviceHash" FROM users WHERE id = $1 AND "deletedAt" IS NULL',
+            [req.user.id]
+        )
+        if (!user || !user.emailVerifyTokenHash) {
+            return res.status(400).json({ message: 'Não há confirmação de e-mail pendente nesta conta.' })
+        }
+        if (await countAttempt('verify_email', user.id, 60) > TRIAL_RESEND_MAX) {
+            return res.status(429).json({ message: 'Já mandamos 3 links na última hora. Confira a caixa de spam ou tente mais tarde.' })
+        }
+        const offer = await trial.getTrialOffer(db)
+        if (!offer.enabled) return res.status(400).json({ reason: 'trial_off', message: TRIAL_NOT_STARTED.trial_off })
+        const eligible = await trial.trialEligibility(db, { email: user.email, device: user.trialDeviceHash })
+        if (!eligible.ok) return res.status(400).json({ reason: eligible.reason, message: TRIAL_NOT_STARTED[eligible.reason] })
+
+        const link = trial.newConfirmToken()
+        await trial.savePendingTrial(db, user.id, link, null)
+        const sent = await sendTrialConfirmEmail(user.email, link.token, offer)
+        if (!sent || !sent.sent) {
+            return res.status(503).json({ message: 'Não deu para mandar o e-mail agora. Tente de novo em alguns minutos.' })
+        }
+        res.json({ sent: true, message: `Mandamos um link novo para ${user.email}. Ele vale por 48 horas.` })
+    } catch (error) {
+        console.error('Resend verification error:', error)
+        res.status(500).json({ message: 'Não deu para mandar o link agora. Tente de novo.' })
+    }
+})
+
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 router.post('/register', authLimiter, async (req, res) => {
@@ -303,15 +395,15 @@ router.post('/register', authLimiter, async (req, res) => {
 
         const userId = insertResult.rows[0].id
 
-        // Teste grátis (Admin > Funcionalidades): só para quem entra pelo Gratuito e
-        // uma vez por e-mail. Se der errado, a conta continua no Gratuito.
-        let trialEndsAt = null
+        // Teste grátis (Admin > Funcionalidades): só para quem entra pelo Gratuito. Não começa
+        // aqui: vai um link de confirmação para o e-mail (utils/trial.js). Se der errado,
+        // a conta continua no Gratuito.
+        let trialInfo = null
         if (!requiresPayment) {
             try {
-                const offer = await getTrialOffer(db)
-                if (offer.enabled) trialEndsAt = await startTrial(db, userId, email, offer)
+                trialInfo = await offerTrial({ id: userId, email }, req.context || {})
             } catch (trialErr) {
-                console.error('Teste grátis não começou:', trialErr.message)
+                console.error('Teste grátis não foi oferecido:', trialErr.message)
             }
         }
 
@@ -337,7 +429,7 @@ router.post('/register', authLimiter, async (req, res) => {
             target: { resource_type: 'USER', resource_id: userId },
             metadata: {
                 name, email, planId: user.planId, subscriptionStatus: user.subscriptionStatus, requiresPayment,
-                trialEndsAt: trialEndsAt ? new Date(trialEndsAt).toISOString() : null,
+                trialStatus: trialInfo ? trialInfo.status : null,
                 termsAccepted: true,
                 termsVersion: acceptedTermsVersion.trim().substring(0, 32),
                 termsAcceptedAt: new Date().toISOString()
@@ -355,10 +447,11 @@ router.post('/register', authLimiter, async (req, res) => {
                 planId: user.planId,
                 subscriptionStatus: user.subscriptionStatus,
                 requiresPayment,
-                isInTrial: !!trialEndsAt,
-                planExpiresAt: trialEndsAt || null,
+                isInTrial: false,
+                planExpiresAt: null,
                 planFeatures
-            }
+            },
+            trial: trialInfo
         })
     } catch (error) {
         console.error('Register error:', error)

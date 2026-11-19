@@ -78,13 +78,31 @@ const trialClaims = async (q) => {
     )`)
 }
 
+// Teste grátis com e-mail confirmado e um teste por aparelho (utils/trial.js): link de
+// confirmação (só o SHA-256), aparelho do cadastro (só o SHA-256) e aparelhos que já usaram
+const trialVerification = async (q) => {
+    await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifiedAt" TIMESTAMPTZ')
+    await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifyTokenHash" TEXT')
+    await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifyExpiresAt" TIMESTAMPTZ')
+    await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS "trialDeviceHash" TEXT')
+    await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_verify_token ON users ("emailVerifyTokenHash") WHERE "emailVerifyTokenHash" IS NOT NULL')
+    await q(`CREATE TABLE IF NOT EXISTS trial_device_claims (
+        device_hash TEXT PRIMARY KEY,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`)
+    // Supabase: tabela só para o servidor, como as outras (sem efeito fora do Supabase)
+    try { await q('ALTER TABLE trial_device_claims ENABLE ROW LEVEL SECURITY') } catch (_) { /* sem permissão: segue */ }
+}
+
 const UPGRADES = [
     { table: 'user_alerts', column: 'lastSentKey', run: alertSentKey },
     { table: 'finance_transactions', column: 'transferId', run: transferLinks },
     { table: 'mei_limits', column: 'year', run: meiLimitYear },
     { table: 'calculation_rules', column: 'minimumWage', run: rulesMinimumWage },
     { table: 'auth_attempts', column: 'key', run: authAttempts },
-    { table: 'trial_claims', column: 'email_hash', run: trialClaims }
+    { table: 'trial_claims', column: 'email_hash', run: trialClaims },
+    // Por último: a tabela é a marca de que as colunas de users também foram criadas
+    { table: 'trial_device_claims', column: 'device_hash', run: trialVerification }
 ]
 
 // Roda só as que faltam (uma consulta rápida quando já está tudo certo)
@@ -104,4 +122,4 @@ async function applyMissing(q) {
     return ran
 }
 
-module.exports = { alertSentKey, transferLinks, meiLimitYear, rulesMinimumWage, authAttempts, trialClaims, applyMissing, UPGRADES }
+module.exports = { alertSentKey, transferLinks, meiLimitYear, rulesMinimumWage, authAttempts, trialClaims, trialVerification, applyMissing, UPGRADES }

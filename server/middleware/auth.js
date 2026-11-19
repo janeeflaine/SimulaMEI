@@ -126,6 +126,9 @@ const authMiddleware = async (req, res, next) => {
             trialExpired,
             planFeatures,
             stripeCustomerId: user.stripeCustomerId,
+            // Teste grátis esperando a confirmação do e-mail (o link pode ter vencido: dá para pedir outro)
+            trialPending: !!user.emailVerifyTokenHash,
+            trialLinkExpired: !!user.emailVerifyTokenHash && !!user.emailVerifyExpiresAt && new Date(user.emailVerifyExpiresAt) <= new Date(),
             // Plano pago comprado pelo Stripe (troca/cancela lá) ou liberado pelo admin
             hasSubscription: !!user.stripeSubscriptionId
         }

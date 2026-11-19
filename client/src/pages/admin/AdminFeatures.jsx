@@ -516,7 +516,7 @@ function TrialSettings() {
             id="afn-trial"
             icon={Gift}
             title="Teste grátis para contas novas"
-            intro="Quem cria a conta pelo Gratuito começa no plano escolhido, sem cartão. No fim, a conta volta ao Gratuito sozinha, sem cobrança. Um teste por e-mail; quem escolhe um plano pago no cadastro vai direto para o pagamento."
+            intro="Quem cria a conta pelo Gratuito começa no plano escolhido, sem cartão. O teste só começa quando a pessoa confirma o e-mail pelo link que o site manda. No fim, a conta volta ao Gratuito sozinha, sem cobrança. Um teste por e-mail (apelidos como ana+1@ e, no Gmail, pontos no nome contam como o mesmo e-mail) e um por aparelho; quem escolhe um plano pago no cadastro vai direto para o pagamento."
             aside={draft && (
                 <span className="afn-trial__toggle">
                     {draft.enabled ? 'Ligado' : 'Desligado'}

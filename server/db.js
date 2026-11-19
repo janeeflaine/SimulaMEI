@@ -562,6 +562,7 @@ const seedDefaults = async () => {
     // Teste grátis: um por e-mail (utils/trial.js)
     try {
       await upgrades.trialClaims((sql, params) => pool.query(sql, params))
+      await upgrades.trialVerification((sql, params) => pool.query(sql, params))
     } catch (trialErr) {
       console.log('Migration note (teste grátis):', trialErr.message)
     }

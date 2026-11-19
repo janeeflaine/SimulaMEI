@@ -57,7 +57,7 @@ const SECTIONS = [
                         <strong>Atendimento:</strong> o que você nos escreve por e-mail ou pela página de contato, com o seu nome e e-mail.
                     </li>
                     <li>
-                        <strong>Teste grátis:</strong> quando a conta nova começa com um teste grátis, guardamos um código irreversível do e-mail (SHA-256, não o e-mail) para que o mesmo e-mail não ganhe outro teste.
+                        <strong>Teste grátis:</strong> o teste começa quando você confirma o e-mail pelo link que mandamos. Para que o mesmo e-mail e o mesmo aparelho não ganhem outro teste, guardamos um código irreversível (SHA-256) do e-mail, em que apelidos do mesmo endereço contam como um só, e um código irreversível do identificador técnico do aparelho usado no cadastro. Nunca o e-mail nem o identificador em si.
                     </li>
                 </ul>
                 <p>
@@ -99,7 +99,7 @@ const SECTIONS = [
                     <li><strong>Ler com inteligência artificial as faturas que você envia:</strong> execução de contrato (art. 7º, V), só quando você envia o arquivo.</li>
                     <li><strong>Atendimento pelo WhatsApp e lembretes e alertas por lá:</strong> consentimento (art. 7º, I), dado quando você vincula o número e que pode ser retirado a qualquer momento.</li>
                     <li><strong>Medir os nossos anúncios com o Pixel da Meta:</strong> consentimento (art. 7º, I), dado no aviso de cookies e que pode ser retirado a qualquer momento.</li>
-                    <li><strong>Evitar que o mesmo e-mail use o teste grátis mais de uma vez:</strong> legítimo interesse (art. 7º, IX), guardando só um código irreversível do e-mail.</li>
+                    <li><strong>Evitar que o mesmo e-mail ou o mesmo aparelho use o teste grátis mais de uma vez:</strong> legítimo interesse (art. 7º, IX), guardando só códigos irreversíveis do e-mail e do identificador do aparelho.</li>
                     <li><strong>Guardar os registros de acesso:</strong> cumprimento de obrigação legal do Marco Civil da Internet (art. 7º, II).</li>
                     <li><strong>Proteger a conta (limite de tentativas de entrar, conferência de senha vazada, controle de aparelhos e registro de eventos) e evitar fraudes:</strong> legítimo interesse (art. 7º, IX), sempre limitado ao necessário para a sua segurança.</li>
                     <li><strong>Responder ao seu contato e defender direitos em processos:</strong> execução de contrato e exercício regular de direitos (art. 7º, V e VI).</li>
@@ -166,7 +166,7 @@ const SECTIONS = [
                 <li><strong>Registros de acesso e de segurança (IP, data, hora e evento):</strong> no mínimo 6 meses, como exige o art. 15 do Marco Civil da Internet, inclusive depois da exclusão da conta, quando deixam de estar ligados a ela.</li>
                 <li><strong>Canal WhatsApp:</strong> o número e a data da autorização ficam guardados enquanto o canal estiver ativo e saem ao desconectar o número ou excluir a conta. O conteúdo das mensagens não é armazenado: um pedido entendido fica guardado no máximo 30 minutos, esperando a sua confirmação, e o identificador técnico de cada mensagem recebida, por 30 dias, para evitar processamento em dobro e abusos. Áudios e imagens não ficam guardados como arquivo.</li>
                 <li><strong>Atendimento:</strong> as mensagens que você nos envia ficam guardadas pelo tempo necessário para responder e manter o histórico do seu pedido.</li>
-                <li><strong>Teste grátis (código irreversível do e-mail):</strong> até 2 anos, inclusive depois da exclusão da conta, só para o mesmo e-mail não ganhar outro teste.</li>
+                <li><strong>Teste grátis (códigos irreversíveis do e-mail e do aparelho):</strong> até 2 anos, inclusive depois da exclusão da conta, só para o mesmo e-mail e o mesmo aparelho não ganharem outro teste. O link de confirmação vale por 48 horas.</li>
                 <li><strong>Escolha sobre os cookies de anúncios:</strong> fica só no seu navegador até você mudar ou apagar.</li>
             </ul>
         ),

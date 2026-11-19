@@ -4,7 +4,15 @@ import { Check } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { LEGAL_VERSION } from '../utils/legalInfo'
 import { track } from '../utils/metaPixel'
+import { showToast } from '../utils/toast'
 import AuthFrame, { AuthAlert, LimitFact, PasswordField, looksLikeEmail, normalizeEmail, passwordProblem, readJson } from '../components/auth/AuthFrame'
+
+// Teste grátis não oferecido no cadastro: a conta fica no Gratuito e a pessoa fica sabendo
+const TRIAL_SKIPPED = {
+    email_used: 'Conta criada no Gratuito. Este e-mail já usou um teste grátis.',
+    device_used: 'Conta criada no Gratuito. Este aparelho já foi usado em um teste grátis; para o plano completo, assine.',
+    no_device: 'Conta criada no Gratuito. Não deu para liberar o teste grátis neste navegador.'
+}
 
 const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -68,10 +76,10 @@ export default function Register() {
 
         try {
             const targetPlanId = selectedPlan ? selectedPlan.id : null
-            const user = await register(name, email, form.password, targetPlanId, LEGAL_VERSION)
-            // Pixel da Meta (só com o aceite de cookies): conta criada, sem dados pessoais
+            const { user, trial: trialResult } = await register(name, email, form.password, targetPlanId, LEGAL_VERSION)
+            // Pixel da Meta (só com o aceite de cookies): conta criada, sem dados pessoais.
+            // O StartTrial vai quando o e-mail é confirmado (página Confirmar e-mail).
             track('CompleteRegistration')
-            if (user?.isInTrial) track('StartTrial')
 
             // Plano pago: vai direto para o pagamento no Stripe
             if (user?.requiresPayment || (selectedPlan && Number(selectedPlan.price) > 0)) {
@@ -99,6 +107,12 @@ export default function Register() {
             }
 
             sessionStorage.removeItem('selectedPlanId')
+            // Teste grátis: começa quando a pessoa abrir o link do e-mail
+            if (trialResult?.status === 'pending') {
+                navigate('/confirmar-email', { state: { trial: trialResult } })
+                return
+            }
+            if (trialResult && TRIAL_SKIPPED[trialResult.status]) showToast(TRIAL_SKIPPED[trialResult.status], 'error')
             navigate('/dashboard')
         } catch (err) {
             setError(err.message || 'Não deu para criar a conta agora. Tente de novo.')
@@ -124,7 +138,7 @@ export default function Register() {
                         <strong>{trial.days} dias do plano {trial.planName}</strong>
                     </div>
                     <p className="acs-plan__note">
-                        Sem cartão. No fim, a conta volta ao Gratuito sozinha, sem cobrança e sem perder os dados. Um teste por e-mail.
+                        Sem cartão. Começa quando você confirmar o e-mail. No fim, a conta volta ao Gratuito sozinha, sem cobrança e sem perder os dados. Um teste por e-mail e por aparelho.
                     </p>
                 </div>
             )}

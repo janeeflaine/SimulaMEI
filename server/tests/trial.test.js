@@ -6,7 +6,7 @@
 process.env.JWT_SECRET = 'test-secret'
 const mockDb = { query: jest.fn() }
 jest.mock('../db', () => ({ db: mockDb, pool: mockDb }))
-jest.mock('../utils/email', () => ({ sendPasswordResetEmail: jest.fn() }))
+jest.mock('../utils/email', () => ({ sendPasswordResetEmail: jest.fn(), sendTrialConfirmEmail: jest.fn(async () => ({ sent: true })) }))
 jest.mock('../utils/auditLogger', () => ({ log: jest.fn().mockResolvedValue() }))
 jest.mock('../utils/encryption', () => ({ encrypt: (v) => `enc(${v})` }))
 jest.mock('../middleware/auth', () => {
@@ -20,8 +20,7 @@ jest.mock('../middleware/auth', () => {
 
 const request = require('supertest')
 const express = require('express')
-const crypto = require('crypto')
-const { getTrialOffer, emailHash } = require('../utils/trial')
+const { getTrialOffer } = require('../utils/trial')
 
 const norm = (sql) => sql.replace(/\s+/g, ' ').trim()
 const PLANS = [
@@ -118,47 +117,37 @@ describe('Oferta de teste grátis', () => {
 })
 
 describe('Cadastro com teste grátis', () => {
-    test('Gratuito com teste ligado: conta começa no Ouro, em teste, sem pedir pagamento', async () => {
-        const res = await register(makeApp())
-        expect(res.statusCode).toBe(201)
-        expect(res.body.user).toMatchObject({ planId: 3, plan: 'Ouro', subscriptionStatus: 'trialing', isInTrial: true, requiresPayment: false })
-        expect(new Date(res.body.user.planExpiresAt).getTime()).toBeGreaterThan(Date.now() + 6.9 * 86400000)
-        const claim = sql.find(s => s.q.startsWith('WITH claim AS'))
-        // O e-mail não é gravado: só o SHA-256 dele, em minúsculas
-        expect(claim.params[1]).toBe(crypto.createHash('sha256').update('novo@teste.com').digest('hex'))
-        expect(JSON.stringify(claim.params)).not.toContain('novo@teste.com')
-        expect(claim.params.slice(2)).toEqual([3, 7])
-    })
-
-    test('o mesmo e-mail não ganha outro teste (excluiu a conta e criou de novo)', async () => {
-        state.claimed.add(emailHash('novo@teste.com'))
+    // O teste agora só começa com o e-mail confirmado: tests/trial.confirm.test.js
+    test('cadastro nunca começa o teste direto (antes: começava sem confirmar o e-mail)', async () => {
         const res = await register(makeApp())
         expect(res.statusCode).toBe(201)
         expect(res.body.user).toMatchObject({ planId: 1, subscriptionStatus: 'active', isInTrial: false, planExpiresAt: null })
+        expect(sql.some(s => /^UPDATE users SET "planId"/.test(s.q))).toBe(false)
     })
 
     test('quem escolhe plano pago vai para o pagamento, sem teste', async () => {
         const res = await register(makeApp(), { planId: 2 })
         expect(res.body.user).toMatchObject({ planId: 2, subscriptionStatus: 'pending_payment', requiresPayment: true, isInTrial: false })
-        expect(sql.some(s => s.q.startsWith('WITH claim AS'))).toBe(false)
+        expect(res.body.trial).toBeNull()
     })
 
     test('teste desligado: Gratuito, como antes', async () => {
         state.settings.trial_enabled = 'false'
         const res = await register(makeApp())
         expect(res.body.user).toMatchObject({ planId: 1, subscriptionStatus: 'active', isInTrial: false })
-        expect(sql.some(s => s.q.startsWith('WITH claim AS'))).toBe(false)
+        expect(res.body.trial).toBeNull()
     })
 
-    test('erro ao começar o teste não impede o cadastro', async () => {
+    test('erro ao oferecer o teste não impede o cadastro', async () => {
         const base = mockDb.query.getMockImplementation()
         mockDb.query.mockImplementation(async (raw, params) => {
-            if (norm(raw).startsWith('WITH claim AS')) throw new Error('relation "trial_claims" does not exist')
+            if (norm(raw).startsWith('SELECT key, value FROM system_settings')) throw new Error('relation "system_settings" does not exist')
             return base(raw, params)
         })
         const res = await register(makeApp())
         expect(res.statusCode).toBe(201)
         expect(res.body.user).toMatchObject({ planId: 1, isInTrial: false })
+        expect(res.body.trial).toBeNull()
     })
 })
 
