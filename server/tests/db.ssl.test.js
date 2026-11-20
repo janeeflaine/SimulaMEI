@@ -1,19 +1,23 @@
 /**
  * Testes da configuração de SSL do banco de dados (server/db.js)
  */
+const fs = require('fs')
 const { getSslConfig } = require('../db')
 
 describe('Database SSL Configuration', () => {
   const origEnv = process.env
+  let existsSpy
 
   beforeEach(() => {
     process.env = { ...origEnv }
     delete process.env.SUPABASE_CA_CERT
     delete process.env.DATABASE_CA_CERT
+    if (existsSpy) existsSpy.mockRestore()
   })
 
   afterAll(() => {
     process.env = origEnv
+    if (existsSpy) existsSpy.mockRestore()
   })
 
   test('ativa verificação estrita quando SUPABASE_CA_CERT contém certificado PEM', () => {
@@ -47,6 +51,7 @@ describe('Database SSL Configuration', () => {
   })
 
   test('mantém fallback criptografado rejectUnauthorized: false em produção sem CA', () => {
+    existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(false)
     process.env.NODE_ENV = 'production'
     delete process.env.SUPABASE_CA_CERT
     delete process.env.DATABASE_CA_CERT
@@ -58,6 +63,7 @@ describe('Database SSL Configuration', () => {
   })
 
   test('mantém fallback criptografado quando DATABASE_URL aponta para supabase.com', () => {
+    existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(false)
     process.env.NODE_ENV = 'development'
     process.env.DATABASE_URL = 'postgresql://user:pass@aws-0.pooler.supabase.com:6543/postgres'
 
