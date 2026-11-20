@@ -23,15 +23,60 @@ const connectionString = process.env.DATABASE_URL
  * SSL criptografado com fallback rejectUnauthorized: false para não derrubar
  * o serviço antes da inclusão do certificado.
  */
+/**
+ * Normaliza um certificado PEM garantindo quebras de linha corretas,
+ * mesmo que tenha sido colado em uma única linha ou com espaços no painel da Vercel.
+ */
+function normalizeCertificate(certStr) {
+  if (!certStr || typeof certStr !== 'string') return null
+  let cert = certStr.trim()
+
+  // Se estiver em Base64 puro
+  if (!cert.includes('BEGIN CERTIFICATE')) {
+    try {
+      const decoded = Buffer.from(cert, 'base64').toString('utf8')
+      if (decoded.includes('BEGIN CERTIFICATE')) {
+        cert = decoded.trim()
+      }
+    } catch (_) {}
+  }
+
+  // Desescapa quebras de linha literais
+  cert = cert.replace(/\\n/g, '\n')
+
+  // Se o PEM estiver em linha única ou com espaços em vez de quebras
+  const match = cert.match(/-----BEGIN CERTIFICATE-----\s*([\s\S]+?)\s*-----END CERTIFICATE-----/)
+  if (match) {
+    const base64Body = match[1].replace(/\s+/g, '')
+    const lines = base64Body.match(/.{1,64}/g)
+    if (lines) {
+      return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----\n`
+    }
+  }
+
+  return cert
+}
+
+/**
+ * Obtém a configuração de SSL para o PostgreSQL.
+ *
+ * Se houver um certificado CA da Supabase (via SUPABASE_CA_CERT, DATABASE_CA_CERT
+ * ou arquivo server/certs/prod-ca-2021.crt), ativa a verificação estrita completa
+ * (rejectUnauthorized: true) validando a autenticidade do servidor contra a CA.
+ *
+ * Caso contrário, em produção ou conexões na nuvem (Supabase pooler), mantém
+ * SSL criptografado com fallback rejectUnauthorized: false para não derrubar
+ * o serviço antes da inclusão do certificado.
+ */
 function getSslConfig() {
   const envCa = process.env.SUPABASE_CA_CERT || process.env.DATABASE_CA_CERT
   if (envCa && typeof envCa === 'string' && envCa.trim()) {
-    const raw = envCa.trim()
-    return {
-      rejectUnauthorized: true,
-      ca: raw.includes('BEGIN CERTIFICATE')
-        ? raw.replace(/\\n/g, '\n')
-        : Buffer.from(raw, 'base64').toString('utf8')
+    const ca = normalizeCertificate(envCa)
+    if (ca) {
+      return {
+        rejectUnauthorized: true,
+        ca
+      }
     }
   }
 
@@ -46,9 +91,10 @@ function getSslConfig() {
       try {
         const cert = fs.readFileSync(certPath, 'utf8')
         if (cert.includes('BEGIN CERTIFICATE')) {
+          const ca = normalizeCertificate(cert)
           return {
             rejectUnauthorized: true,
-            ca: cert
+            ca: ca || cert
           }
         }
       } catch (_) {}

@@ -25,10 +25,8 @@ describe('Database SSL Configuration', () => {
     process.env.SUPABASE_CA_CERT = fakeCert
 
     const ssl = getSslConfig()
-    expect(ssl).toEqual({
-      rejectUnauthorized: true,
-      ca: fakeCert
-    })
+    expect(ssl.rejectUnauthorized).toBe(true)
+    expect(ssl.ca.trim()).toBe(fakeCert.trim())
   })
 
   test('suporta quebras de linha escapadas "\\n" em variável de ambiente', () => {
@@ -47,7 +45,7 @@ describe('Database SSL Configuration', () => {
 
     const ssl = getSslConfig()
     expect(ssl.rejectUnauthorized).toBe(true)
-    expect(ssl.ca).toBe(raw)
+    expect(ssl.ca.trim()).toBe(raw.trim())
   })
 
   test('mantém fallback criptografado rejectUnauthorized: false em produção sem CA', () => {

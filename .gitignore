@@ -27,6 +27,7 @@ yarn-error.log*
 server/setupStripe.js
 
 server/certs/*.crt
+!server/certs/prod-ca-2021.crt
 server/certs/*.pem
 server/certs/*.key
 
